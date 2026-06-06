@@ -1,9 +1,12 @@
 """Point-in-time Korean common-stock universe from marcap.
 
-A ticker's [first_date, last_date] window in marcap defines its membership
-window. The kind is the modal classification across all of the ticker's
-marcap rows; if rows disagree (rare, mid-life rename), the conflict is
-recorded in ``universe_conflicts.csv`` for manual review.
+A ticker is classified per-date and split into maximal contiguous single-kind
+intervals, one panel row each. A ticker that never changes kind has a single
+[first_date, last_date] row; one that migrates (SPAC → operating company,
+KONEX → KOSDAQ, …) gets one row per kind interval, so a point-in-time query
+sees the kind it actually had on that date — not a future reclassification.
+Tickers whose kind ever changes are also recorded in ``universe_conflicts.csv``
+for review.
 
 Build the panel once after a marcap refresh:
 
@@ -27,10 +30,19 @@ import pandas as pd
 
 from kr_marcap.classify import classify_ticker
 
-MARCAP_DIR = Path(os.path.expanduser('~/finance_db/marcap/data'))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MARCAP_DIR = REPO_ROOT / 'marcap' / 'data'
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 PANEL_PATH = CACHE_DIR / 'universe_panel.parquet'
 CONFLICTS_PATH = CACHE_DIR / 'universe_conflicts.csv'
+
+# Recommended start of the reliable Korean-equity window. Before this:
+# (a) 1996-99 illiquidity (17-26% no-trade days) + IMF-era phantom rows, and
+# (b) NO cash-dividend / total-return data (DART 배당 starts fiscal 2014). 2015
+# is where both price liquidity and total-return coverage are sound. Opt-in via
+# kr_marcap.adjust.load_adjusted(..., reliable_only=True). See the README
+# section "Use post-2015 data for Korean stocks".
+RELIABLE_START = pd.Timestamp('2015-01-01')
 
 # Infrastructure / real-estate / resource trusts that classify_ticker marks
 # as 'common' (no 호 suffix, no 선박투자/리츠/REIT keyword) but are fund-like
@@ -58,17 +70,27 @@ def build_universe_panel(
     out_path: Path = PANEL_PATH,
     conflicts_path: Path = CONFLICTS_PATH,
 ) -> pd.DataFrame:
-    """Scan all marcap parquets and emit a per-ticker membership table.
+    """Scan all marcap parquets and emit a per-membership-interval table.
 
     Output schema: code, name, market, kind, first_date, last_date, n_days.
+
+    A ticker is classified per-date, then split into maximal contiguous runs of
+    a single kind — so a ticker that migrates (SPAC → operating company on
+    merger, KONEX → KOSDAQ, REIT ↔ operating) gets ONE ROW PER KIND INTERVAL,
+    not one row carrying its latest kind back over its whole history. Using the
+    latest kind for the full window was a look-ahead: it injected e.g. a SPAC
+    shell into ``universe(pre_merger_date, 'common')``, contradicting
+    ``adjust.py`` (which marks those pre-merger rows ``valid=False``). The
+    conflicts file still records the full per-kind distribution for review.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Collect every (code, date, name, market) seen across all years.
-    seen_dates: dict[str, list] = {}    # code → [Timestamp, ...]
+    # Per code: chronological (date, kind) sequence, the kind distribution, and
+    # the most-recent (name, market) observed for each kind (for the display
+    # name of that kind's interval).
+    seq_per_code: dict[str, list[tuple[pd.Timestamp, str]]] = {}
     kinds_per_code: dict[str, Counter] = {}
-    # Most-recent (name, market) wins for the display row and the kind.
-    latest_meta: dict[str, tuple[pd.Timestamp, str, str]] = {}
+    meta_per_kind: dict[tuple[str, str], tuple[pd.Timestamp, str, str]] = {}
 
     for fp, df in _iter_marcap_years(marcap_dir):
         df = df.dropna(subset=['Code', 'Date'])
@@ -78,45 +100,50 @@ def build_universe_panel(
             market = row.Market if isinstance(row.Market, str) else ''
             date = row.Date
 
-            seen_dates.setdefault(code, []).append(date)
             kind = classify_ticker(code, name, market)
+            seq_per_code.setdefault(code, []).append((date, kind))
             kinds_per_code.setdefault(code, Counter())[kind] += 1
 
-            prev = latest_meta.get(code)
+            key = (code, kind)
+            prev = meta_per_kind.get(key)
             if prev is None or date > prev[0]:
-                latest_meta[code] = (date, name, market)
+                meta_per_kind[key] = (date, name, market)
 
     rows = []
     conflicts = []
-    for code, dates in seen_dates.items():
-        first, last = min(dates), max(dates)
-        n = len(dates)
+    for code, seq in seq_per_code.items():
+        seq.sort(key=lambda t: t[0])
+        # Maximal contiguous single-kind runs.
+        runs: list[list] = []   # [kind, first_date, last_date, n_days]
+        for date, kind in seq:
+            if runs and runs[-1][0] == kind:
+                runs[-1][2] = date
+                runs[-1][3] += 1
+            else:
+                runs.append([kind, date, date, 1])
+
+        for kind, first, last, n in runs:
+            _, name, market = meta_per_kind[(code, kind)]
+            rows.append({
+                'code': code,
+                'name': name,
+                'market': market,
+                'kind': kind,
+                'first_date': first,
+                'last_date': last,
+                'n_days': n,
+            })
+
         kinds = kinds_per_code[code]
-        _, name, market = latest_meta[code]
-        # Use the latest observation's classification: when a ticker migrates
-        # (KONEX → KOSDAQ, REIT → operating company, etc.) the current type is
-        # what callers querying "active on date D" expect, not the historical
-        # modal type. The conflicts file still records the full distribution.
-        latest_kind = classify_ticker(code, name, market)
         if len(kinds) > 1:
             conflicts.append({
                 'code': code,
                 'kinds': dict(kinds),
-                'latest_kind': latest_kind,
-                'name_latest': name,
-                'market_latest': market,
+                'n_intervals': len(runs),
+                'run_kinds': [r[0] for r in runs],
             })
-        rows.append({
-            'code': code,
-            'name': name,
-            'market': market,
-            'kind': latest_kind,
-            'first_date': first,
-            'last_date': last,
-            'n_days': n,
-        })
 
-    panel = pd.DataFrame(rows).sort_values(['kind', 'code']).reset_index(drop=True)
+    panel = pd.DataFrame(rows).sort_values(['kind', 'code', 'first_date']).reset_index(drop=True)
     panel.to_parquet(out_path, index=False)
 
     if conflicts:

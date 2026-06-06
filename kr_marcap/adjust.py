@@ -24,9 +24,14 @@ Known limitation
 ----------------
 ChangesRatio is rounded to 0.01%, so compounded price *levels* carry a tiny
 drift; daily and h-day *returns* (the pipeline's actual inputs) are unaffected
-beyond ~1e-4 since the anchor cancels. Rare ChangesRatio data errors on
-relisting first days remain — they affect only the local window, not the rest
-of the series.
+beyond ~1e-4 since the anchor cancels.
+
+The largest single-day adjusted returns that survive are *real* market events,
+not errors: relisting / 거래재개 first days after a long halt (no price limit),
+and the 2015 우선주 품절주 mania (e.g. 008705 +631% on real volume). These are
+faithfully reflected and intentionally left intact. The adjustment only
+neutralises moves that did not trade — entity-change breaks, ₩1 sentinels, and
+phantom-CR no-trade days (see the gross overrides in build_adjustment_factors).
 
 Build once:
 
@@ -48,10 +53,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-MARCAP_DIR = Path(os.path.expanduser('~/finance_db/marcap/data'))
+from kr_marcap.universe import RELIABLE_START
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MARCAP_DIR = REPO_ROOT / 'marcap' / 'data'
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 FACTORS_PATH = CACHE_DIR / 'adj_factors.parquet'
 ANOMALIES_PATH = CACHE_DIR / 'adjust_anomalies.csv'
+DIVIDENDS_PATH = CACHE_DIR / 'dividends.parquet'
 
 # Stocks ratio outside this band flags a possible entity change for review.
 _RATIO_FLAG_LOW = 0.1
@@ -145,14 +154,47 @@ def build_adjustment_factors(
     elif anomalies_path.exists():
         anomalies_path.unlink()
 
+    # A ChangesRatio measured against a ₩1 non-trading sentinel is not a real
+    # return. Some marcap vintages fill a suspension / ticker-reuse gap with
+    # Close==1, Volume==0 rows; the first real trade after the gap then carries a
+    # ChangesRatio computed against that ₩1 — e.g. 008080's 2013-09-11 resume
+    # reports ChangesRatio == 6,699,900 (= 67000/1). The entity break is detected
+    # at the sentinel block's *start* (the Stocks jump), so the resume day itself
+    # is not flagged as a break and its garbage ratio would otherwise compound
+    # into a +6.7M% adjusted return. (Contrast a ₩0 sentinel, after which KRX
+    # measures ChangesRatio against the real 기준가 and the resume return is real,
+    # and a same-day entity break like 052670, whose resume ratio is already
+    # neutralised by is_break.) Neutralise only the ₩1-sentinel resume.
+    vol_prev = df.groupby('Code', sort=False)['Volume'].shift(1).to_numpy()
+    sentinel_prev = (close_prev.to_numpy() == 1.0) & (vol_prev == 0.0)
+
+    # A nonzero ChangesRatio on a no-trade day whose close was carried flat is a
+    # marcap CR data error, not a realized return: e.g. 016600 1998-01-05 reports
+    # ChangesRatio == -68.31 while Close holds at 2960 with Volume == 0. Compounding
+    # it would inject a phantom factor into the whole pre-date history. These are
+    # almost all 1996-1998 par-value-era rows on long-delisted names (80 rows, none
+    # post-2010), so the distortion is confined to cross-1990s returns, but neutralise
+    # them so a long-horizon series isn't silently skewed. (Contrast a *zero* CR on a
+    # no-trade reference reset — e.g. a 거래정지 기준가 change — which correctly records
+    # "no return" and is left alone; and 016397-type no-trade reference *prints*, where
+    # the CR matches the carried close so nothing phantom is injected.)
+    vol_now = df['Volume'].to_numpy()
+    flat_carried = np.abs(df['Close'].to_numpy() / close_prev.to_numpy() - 1.0) < 0.005
+    no_share_change = df['ratio'].isna().to_numpy() | (np.abs(df['ratio'].to_numpy() - 1.0) < 0.01)
+    phantom_cr = (
+        (vol_now == 0.0) & flat_carried
+        & (np.abs(df['ChangesRatio'].to_numpy()) > 1.0) & no_share_change
+    )
+
     # Daily gross return from the exchange's official ChangesRatio (등락률).
-    # NaN (first row), non-positive/garbage, no-trade (Close<=0), and
-    # entity-change break days do not compound: a break day's move is across two
-    # different entities and its pre-break history is dropped anyway.
+    # NaN (first row), non-positive/garbage, no-trade (Close<=0), entity-change
+    # break days, ₩1-sentinel resumes, and phantom-CR no-trade days do not compound:
+    # a break day's move is across two different entities and its pre-break history
+    # is dropped anyway.
     gross = 1.0 + df['ChangesRatio'].to_numpy() / 100.0
     gross = np.where(
         np.isnan(gross) | (gross <= 0.0) | is_break.to_numpy()
-        | (df['Close'].to_numpy() <= 0.0),
+        | (df['Close'].to_numpy() <= 0.0) | sentinel_prev | phantom_cr,
         1.0, gross,
     )
     df['gross'] = gross
@@ -200,10 +242,53 @@ def _load_factors(path: str) -> pd.DataFrame:
     return f
 
 
+def _apply_total_return(out: pd.DataFrame, ticker: str,
+                        dividends_path: Path | None = None) -> pd.DataFrame:
+    """Add `tr_factor` and `adj_close_tr` by reinvesting cash dividends.
+
+    Each fiscal year's disclosed cash-dividend yield (DART 현금배당수익률, cached
+    by ``kr_marcap.dividends``) is reinvested on that year's last trading row —
+    the ex-dividend 배당락 lands at ~year-end and KRX 등락률 already carries the
+    matching price drop, so the bump offsets it (TR return ≈ price return + yield
+    on that day, == price return on every other day). The series is back-adjusted
+    (``tr_factor`` normalised to 1 today) so ``adj_close_tr`` today == raw close
+    and any ``adj_X_tr`` == ``adj_X * tr_factor``.
+
+    Approximation: annual yields are applied at calendar year-end, so mid-year
+    interim dividends are lumped to December — the annual total is correct and
+    multi-year horizons are unaffected. Dividends exist only for fiscal ≥2014
+    (DART structured 배당 coverage); earlier years stay price-return-only.
+    """
+    path = Path(dividends_path or DIVIDENDS_PATH)
+    if not path.exists():
+        raise FileNotFoundError(
+            f'dividends not found at {path} — run `python -m kr_marcap.dividends build` first'
+        )
+    div = pd.read_parquet(path)
+    div['code'] = div['code'].astype(str).str.zfill(6)
+    d = div[(div['code'] == ticker) & div['yield_pct'].notna() & (div['yield_pct'] > 0)]
+    years = out['date'].dt.year.to_numpy()
+    steps = np.ones(len(out))
+    for fy, yld in zip(d['fiscal_year'].astype(int), d['yield_pct'].astype(float)):
+        idx = np.where(years == fy)[0]
+        if len(idx) == 0:
+            continue
+        steps[idx[-1]] *= 1.0 + yld / 100.0
+    tr = np.cumprod(steps)
+    tr_norm = tr / tr[-1]
+    out = out.copy()
+    out['tr_factor'] = tr_norm
+    out['adj_close_tr'] = out['adj_close'].to_numpy() * tr_norm
+    return out
+
+
 def load_adjusted(
     ticker: str,
     factors_path: Path | None = None,
     marcap_dir: Path = MARCAP_DIR,
+    total_return: bool = False,
+    dividends_path: Path | None = None,
+    reliable_only: bool = False,
 ) -> pd.DataFrame:
     """Return a single ticker's full OHLCV history with adjusted columns.
 
@@ -212,6 +297,14 @@ def load_adjusted(
 
     Volume is also adjusted (multiplied by 1/cum_factor → shares scaled to
     today's share-count basis) so adj_close × adj_volume ≈ raw_close × raw_volume.
+
+    With ``total_return=True``, two more columns are added — ``tr_factor`` and
+    ``adj_close_tr`` — that reinvest DART cash dividends on top of the price
+    adjustment (see ``_apply_total_return``; requires the dividends cache).
+
+    ``reliable_only=True`` drops rows before ``RELIABLE_START`` (2015-01-01) —
+    the opt-in for the deficient pre-2015 window (1996-99 illiquidity; no
+    total-return data pre-2014). Default off (full history, no survivorship bias).
     """
     path = str(factors_path or FACTORS_PATH)
     if not os.path.exists(path):
@@ -261,6 +354,10 @@ def load_adjusted(
         'adj_close': merged['Close'] * cf,
         'adj_volume': merged['Volume'] / cf,
     })
+    if reliable_only:
+        out = out[out['date'] >= RELIABLE_START].reset_index(drop=True)
+    if total_return:
+        out = _apply_total_return(out, ticker, dividends_path)
     return out
 
 
