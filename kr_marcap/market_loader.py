@@ -14,12 +14,12 @@ date carries every stock that was actually listed and trading on that date.
 
 Sources
 -------
-- ``$QF_MARCAP_DIR/marcap-{YYYY}.parquet`` — raw OHLCV+Marcap+Stocks per day.
-- ``$QF_KR_MARCAP_DIR/cache/adj_factors.parquet`` — ChangesRatio (등락률) back-
+- ``<marcap_dir>/marcap-{YYYY}.parquet`` — raw OHLCV+Marcap+Stocks per day.
+- ``<kr_marcap_root>/cache/adj_factors.parquet`` — ChangesRatio (등락률) back-
   adjustment factors built by ``kr_marcap.adjust``. Used to back-adjust ``Close``
   for splits / 무상·유상증자 / 감자, putting marcap on par with FnGuide's 수정주가;
   the ``valid`` column drops pre-series-break (e.g. pre-SPAC-merger) history.
-- ``$QF_KR_MARCAP_DIR/cache/universe_panel.parquet`` — point-in-time common-
+- ``<kr_marcap_root>/cache/universe_panel.parquet`` — point-in-time common-
   stock membership built by ``kr_marcap.universe``. Used to drop preferred,
   ETFs, REITs, SPACs, KONEX, and funds (matches the implicit universe of the
   current pipeline).

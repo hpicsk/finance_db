@@ -21,7 +21,7 @@ _FUND_RE = re.compile(r'선박투자')
 # ETF brand-name prefixes. Brand must be followed by whitespace so we don't
 # catch e.g. "ACE손해보험" or "타임폴리오". The list covers the major and
 # mid-tier brands that fnguide ships in its currently-listed export; extend
-# whenever the reconcile_fnguide diff surfaces a new brand.
+# whenever a new ETF brand appears in the universe.
 _ETF_NAME_RE = re.compile(
     r'^(?:KODEX|TIGER|ARIRANG|PLUS|KINDEX|ACE|KBSTAR|RISE|SOL|HANARO|KoAct'
     r'|KIWOOM|TREX|KOSEF|TIME|ITF|1Q|HK|FOCUS|WON|마이티|에셋플러스|아이엠에셋'

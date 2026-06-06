@@ -10,9 +10,16 @@ event panel (관리종목 / 감사의견 비적정 / 불성실공시 / 거래정
     cfg = TradableConfig(exclude_audit_qualified=False)
     tradable_universe('2015-06-15', config=cfg)
 
-Phase A scope: the four status exclusions read from any *_events.parquet
-that kr_status has produced — currently fdr_admin + historical_audit.  The
-insincere / halt exclusions are no-ops until Phase B collectors land.
+All four status exclusions read from whatever ``*_events.parquet`` kr_status
+has produced and `kr_marcap.status.build_panel` has unified — currently
+admin + alert (marcap.Dept), audit_qualified (dart_audit + historical seed),
+insincere (dart_insincere), and halt (marcap ChangeCode).  Coverage caveat:
+halt / admin / alert are marcap-derived and so extend only to the latest
+marcap year's right edge (2026-02-20 as of this build); past that they
+contribute nothing until marcap and the ``marcap_halt_infer`` collector are
+re-run.  ``load_events`` auto-rebuilds when a source parquet is newer than
+the panel, so a re-run collector is never silently ignored.  See
+``coverage.md``.
 """
 from __future__ import annotations
 
@@ -47,10 +54,15 @@ class TradableConfig:
 
 @lru_cache(maxsize=1)
 def load_events(path: str | None = None) -> pd.DataFrame:
-    """Load the merged status-events panel.  Builds it if absent."""
+    """Load the merged status-events panel.
+
+    Builds it if absent, and rebuilds it if any kr_status source parquet is
+    newer than the materialised panel — so a re-run collector is never silently
+    ignored.
+    """
     p = Path(path) if path else EVENTS_PATH
-    if not p.exists():
-        from kr_marcap.status.build_panel import build_events_panel
+    from kr_marcap.status.build_panel import build_events_panel, sources_newer_than
+    if not p.exists() or (path is None and sources_newer_than(p)):
         build_events_panel(out_path=p)
     df = pd.read_parquet(p)
     df["start_date"] = pd.to_datetime(df["start_date"])
@@ -138,10 +150,13 @@ def _liquid_set(date: pd.Timestamp,
     # trading day for that ticker, so simply take the last 20 observations
     # ending at `date`.
     if adv20_min > 0:
-        # last 20 dates per ticker within the window
+        # last 20 dates per ticker within the window; tickers with <20
+        # observations get NaN (→ fail the floor below), matching the
+        # docstring's "dropped when adv20_min>0" contract rather than
+        # silently averaging a short, noisy window.
         adv = (
             win.groupby("Code")["Amount"]
-               .apply(lambda s: s.tail(20).mean())
+               .apply(lambda s: s.tail(20).mean() if len(s) >= 20 else float("nan"))
                .rename("ADV20")
         )
         snap = snap.join(adv, how="left")
@@ -168,9 +183,10 @@ def tradable_universe(date,
       2. ∩ liquid set (Close ≥ price_min, Marcap ≥ marcap_min, ADV20 ≥ adv20_min)
       3. − active status exclusions (admin / audit_qualified / insincere / halt)
 
-    Phase A note: insincere and halt are no-ops until kr_status Phase B
-    collectors land — the events panel currently has only admin +
-    audit_qualified rows.
+    All four exclusions are live.  Note halt/admin/alert are marcap-derived
+    and so cover only through the latest marcap year's right edge; for query
+    dates past that the exclusion is a no-op (no error) until marcap and the
+    ``marcap_halt_infer`` collector are refreshed.
     """
     cfg = config or TradableConfig()
     if overrides:

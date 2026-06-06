@@ -1,0 +1,90 @@
+# =============================================================================
+# Credentials — NEVER commit
+# =============================================================================
+.token
+*.token
+krx_id
+.env
+*.key
+*credentials*
+dart_api
+.dart_key
+
+# OpenDartReader local cache (corp_code pickle, regenerable)
+docs_cache/
+
+# =============================================================================
+# Large raw data — kept locally, not pushed
+# =============================================================================
+
+# FnGuide DataGuide xlsx exports (200 MB – 1.4 GB each, > GitHub 100 MB limit)
+fnguide_data/*.xlsx
+fnguide_data/currently_listed/*.xlsx
+fnguide_data/raw/*.xlsx
+
+# Backup zips (찬우쓰.zip, KOSPI 주가.zip)
+fnguide_data/*.zip
+
+# marcap is an external clone of github.com/FinanceData/marcap (kept locally,
+# not redistributed via this repo). The user-authored coverage note that
+# was originally in marcap/ now lives in kr_delisted/README.md under
+# "marcap coverage verification".
+marcap/
+
+# FinMind per-stock parquets (~1.6 GB total)
+finmind_data/ohlcv/
+finmind_data/instflow/
+finmind_data/shares/
+finmind_data/per_pbr/
+finmind_data/margin_short/
+finmind_data/month_rev/
+finmind_data/fin_is/
+finmind_data/fin_bs/
+finmind_data/fin_cf/
+finmind_data/dividend/
+finmind_data/sec_lending/
+finmind_data/cap_red/
+
+# Pre-rollback (2015–2024) backup dirs
+finmind_data/*_2015_2024/
+
+# Capital-reduction consolidated output is regenerable from cap_red/ via
+# consolidate_capred.py
+finmind_data/capital_reduction.parquet
+
+# Investor-aggregate generated CSV (regenerable via transform_investor_data.py)
+fnguide_data/investor_aggregate/investor_trading_data.csv
+
+# kr_delisted archived raw downloads (302 MB)
+kr_delisted/.archived_*/
+
+# kr_marcap built caches (regenerable from marcap/ via build_universe_panel()
+# and build_adjustment_factors())
+kr_marcap/cache/
+
+# krx_supplement regenerable bulk output (collect_*.py rebuilds these; the
+# small index_* files and the 27 MB sector_mapping.parquet stay tracked).
+# sector_mapping.csv is a 584 MB redundant twin of sector_mapping.parquet;
+# foreign_ownership_daily is 14.6k daily parquets (613 MB).
+krx_supplement/output/sector_mapping.csv
+krx_supplement/output/foreign_ownership_daily/
+
+# =============================================================================
+# Run artifacts
+# =============================================================================
+*.log
+nohup.*
+*.bak
+*.pid
+__pycache__/
+*.pyc
+*.pyo
+
+# Per-package run state (PID files, progress checkpoints, run logs — regenerable)
+runtime/
+
+# Stray PDFs
+finmind_data/*.pdf
+
+# Tracked: everything else (code, README/docs, small index CSVs/parquets,
+# delisting_calendar.csv, missing_*.csv, krx_supplement/output/*, etc.)

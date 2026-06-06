@@ -1,11 +1,12 @@
 """Unified loader for the delisted 6-digit Korean-equity universe (marcap-backed).
 
-Scope: 1,118 KOSPI + KOSDAQ + KONEX delisted tickers (2005-01 .. 2025-10).
+Scope: 1,359 KOSPI + KOSDAQ + KONEX delisted tickers (2005-01 .. present).
 Warrants/rights/funds (7-8 char codes) are out of scope — dropped from the universe.
 
 Data sources:
   - Price/volume/marcap: ~/finance_db/marcap/data/marcap-YYYY.parquet
-  - Delisting metadata : ./delisting_calendar.csv  (KIND-sourced, 2026-04-23)
+  - Delisting metadata : ./delisting_calendar.csv  (KIND + marcap-proxy + DART overrides;
+                         regenerable via build_delisting_calendar.py)
 
 Prices are unadjusted (matches marcap's native storage and KRX's raw history).
 """
@@ -14,8 +15,9 @@ import glob
 import pandas as pd
 from functools import lru_cache
 
-MARCAP_DIR = os.path.expanduser('~/finance_db/marcap/data')
-CALENDAR   = os.path.expanduser('~/finance_db/kr_delisted/delisting_calendar.csv')
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MARCAP_DIR = os.path.join(_REPO_ROOT, 'marcap', 'data')
+CALENDAR   = os.path.join(_REPO_ROOT, 'kr_delisted', 'delisting_calendar.csv')
 
 # Columns returned to callers (from marcap's 18-col schema)
 COMMON_COLS = ['Date','Code','Name','Market','Open','High','Low','Close',
@@ -23,7 +25,7 @@ COMMON_COLS = ['Date','Code','Name','Market','Open','High','Low','Close',
 
 @lru_cache(maxsize=1)
 def calendar():
-    """Return the full delisting calendar as a DataFrame (1,118 rows)."""
+    """Return the full delisting calendar as a DataFrame (1,359 rows)."""
     return pd.read_csv(CALENDAR, dtype={'ticker': str})
 
 @lru_cache(maxsize=1)
