@@ -20,6 +20,13 @@ same-day price move does not corroborate it (see ``_CORROBORATION_TOL``) is a
 series break: the pre-break history belongs to a different entity (e.g. the
 pre-merger shell) and is marked ``valid=False`` so loaders drop it.
 
+Entity changes hidden behind a long trading gap (delisting+ticker-reuse,
+우회상장, 인적분할 재상장) escape the ratio band when the share count moves <10x,
+so a resume after a gap of > ``_GAP_DAYS`` is also tested and broken when its
+gap-crossing move is uncorroborated — a real share jump with no inverse price
+move, or a >300% price-regime leap (reuse off a delisting-floor ₩-sentinel).
+E.g. 지누스 (013890), 하이트진로 (000080), 우리은행 (000030).
+
 Known limitation
 ----------------
 ChangesRatio is rounded to 0.01%, so compounded price *levels* carry a tiny
@@ -72,6 +79,17 @@ _RATIO_FLAG_HIGH = 10.0
 # while entity changes (SPAC mergers, reverse listings, ticker reuse, data
 # errors) leave |residual| >= 0.522, so 0.5 cleanly separates the two.
 _CORROBORATION_TOL = 0.5
+# A resume after a long trading gap (> _GAP_DAYS) is a potential entity change
+# (suspension+ticker-reuse / 우회상장 / 인적분할 재상장) even when the share-count
+# ratio sits inside the [0.1, 10] big-jump band — those slip through otherwise
+# (e.g. 지누스 013890, 하이트진로 000080, 우리은행 000030). It is a break when the
+# gap-crossing move is uncorroborated: a real share-count jump (outside
+# [_GAP_SHARE_LOW, _GAP_SHARE_HIGH]) with no inverse price move, or a >300%
+# price-regime leap (ticker reused off a delisting-floor ₩-sentinel).
+_GAP_DAYS = 365
+_GAP_SHARE_LOW = 0.67
+_GAP_SHARE_HIGH = 1.5
+_GAP_RESUME_RET = 3.0
 
 
 def _load_all_marcap(marcap_dir: Path) -> pd.DataFrame:
@@ -142,8 +160,22 @@ def build_adjustment_factors(
     # entity and must be neither adjusted nor carried forward.
     is_break = big_jump & ~corroborated
 
+    # Same failure mode hidden behind a long suspension gap: a share-count ratio
+    # inside the big-jump band escapes the test above, but a multi-year gap
+    # before the row marks a delisting+reuse / 재상장. Break it when the
+    # gap-crossing move is uncorroborated (see the _GAP_* constants).
+    gap_days = (df['Date'] - df.groupby('Code', sort=False)['Date'].shift(1)).dt.days
+    long_gap = gap_days > _GAP_DAYS
+    gap_share_break = (
+        long_gap & df['ratio'].notna()
+        & ((df['ratio'] < _GAP_SHARE_LOW) | (df['ratio'] > _GAP_SHARE_HIGH))
+        & (adj_ret.abs() >= _CORROBORATION_TOL)
+    )
+    gap_regime_break = long_gap & (df['raw_ret'].abs() >= _GAP_RESUME_RET)
+    is_break = is_break | gap_share_break | gap_regime_break
+
     anomalies = df.loc[
-        missing | big_jump,
+        missing | big_jump | gap_share_break | gap_regime_break,
         ['Date', 'Code', 'stocks_prev', 'Stocks', 'ratio', 'Close'],
     ].copy()
     anomalies['raw_ret'] = df.loc[anomalies.index, 'raw_ret']
