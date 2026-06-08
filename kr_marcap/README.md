@@ -155,6 +155,16 @@ last break is flagged `valid = False` and dropped at load time, so a pre-merger
 shell's prices never pollute the operating company's series. Anomalies and their
 break verdict are written to `cache/adjust_anomalies.csv`.
 
+A second break path catches the same failure hidden behind a **long trading
+gap**: a delisting+ticker-reuse, 우회상장, or 인적분할 재상장 whose share count moved
+less than ×10 stays inside the `[0.1, 10]` band and escapes the test above. A
+resume after a gap of more than `_GAP_DAYS` (365) is therefore also broken when
+its gap-crossing move is uncorroborated — either a real share-count jump (ratio
+outside `[_GAP_SHARE_LOW, _GAP_SHARE_HIGH]` = `[0.67, 1.5]`) with no inverse
+price move, or a > 300 % price-regime leap (`_GAP_RESUME_RET`), the signature of
+a ticker reused off a delisting-floor ₩-sentinel. Examples: 지누스 (013890,
+2019-10-30), 하이트진로 (000080, 2009-10-19), 우리은행 (000030, 2014-11-19).
+
 ### Why ChangesRatio, not the `Stocks` ratio
 
 The first version of this layer built `cum_factor` from the shares-outstanding
@@ -208,6 +218,23 @@ real −2.1 % move). What remains:
   that did *not* trade — ₩1 ticker-reuse sentinels and phantom-`ChangesRatio`
   no-trade days — which are neutralised (`gross = 1`). See
   [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
+
+## Cross-checked against FnGuide 수정주가
+
+The adjustment layer was validated against professional FnGuide DataGuide 수정주가
+exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with return-based
+comparison (daily log returns are anchor-invariant). Two results:
+
+- **Dividend treatment agrees.** Across all 2,528 common names, none track a
+  total-return series — FnGuide 수정주가 reflects capital changes only, *not* cash
+  dividends, exactly like `adj_close`. This confirms the [cash-dividend
+  gap](#known-limitations) is a shared market convention, not a defect; use
+  `total_return=True` for the dividend-reinvested series.
+- **It surfaced the long-gap splice class.** The cross-check flagged entity
+  changes the break detector missed; the gap-triggered break above cut splice
+  tickers (`max_abs > 1` vs. FnGuide) from 9 to 3, the 3 remaining being gap-free
+  1999-01-04 early-data artifacts inside the gated pre-2015 window. No false
+  breaks; the Samsung 50:1 split is unaffected.
 
 ## Files in `cache/` (gitignored)
 
