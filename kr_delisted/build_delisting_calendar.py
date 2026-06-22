@@ -1,46 +1,21 @@
-"""Regenerate delisting_calendar.csv from KIND + a marcap-derived preferred-share scan.
+"""Regenerate delisting_calendar.csv from KIND + a marcap preferred-share scan.
 
-The canonical file has two sources, stitched together:
+Two sources, stitched:
+  1. KIND delcompany.do — every delisting since 2005-01-01 in one page
+     (main shares: 6-digit codes ending '0', plus foreign 9xxxxx issuers).
+  2. marcap — preferred shares (codes ending != '0') that KIND omits; each
+     ticker's last marcap appearance is its proxy delisting date.
 
-  1. KIND (kind.krx.co.kr) → POST /investwarn/delcompany.do with
-     method=searchDelCompanySub.  One request with currentPageSize=5000
-     returns every delisting event since 2005-01-01 in a single HTML page
-     (~1,181 rows as of 2025-10-23).  Covers main shares (6-digit codes
-     ending in '0') and 18 foreign issuers (9xxxxx codes).
+Output columns: ticker,name,market,delisting_date,reason,is_genuine
+(is_genuine = classify() on the KIND reason; proxy rows are always Y.)
 
-  2. marcap (~/finance_db/marcap/data/marcap-YYYY.parquet) → preferred-share
-     proxy.  KIND does not publish 우/우B/전환상환 etc. (codes ending in a
-     non-zero digit).  We recover them by taking each non-zero-ending
-     6-digit ticker's last appearance in marcap as a proxy delisting date.
-     Filtered to delisting_date >= 2005-01-01 to match the curated file.
-
-Output: ticker,name,market,delisting_date,reason,is_genuine
-
-is_genuine classifier (keyword on KIND reason; proxy rows are always Y):
-    N — exchange transfer:   '코스닥시장 이전상장' / '유가증권시장 상장' / '코스닥시장 상장'
-    N — merger / absorption: contains 피흡수합병 / 완전자회사화 / 완전자회사로 편입
-                             / 스팩소멸합병 / 주식교환
-    Y — everything else (bankruptcies, audit refusals, voluntary delistings,
-        SPAC liquidations, capital impairment, etc.)
-    These match README.md §"Methodology notes" counts: ~107 transfers,
-    ~186 merger/absorptions, 1,004 genuine delistings in the 6-digit universe.
-
-Foreign-issuer ticker resolution:
-    Most KIND rows expose the 6-digit KRX code via the JS handler
-    `companysummary_open('NNNNN')` — NNNNN is the leading 5 digits;
-    suffix is '0' for every 6-digit common-stock code.  18 foreign issuers
-    (CHN/HKG/CYM/JPN/SGP-prefixed isurCd's) have alphanumeric IDs in KIND
-    that do not map by string transform; for those we POST
-    /common/companysummary.do with method=searchCompanySummaryOvrvwDetail
-    and parse 종목코드 from the response table.
-
-If is_genuine_overrides.csv exists in the same directory (produced by
-build_is_genuine_overrides.py), it is applied as a final post-step.
+If is_genuine_overrides.csv (from build_is_genuine_overrides.py) exists it is
+applied as a final post-step.
 
 Usage:
-    python build_delisting_calendar.py                # KIND + proxy + overrides → delisting_calendar.regen.csv
-    python build_delisting_calendar.py --no-proxy     # KIND only                → delisting_calendar.kind.csv
-    python build_delisting_calendar.py --no-overrides # skip the overrides post-step
+    python build_delisting_calendar.py                # KIND + proxy + overrides -> .regen.csv
+    python build_delisting_calendar.py --no-proxy     # KIND only                -> .kind.csv
+    python build_delisting_calendar.py --no-overrides
     python build_delisting_calendar.py --from 2005-01-01 --to 2025-10-23
 """
 from __future__ import annotations
@@ -55,7 +30,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-from _classify import classify, TRANSFER_REASONS, MERGER_SUBSTRINGS
+from _classify import classify
 
 KIND_BASE        = "https://kind.krx.co.kr"
 KIND_FORM_URL    = f"{KIND_BASE}/investwarn/delcompany.do?method=searchDelCompanyMain"
@@ -84,9 +59,7 @@ def fetch_delisting_table(session: requests.Session, from_date: str, to_date: st
     payload = {
         "method": "searchDelCompanySub",
         "forward": "delcompany_sub",
-        "currentPageSize": "5000",   # KIND's UI dropdown caps at 100; the
-                                     # server respects larger values and
-                                     # returns all rows in one page.
+        "currentPageSize": "5000",   # server returns all rows in one page
         "pageIndex": "1",
         "orderMode": "2",
         "orderStat": "D",
@@ -138,7 +111,6 @@ def parse_rows(html: str, session: requests.Session) -> list[dict]:
         if len(tds) < 5:
             continue
 
-        # Market icon: first img with src matching icn_t_(yu|ko|konex).gif
         market = None
         for img in tds[1].find_all("img"):
             m = re.search(r"icn_t_(yu|ko|konex)\.gif", img.get("src", ""))
@@ -157,9 +129,8 @@ def parse_rows(html: str, session: requests.Session) -> list[dict]:
         if stub.isdigit() and len(stub) == 5:
             ticker = stub + "0"
         elif stub.isalnum() and not stub.isdigit():
-            # Foreign issuer: KIND uses alphanumeric isurCd, needs a lookup.
-            ticker = resolve_foreign_ticker(session, stub)
-            time.sleep(0.1)  # be polite
+            ticker = resolve_foreign_ticker(session, stub)   # foreign issuer: alphanumeric isurCd
+            time.sleep(0.1)
         else:
             raise RuntimeError(f"Unexpected isurCd shape: {stub!r} (name={name!r})")
 
@@ -183,14 +154,10 @@ def scan_marcap_proxies(kind_tickers: set[str],
                         stale_days: int = 30) -> list[dict]:
     """Recover preferred-share delistings (codes ending != '0') from marcap.
 
-    KIND only publishes main-share delistings.  For preferred shares the
-    last appearance in marcap is the most reliable delisting-date proxy:
-    in 107/109 cases in the curated CSV it matched the curated date exactly.
-
-    Filter: 6-digit numeric ticker NOT ending in '0' (so it's not a main
-    share), not already in KIND, last_date >= start_date, and last_date
-    older than (marcap_latest - stale_days) so we don't flag still-trading
-    issues as delisted just because the most recent marcap update lags.
+    KIND only publishes main-share delistings; for preferred shares the last
+    marcap appearance is the delisting-date proxy. Filter: 6-digit numeric,
+    not ending in '0', last_date >= start_date, and last_date older than
+    (marcap_latest - stale_days) so still-trading issues aren't flagged.
     """
     files = sorted(marcap_dir.glob("marcap-*.parquet"))
     if not files:
@@ -200,9 +167,8 @@ def scan_marcap_proxies(kind_tickers: set[str],
     for f in files:
         df = pd.read_parquet(f, columns=["Code", "Date", "Name", "Market"])
         df["Code"] = df["Code"].astype(str).str.zfill(6)
-        # idxmax picks one row per ticker — the one on its latest date that
-        # year — so Name/Market reflect the at-delisting values, not the
-        # earliest values, which matters for renames.
+        # idxmax -> one row per ticker on its latest date that year, so
+        # Name/Market reflect at-delisting values (matters for renames).
         idx = df.groupby("Code")["Date"].idxmax()
         for r in df.loc[idx, ["Code", "Date", "Name", "Market"]].itertuples(index=False):
             prev = last_seen.get(r.Code)
@@ -217,14 +183,14 @@ def scan_marcap_proxies(kind_tickers: set[str],
     for code, (date, name, market) in last_seen.items():
         if not (len(code) == 6 and code.isdigit()):
             continue
-        if code[-1] == "0":         # main shares (and all 9xxxxx foreign issuers) come from KIND
+        if code[-1] == "0":         # main shares + 9xxxxx foreign issuers come from KIND
             continue
         if date < start:
             continue
         if date >= cutoff_active:   # still trading
             continue
-        # marcap wraps the share-class suffix in parens, e.g. "굿모닝신한증권(1우)";
-        # the curated file strips them ("굿모닝신한증권1우").  Match that.
+        # marcap wraps the share-class suffix in parens ("신한증권(1우)"); the
+        # curated file strips them ("신한증권1우"). Match that.
         clean_name = re.sub(r"\(([^)]+)\)$", r"\1", name.strip())
         proxies.append({
             "ticker":         code,
@@ -238,10 +204,7 @@ def scan_marcap_proxies(kind_tickers: set[str],
 
 
 def apply_overrides(rows: list[dict], overrides_csv: Path) -> int:
-    """Apply is_genuine overrides (from build_is_genuine_overrides.py).
-
-    Returns the number of rows whose is_genuine was changed.
-    """
+    """Apply is_genuine overrides; return the number of rows changed."""
     if not overrides_csv.exists():
         return 0
     ov = pd.read_csv(overrides_csv, dtype={"ticker": str})
@@ -257,7 +220,6 @@ def apply_overrides(rows: list[dict], overrides_csv: Path) -> int:
 
 
 def write_csv(rows: list[dict], path: Path) -> None:
-    # Match existing CSV's sort order: ascending by date, then ticker
     rows = sorted(rows, key=lambda r: (r["delisting_date"], r["ticker"]))
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["ticker", "name", "market",

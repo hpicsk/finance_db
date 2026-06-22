@@ -204,7 +204,7 @@ def harvest(api_key: str | None = None,
                                or "")
             receipt_dt = df.iloc[0].get("rcept_dt")
             if receipt_dt is None:
-                logger.warning("rcept_dt missing for ticker %s year %s, skipping", ticker, y)
+                print(f"  rcept_dt missing for ticker {ticker} year {y}, skipping", file=sys.stderr)
                 continue
             new_rows.append({
                 "ticker":      ticker,

@@ -1,9 +1,8 @@
 """DART harvest of 불성실공시법인 지정 filings → insincere event panel.
 
-Mirrors dart_admin.py's structure: scan dart.list per corp_code, regex-
-filter report_nm for "불성실공시법인지정" titles, emit one event per hit.
-Default release rule: ``end_date = start_date + 12 months`` (KRX's
-standard 1-year designation window).
+Scan dart.list per corp_code, regex-filter report_nm for "불성실공시법인지정"
+titles, emit one event per hit. Default release rule:
+``end_date = start_date + 12 months`` (KRX's standard 1-year window).
 
 Resumable via runtime/_dart_insincere_progress.json.
 

@@ -1,14 +1,12 @@
-"""Unified loader for the delisted 6-digit Korean-equity universe (marcap-backed).
+"""Loader for the delisted 6-digit Korean-equity universe (marcap-backed).
 
-Scope: 1,359 KOSPI + KOSDAQ + KONEX delisted tickers (2005-01 .. present).
-Warrants/rights/funds (7-8 char codes) are out of scope — dropped from the universe.
+KOSPI + KOSDAQ + KONEX, 2005-01..present. Warrants/rights/funds (7-8 char
+codes) are out of scope. Prices are unadjusted (matches KRX raw history).
 
-Data sources:
-  - Price/volume/marcap: ~/finance_db/marcap/data/marcap-YYYY.parquet
-  - Delisting metadata : ./delisting_calendar.csv  (KIND + marcap-proxy + DART overrides;
-                         regenerable via build_delisting_calendar.py)
-
-Prices are unadjusted (matches marcap's native storage and KRX's raw history).
+Sources:
+  - Prices/volume/marcap: marcap/data/marcap-YYYY.parquet
+  - Delisting metadata:   kr_delisted/delisting_calendar.csv
+                          (regenerable via build_delisting_calendar.py)
 """
 import os
 import glob
@@ -26,7 +24,7 @@ COMMON_COLS = ['Date','Code','Name','Market','Open','High','Low','Close',
 
 @lru_cache(maxsize=1)
 def calendar():
-    """Return the full delisting calendar as a DataFrame (1,359 rows)."""
+    """Return the full delisting calendar as a DataFrame."""
     return pd.read_csv(CALENDAR, dtype={'ticker': str})
 
 @lru_cache(maxsize=1)

@@ -10,10 +10,6 @@ DART receipt_dt-anchored events for 2015+ filings.
 
 Output schema follows kr_status.schema.STATUS_COLUMNS.
 
-The previous FDR ``KRX-ADMINISTRATIVE`` snapshot / consolidate flow has
-been retired: marcap.Dept is now the canonical source for 관리종목 (see
-``marcap_halt_infer.py``).
-
 Usage:
     python -m kr_status.fdr_collect --seed-historical   # KIND → historical_audit_events.parquet
     python -m kr_status.fdr_collect --check             # smoke tests

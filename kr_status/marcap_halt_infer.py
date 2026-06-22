@@ -1,35 +1,23 @@
 """Derive halt, admin, and alert events from marcap daily snapshots.
 
-This is the canonical kr_status source for three KRX classifications. The
-underlying field in marcap is published daily by KRX; FDR's
-``KRX-ADMINISTRATIVE`` snapshot and DART's 관리종목지정/해제 filings are
-both downstream views of the same classification and have been retired.
+The canonical kr_status source for three KRX classifications, all published
+daily by KRX in marcap:
 
-Three signals are emitted:
-
-- ``status='halt'`` — derived from `ChangeCode == '0'` (KRX's daily
-  no-trade flag). Works for all years 2004–2026. Note: on KONEX, this is
-  stricter than the prior `(Volume==0) AND (Open==0)` mask, which
-  over-counted illiquid no-trade days as halts; on KOSPI/KOSDAQ the two
-  approaches agree to within ~0.1%.
-- ``status='admin'`` — derived from `Dept.str.contains("관리종목")`. Dept
-  is first populated in 2011 and reliable for admin/alert from ~2014;
-  earlier marcap rows have `Dept = NaN`.
-- ``status='alert'`` — derived from `Dept.str.contains("투자주의환기")`
-  (투자주의환기종목 designation). Same coverage as admin.
+- ``status='halt'``  — `ChangeCode == '0'` (KRX's daily no-trade flag), all
+  years 2004–2026. On KONEX this is stricter than the prior
+  `(Volume==0) AND (Open==0)` mask, which over-counted illiquid no-trade days;
+  on KOSPI/KOSDAQ the two agree to within ~0.1%.
+- ``status='admin'`` — `Dept.str.contains("관리종목")`. Dept is first populated
+  in 2011 and reliable from ~2014; earlier rows have `Dept = NaN`.
+- ``status='alert'`` — `Dept.str.contains("투자주의환기")`. Same coverage as admin.
 
 Consecutive flagged business days per ticker are consolidated into single
-``(start_date, end_date)`` events. A gap of more than 7 calendar days breaks
-a run (handles weekends + Chuseok/Seollal).
-
-Output matches ``kr_status.schema.STATUS_COLUMNS`` and is written to
-``kr_status/data/marcap_halt_events.parquet`` (path kept for backward
-compatibility) so the downstream event-study consumer
-(``kr_marcap.status.build_panel``) can read it via
-``events_path("marcap_halt")``.
-
-Cross-checking with DART is a separate, sample-based calibration pass; see
-``kr_status/marcap_halt_dart_crosscheck.py``.
+``(start_date, end_date)`` events; a gap of >7 calendar days breaks a run
+(handles weekends + Chuseok/Seollal). Output matches
+``kr_status.schema.STATUS_COLUMNS``, written to
+``kr_status/data/marcap_halt_events.parquet`` and read downstream via
+``events_path("marcap_halt")``. DART cross-checking is a separate calibration
+pass (``marcap_halt_dart_crosscheck.py``).
 """
 from __future__ import annotations
 
@@ -104,8 +92,7 @@ def build(start_year: int, end_year: int) -> pd.DataFrame:
     halt_events["fetched_at"] = fetched_at
     logger.info("halt events: %d (from %d flagged rows)", len(halt_events), halt_mask.sum())
 
-    # fillna("") converts pre-2014 NaN Dept → "", which matches neither keyword.
-    # This is intentional: Dept field did not exist pre-2014 in marcap.
+    # pre-2014 NaN Dept -> "" (the field did not exist then); matches no keyword.
     admin_mask = df["Dept"].fillna("").str.contains("관리종목")
     admin_events = _consolidate(df.loc[admin_mask, ["Code", "Name", "Date"]])
     admin_events["status"] = "admin"

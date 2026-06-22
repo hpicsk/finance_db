@@ -1,8 +1,4 @@
-"""Korean equity security-type classifier.
-
-Pure functions. Consolidates the ticker-classification rules that were
-previously scattered across kr_delisted/build_delisting_calendar.py and
-the (now-retired) FnGuide-based market loader.
+"""Korean equity security-type classifier (pure functions).
 
 KOSDAQ GLOBAL is a tier of KOSDAQ (premium-listed names that meet stricter
 disclosure requirements) and is folded into 'common' under the KOSDAQ market.

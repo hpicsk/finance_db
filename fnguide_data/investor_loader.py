@@ -2,9 +2,7 @@
 
 Reads buy/sell amounts directly from ``raw/data0203/0204/0206/0207.xlsx``
 and returns a long ``(date, ticker, investor_type, buy/sell/net)`` panel
-for any date range. Replaces the historical ``investor_aggregate/`` pipeline
-(which materialized an 823 MB CSV from a legacy ``data1229/data1230`` export
-that contained aggregate-only sheets). All values are KRW (원).
+for any date range. All values are KRW (원).
 
 Foreign definition
 ------------------
