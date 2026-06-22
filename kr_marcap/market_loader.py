@@ -122,9 +122,9 @@ def load_market_data(
 
         date           datetime64[ns]
         ticker         object    ("A"-prefixed, 7 chars)
-        open           float64   (KRW, RAW — multiply by cum_factor to adjust)
-        high           float64   (KRW, RAW)
-        low            float64   (KRW, RAW)
+        open           float64   (KRW, split-adjusted)
+        high           float64   (KRW, split-adjusted)
+        low            float64   (KRW, split-adjusted)
         close          float64   (KRW, split-adjusted)
         volume         float64   (shares, scaled so close × volume is continuous)
         amount         float64   (KRW traded, RAW — adjustment not meaningful)
@@ -192,9 +192,9 @@ def load_market_data(
     out = pd.DataFrame({
         "date": df["Date"].values,
         "ticker": ("A" + df["Code"]).values,
-        "open": df["Open"].astype("float64").values,
-        "high": df["High"].astype("float64").values,
-        "low": df["Low"].astype("float64").values,
+        "open": (df["Open"].astype("float64") * df["cum_factor"]).values,
+        "high": (df["High"].astype("float64") * df["cum_factor"]).values,
+        "low": (df["Low"].astype("float64") * df["cum_factor"]).values,
         "close": (df["Close"].astype("float64") * df["cum_factor"]).values,
         "volume": (df["Volume"].astype("float64") / df["cum_factor"]).values,
         "amount": df["Amount"].astype("float64").values,

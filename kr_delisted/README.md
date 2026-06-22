@@ -34,7 +34,7 @@ series (use returns, not levels).
   carry limited-life structure that confounds survival analysis and are
   not in marcap's daily snapshot. Filter on `len(ticker) == 6`.
 - KONEX issues if your analysis targets KOSPI + KOSDAQ only — keep them
-  filterable via `market == 'KONEX'` (184 rows).
+  filterable via `market == 'KONEX'` (193 rows).
 
 **Known unrecoverable gaps:**
 - Pre-2005 preferred-share delistings. The regenerator's `start_date`

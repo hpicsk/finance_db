@@ -169,8 +169,9 @@ KRX `index.krx.co.kr` 구성종목변경내역 페이지에서 수집한 **정�
 | `out_source` | str | `log` / `synthetic` / `None` |
 
 ### index_panel_daily.parquet
-영업일별로 forward-fill된 long-format 멤버 패널. KOSPI200은 1994-06-15부터,
-KOSDAQ150은 2015-07-07부터.
+영업일별로 forward-fill된 long-format 멤버 패널. KOSPI200은 1999-01-04부터
+(이벤트 로그 시작일; 2005년 이후 매일 완전한 200 종목), KOSDAQ150은
+2015-07-07부터. 자세한 내용은 RECONSTRUCT.md §한계 참조.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|

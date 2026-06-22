@@ -26,7 +26,6 @@ import pandas as pd
 from kr_status.schema import STATUS_COLUMNS, events_path
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
-    DELISTING_CSV,
 )
 
 EVENTS_PATH   = events_path("dart_insincere")
@@ -54,17 +53,8 @@ def _save_progress(done: set[str]) -> None:
 
 
 def _working_universe() -> pd.DataFrame:
-    rows: list[dict] = []
-    panel_path = Path(__file__).resolve().parents[1] / "kr_marcap" / "cache" / "universe_panel.parquet"
-    if panel_path.exists():
-        p = pd.read_parquet(panel_path, columns=["code", "name", "kind"])
-        live = p[p["kind"] == "common"]
-        rows.extend(live.rename(columns={"code": "ticker"})[["ticker", "name"]].to_dict("records"))
-    if DELISTING_CSV.exists():
-        d = pd.read_csv(DELISTING_CSV, dtype={"ticker": str})
-        d["ticker"] = d["ticker"].str.zfill(6)
-        rows.extend(d[["ticker", "name"]].to_dict("records"))
-    return pd.DataFrame(rows).drop_duplicates("ticker").reset_index(drop=True)
+    from _universe import load_working_universe
+    return load_working_universe(include_dates=False)
 
 
 def harvest(api_key: str | None = None,

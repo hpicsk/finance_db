@@ -91,6 +91,8 @@ from pathlib import Path
 import pandas as pd
 import OpenDartReader  # the package's __init__ rebinds the module to its main class
 
+from _classify import classify, TRANSFER_REASONS, MERGER_SUBSTRINGS
+
 MERGER_REPORT_RE = re.compile(r"(?:합병|주식의\s*포괄적\s*(?:교환|이전)|주식교환)")
 SPC_NAME_RE      = re.compile(r"(투자회사|리츠|REIT|기업구조조정)")
 DISSOLUTION_REASON = "해산 사유 발생"
@@ -108,19 +110,6 @@ MANUAL_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
     ),
 }
 
-# Merger keyword set matching build_delisting_calendar.py's classifier.
-# Used here only to recompute is_genuine_keyword for each row.
-TRANSFER_REASONS = {"코스닥시장 이전상장", "유가증권시장 상장", "코스닥시장 상장"}
-MERGER_SUBSTRINGS = ("피흡수합병", "완전자회사화", "완전자회사로 편입",
-                     "스팩소멸합병", "주식교환")
-
-
-def classify_keyword(reason: str) -> str:
-    if reason in TRANSFER_REASONS:
-        return "N"
-    if any(k in reason for k in MERGER_SUBSTRINGS):
-        return "N"
-    return "Y"
 
 
 def dart_had_merger_filing(dart, ticker: str, delisting_date: str,
@@ -170,9 +159,7 @@ def build_overrides(kind_csv: Path, dart,
     # ---- Override 3 (rule-based, fast) ----
     holdco_mask = df["reason"] == HOLDCO_REASON
     for _, row in df[holdco_mask].iterrows():
-        kw = classify_keyword(row["reason"])
-        if kw == "Y":
-            continue   # already matches
+        kw = classify(row["reason"])
         overrides.append({
             "ticker": row["ticker"],
             "delisting_date": row["delisting_date"],
@@ -193,7 +180,7 @@ def build_overrides(kind_csv: Path, dart,
                   file=sys.stderr)
             continue
         reason = row["reason"] if isinstance(row, pd.Series) else row.iloc[0]["reason"]
-        kw = classify_keyword(reason)
+        kw = classify(reason)
         if kw == new_val:
             continue   # already correct, no override needed
         overrides.append({
@@ -214,7 +201,7 @@ def build_overrides(kind_csv: Path, dart,
 
     n_merger = n_spc = 0
     for i, (_, row) in enumerate(diss.iterrows(), 1):
-        kw = classify_keyword(row["reason"])   # always "Y" for 해산 사유 발생
+        kw = classify(row["reason"])   # always "Y" for 해산 사유 발생
         had, evidence = dart_had_merger_filing(dart, row["ticker"], row["delisting_date"])
         if had:
             n_merger += 1

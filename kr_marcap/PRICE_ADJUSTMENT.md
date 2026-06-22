@@ -91,18 +91,21 @@ ratio[t] = Stocks[t-1] / Stocks[t]
 
 ## 3. `gross` overrides — the complete list
 
-`gross` is set to `1.0` (no compounding) when **any** of these holds:
+`gross` is overridden (the compounded `ChangesRatio` is not used) when **any** of
+these holds — set to `1.0` (no compounding) for the first six, and to the **traded
+close move** `1 + raw_ret` for the last:
 
-| override | condition | rationale |
-|---|---|---|
-| first row | `ChangesRatio` is NaN | no prior day |
-| garbage | `gross ≤ 0` | non-positive return is not meaningful |
-| entity break | `is_break` (§2) | the move spans two different entities; pre-break history is dropped anyway |
-| no-trade ₩0 | `Close ≤ 0` | a ₩0 no-trade row carries no price |
-| **₩1 sentinel** | `prev_close == 1 & prev_volume == 0` | §4 |
-| **phantom CR** | `volume == 0 & close carried flat & \|CR\| > 1 & no share change` | §5 |
+| override | condition | gross → | rationale |
+|---|---|---|---|
+| first row | `ChangesRatio` is NaN | `1.0` | no prior day |
+| garbage | `gross ≤ 0` | `1.0` | non-positive return is not meaningful |
+| entity break | `is_break` (§2) | `1.0` | the move spans two different entities; pre-break history is dropped anyway |
+| no-trade ₩0 | `Close ≤ 0` | `1.0` | a ₩0 no-trade row carries no price |
+| **₩1 sentinel** | `prev_close == 1 & prev_volume == 0` | `1.0` | §4 |
+| **phantom CR** | `volume == 0 & close carried flat & \|CR\| > 1 & no share change` | `1.0` | §5 |
+| **거래재개 reset** | in-band modest share change + resume-day volume explosion + CR differs from the traded move | `1 + raw_ret` | §5b |
 
-The last two are the silent fabrications this diagnosis found. The first four
+The last three are the silent fabrications this diagnosis found. The first four
 predate it.
 
 ---
@@ -175,6 +178,56 @@ is not silently skewed.
 **Why it is zero-regression.** The guard fires only when the close is *flat*, so
 it cannot touch any real-volume return or the much larger class of correct
 no-trade reference resets in §6.
+
+---
+
+## 5b. Failure mode 3 — the 거래재개 administrative 기준가 reset (232830, 448900)
+
+**Symptom.** Surfaced by extending the FnGuide cross-check below the `max_abs > 1`
+splice band: a class of **currently-listed common** names whose adjusted returns
+disagreed with FnGuide by **10–93 %** on a single post-2015 day — and whose entire
+pre-event history was mis-scaled as a result.
+
+**Mechanism.** On a **거래재개** (resume after a suspension) KRX may compute
+`ChangesRatio` against an administrative **evaluation reference price**, not the
+corporate-action 기준가. So the CR diverges from the actual traded close move, while
+the share count moved only modestly:
+
+```
+232830 아이티센피엔에스  2023-06-29:  Close 7,570 → 9,150 (traded +21 %),  ChangesRatio = +205.00,  Stocks ×1.21
+448900 한국피아이엠      2025-04-04:  Close 19,590 → 16,100 (traded −18 %), ChangesRatio = +43.75,  Stocks ×1.18
+```
+
+The modest `Stocks` change keeps the ratio inside `[0.1, 10]`, so the §2
+entity-break test never fires; the day follows no >365-day gap, so the gap test
+never fires; and the day *traded*, so none of the §3–§5 no-trade overrides apply.
+Compounding `gross = 1 + 205/100 = 3.05` instead of the +21 % real move injects a
+**×2.52 factor into all pre-2023-06-29 history** for 232830 (pre-event prices
+scaled to ×0.40 of FnGuide's).
+
+**Fix.** Trust the **traded close move** on these days: `gross = 1 + raw_ret`. The
+signature is a **resume-day volume explosion** (`volume / trailing-5d mean >
+_RESET_VOL_SPIKE = 30`) + an **in-band modest share change**
+(`_RESET_SHARE_MIN < |ratio − 1| < _RESET_SHARE_MAX`) + a CR that **materially
+differs** from the traded move (`|gross_CR/(1+raw_ret) − 1| > _RESET_DIVERGE`).
+
+**Why the volume explosion is the discriminator.** A naive "CR ≠ traded move →
+distrust CR" would destroy genuine corporate actions (Samsung's split *is* a
+CR ≠ close/prev day). The clean separator is that genuine same-day splits / free
+issues / 감자 do **not** trade on a 30× volume spike (and their CR is correct
+anyway), whereas a 거래재개 does. Samsung's 50:1 (`ratio` ×50, out of band) and
+entity breaks (`is_break`) are excluded outright.
+
+**Calibrated and verified against FnGuide ground truth (2026-06).** On **68 / 68**
+currently-listed-common candidate days, FnGuide's adjusted return equals the raw
+traded move *exactly* — i.e. FnGuide applies no factor on these days, so the
+override matches it every time, with **zero** cases where FnGuide instead applied a
+real factor. After the fix the post-2015 FnGuide disagreement bands collapse:
+`> 0.3`: **12 → 0**; `0.1–0.3`: **35 → 1**; names agreeing to <1 % on every day:
+**94.1 % → 96.5 %**. No name's agreement got worse; the splice count (3 full-
+history / 0 post-2015) and Samsung's split are unchanged. (The 2 residuals are not
+resets: 089590 제주항공 is a 2015-11-09 IPO-week artifact, 219420 a 0.07
+sub-threshold case.)
 
 ---
 
@@ -271,6 +324,9 @@ Key assertions confirmed after the fixes:
 - 267060 reference reset unchanged: `adj_close 3754.4 → 3754.4` (no phantom).
 - `phantom_cr` fires on exactly **77 rows / 75 tickers**, all pre-2004.
 - Samsung 005930 50:1 split still continuous (`python kr_marcap/adjust.py`).
+- `reset_cr` (§5b): 232830 2023-06-29 `adj_close` now flows 7,570 → 9,150 (the
+  +21 % traded move) with `cum_factor ≈ 1.0` — no ×2.52 pre-event step; FnGuide
+  post-2015 disagreement `> 0.3` band **12 → 0**, no name worse.
 
 ---
 
@@ -279,8 +335,12 @@ Key assertions confirmed after the fixes:
 - `sentinel_prev` guard — neutralises ₩1 ticker-reuse sentinel resumes (§4).
 - `phantom_cr` guard — neutralises carried-flat phantom-`ChangesRatio` no-trade
   days (§5).
-- Both extend the same principle already behind the `is_break` / `Close ≤ 0`
-  overrides: **only compound a return that actually traded.**
+- `reset_cr` guard — on a 거래재개 administrative-reference reset, uses the traded
+  close move instead of the divergent CR (§5b); FnGuide-calibrated, 68/68 exact.
+- All extend one principle: **the realized return is the one that traded** — the
+  no-trade cases compound nothing (`gross = 1`); the 거래재개 reset, which *did*
+  trade, compounds the traded move (`gross = 1 + raw_ret`) rather than the CR
+  measured against an administrative reference.
 
 No research-impacting fabrication remains in `load_adjusted`. The residual large
 returns are real market events; the only genuinely defective class (phantom CR)

@@ -22,8 +22,8 @@ is_genuine classifier (keyword on KIND reason; proxy rows are always Y):
                              / 스팩소멸합병 / 주식교환
     Y — everything else (bankruptcies, audit refusals, voluntary delistings,
         SPAC liquidations, capital impairment, etc.)
-    These match README.md §"Methodology notes" counts: ~100 transfers,
-    ~170 merger/absorptions, ~948 genuine delistings in the 6-digit universe.
+    These match README.md §"Methodology notes" counts: ~107 transfers,
+    ~186 merger/absorptions, 1,004 genuine delistings in the 6-digit universe.
 
 Foreign-issuer ticker resolution:
     Most KIND rows expose the 6-digit KRX code via the JS handler
@@ -55,6 +55,8 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from _classify import classify, TRANSFER_REASONS, MERGER_SUBSTRINGS
+
 KIND_BASE        = "https://kind.krx.co.kr"
 KIND_FORM_URL    = f"{KIND_BASE}/investwarn/delcompany.do?method=searchDelCompanyMain"
 KIND_QUERY_URL   = f"{KIND_BASE}/investwarn/delcompany.do"
@@ -64,18 +66,6 @@ PROXY_REASON     = "(not in KIND — proxy date from last-CSV-date)"
 OVERRIDES_CSV    = Path(__file__).parent / "is_genuine_overrides.csv"
 
 MARKET_ICON = {"yu": "KOSPI", "ko": "KOSDAQ", "konex": "KONEX"}
-
-TRANSFER_REASONS = {"코스닥시장 이전상장", "유가증권시장 상장", "코스닥시장 상장"}
-MERGER_SUBSTRINGS = ("피흡수합병", "완전자회사화", "완전자회사로 편입",
-                     "스팩소멸합병", "주식교환")
-
-
-def classify(reason: str) -> str:
-    if reason in TRANSFER_REASONS:
-        return "N"
-    if any(k in reason for k in MERGER_SUBSTRINGS):
-        return "N"
-    return "Y"
 
 
 def make_session() -> requests.Session:
@@ -227,9 +217,7 @@ def scan_marcap_proxies(kind_tickers: set[str],
     for code, (date, name, market) in last_seen.items():
         if not (len(code) == 6 and code.isdigit()):
             continue
-        if code[-1] == "0":         # main shares come from KIND
-            continue
-        if code in kind_tickers:    # 9xxxxx foreign issuers (also in KIND)
+        if code[-1] == "0":         # main shares (and all 9xxxxx foreign issuers) come from KIND
             continue
         if date < start:
             continue

@@ -10,10 +10,13 @@ event panel (관리종목 / 감사의견 비적정 / 불성실공시 / 거래정
     cfg = TradableConfig(exclude_audit_qualified=False)
     tradable_universe('2015-06-15', config=cfg)
 
-All four status exclusions read from whatever ``*_events.parquet`` kr_status
-has produced and `kr_marcap.status.build_panel` has unified — currently
-admin + alert (marcap.Dept), audit_qualified (dart_audit + historical seed),
-insincere (dart_insincere), and halt (marcap ChangeCode).  Coverage caveat:
+The four status exclusions read from whatever ``*_events.parquet`` kr_status
+has produced and `kr_marcap.status.build_panel` has unified — admin
+(marcap.Dept), audit_qualified (dart_audit + historical seed), insincere
+(dart_insincere), and halt (marcap ChangeCode).  The panel also carries
+``alert`` (투자주의환기, marcap.Dept), but it is informational only:
+``tradable_universe`` does not exclude on it (no ``exclude_alert`` knob).
+Coverage caveat:
 halt / admin / alert are marcap-derived and so extend only to the latest
 marcap year's right edge (2026-02-20 as of this build); past that they
 contribute nothing until marcap and the ``marcap_halt_infer`` collector are
@@ -73,26 +76,18 @@ def load_events(path: str | None = None) -> pd.DataFrame:
 
 def _active_tickers(events: pd.DataFrame, status: str, date: pd.Timestamp,
                     lookback_months: int = 0) -> set[str]:
-    """Return tickers whose `status` event window covers `date`.
+    """Return tickers whose `status` event window covers `date` or ended within lookback.
 
-    A row covers the date when ``start_date - lookback <= date <= end_date``
-    (NaT end_date is treated as +∞, meaning "still active as of latest fetch").
+    A row covers the date when it overlaps the window [start_floor, date] where
+    start_floor = date - lookback_months. NaT end_date is treated as +∞.
     """
     sub = events[events["status"] == status]
     if sub.empty:
         return set()
     start_floor = date - pd.DateOffset(months=lookback_months) if lookback_months else date
     end_filled = sub["end_date"].fillna(pd.Timestamp.max)
-    mask = (sub["start_date"] <= start_floor) & (end_filled >= date)
-    # Without lookback: standard interval test against `date`.
-    # With lookback>0: a row also counts if its start_date is within
-    # `lookback_months` before `date`, even if end_date has passed.
-    if lookback_months:
-        recent_past = (
-            (sub["start_date"] >= start_floor)
-            & (sub["start_date"] <= date)
-        )
-        mask = mask | recent_past
+    # Event overlaps [start_floor, date] iff start_date <= date AND end_date >= start_floor
+    mask = (sub["start_date"] <= date) & (end_filled >= start_floor)
     return set(sub.loc[mask, "ticker"].tolist())
 
 

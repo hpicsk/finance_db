@@ -104,6 +104,8 @@ def build(start_year: int, end_year: int) -> pd.DataFrame:
     halt_events["fetched_at"] = fetched_at
     logger.info("halt events: %d (from %d flagged rows)", len(halt_events), halt_mask.sum())
 
+    # fillna("") converts pre-2014 NaN Dept → "", which matches neither keyword.
+    # This is intentional: Dept field did not exist pre-2014 in marcap.
     admin_mask = df["Dept"].fillna("").str.contains("관리종목")
     admin_events = _consolidate(df.loc[admin_mask, ["Code", "Name", "Date"]])
     admin_events["status"] = "admin"

@@ -1,7 +1,9 @@
 # Delisted-ticker coverage in fnguide_data
 
-**Verified 2026-05-28.** The Excel sheets in this directory
-(`raw/data0203`–`data0208`, `raw/data2_0203`) are **effectively
+**Verified 2026-05-28** (investor-flow + IFRS-C files);
+**`short_sale_lending.xlsx` verified 2026-06-17.** The Excel sheets in
+this directory (`raw/data0203`–`data0208`, `raw/data2_0203`,
+`raw/short_sale_lending.xlsx`) are **effectively
 survivorship-bias-free for KOSPI/KOSDAQ common stocks**. With the
 `kr_marcap.classify` common-stock filter (excludes ETFs, SPACs,
 preferred, KONEX, REITs, ship/specialty funds) applied to the marcap
@@ -24,6 +26,14 @@ universe:
   감사의견 거절) is an ordinary FnGuide coverage hole, not a
   trust-like issuer. Older missing names are FnGuide's master-table
   purge, documented in [Caveat 2](#2-older-delisting-purge-60-common-names-missing-from-the-investor-flow) below.
+- **`short_sale_lending.xlsx` (short-selling / lending / free-float):**
+  **615 / 619 (99.4 %)** of genuine common KOSPI/KOSDAQ delistings have
+  a column — higher than the investor-flow batch because this export
+  used a longer FnGuide retention window (≥99 % in every year-bucket
+  back to 2005, vs the investor-flow batch's gradual erosion). Of the 4
+  misses, `152550` 한국ANKOR유전 is the resource trust already in
+  `STRICT_COMMON_EXCLUDE`. Universe: 1,284 KOSPI + 2,773 KOSDAQ = 4,041
+  tickers, split into per-market sheets.
 
 For most analyses that stay within these files, you do **not** need to
 merge in an external delisted-data source.
@@ -47,6 +57,9 @@ filter.**
 | Investor-category daily flow | `fnguide_data/raw/data0203`–`data0208.xlsx` | 91.0 % (98.2 % since 2021) |
 | Annual consolidated financials (IFRS-C) | `fnguide_data/raw/data2_0203.xlsx` | 91.0 % (98.2 % since 2021) |
 | Monthly market cap (legacy) | `fnguide_data/raw/data2_0203.xlsx` (시가총액 sheet) | 91.0 % (98.2 % since 2021) |
+| Daily short-sale balance / turnover | `fnguide_data/raw/short_sale_lending.xlsx` | 99.4 % (99.1 % since 2021) |
+| Daily securities-lending balance | `fnguide_data/raw/short_sale_lending.xlsx` | 99.4 % (99.1 % since 2021) |
+| Daily free-float ratio | `fnguide_data/raw/short_sale_lending.xlsx` | 99.4 % (99.1 % since 2021) |
 
 Join key: `kr_delisted` 6-digit ticker ↔ `"A" + ticker` in fnguide
 sheets (row 9 of the 14-row header).

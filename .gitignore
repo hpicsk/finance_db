@@ -22,8 +22,13 @@ fnguide_data/*.xlsx
 fnguide_data/currently_listed/*.xlsx
 fnguide_data/raw/*.xlsx
 
-# Backup zips (찬우쓰.zip, KOSPI 주가.zip)
+# Root-level FnGuide validation corpus (0_KOSPI/0_KOSDAQ 주가.xlsx, ground-truth
+# for kr_marcap price adjustment — kept locally, far over GitHub's 100 MB limit)
+/*.xlsx
+
+# Backup zips
 fnguide_data/*.zip
+/*.zip
 
 # marcap is an external clone of github.com/FinanceData/marcap (kept locally,
 # not redistributed via this repo). The user-authored coverage note that

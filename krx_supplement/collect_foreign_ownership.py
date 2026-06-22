@@ -34,7 +34,7 @@ from pathlib import Path
 import pandas as pd
 from pykrx.website.krx.market.core import 외국인보유량_전종목
 
-from krx_utils import DEFAULT_DELAY, setup_logging
+from krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging
 
 logger = setup_logging()
 
@@ -42,7 +42,6 @@ OUTPUT_DIR = Path(__file__).parent / "output" / "foreign_ownership_daily"
 DEFAULT_MARKETS = ("STK", "KSQ", "KNX")
 KONEX_START = pd.Timestamp("2013-07-01")
 DEFAULT_START = "20041001"
-DEFAULT_END   = "20260521"
 
 _RAW_TO_OUT = {
     "ISU_SRT_CD":        "ticker",

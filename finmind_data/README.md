@@ -98,6 +98,20 @@ merged in from `delisted_universe.parquet`. Coverage:
   `taiwan_stock_info` output, the remaining 42 were added by
   `build_universe.py` from `delisted_universe.parquet`.
 
+**Boundary caveat — the overlay stops at 2014.** `build_universe.py`
+gates the `delisted_universe.parquet` re-add to `date < 2015-01-01` (at
+build time the live `taiwan_stock_info` still returned post-2014
+delistings, so no re-add was needed). The 2015+ completeness therefore
+relies on **FinMind's live retention**, not on an explicit overlay
+safety net. A genuine common stock delisted in 2015–2017 that FinMind
+later purged *and* that `delisted_universe.parquet` failed to record
+would be silently missing. Verified not to occur: every post-2014
+4-digit absentee is an ETF or DR (the 9 above), so no genuine common is
+lost. To harden the guarantee, widen the gate past 2014 **and** add an
+instrument-type screen — `delisted_universe.parquet` carries no
+`industry_category`, so a naive widening would wrongly re-add those
+ETFs/DRs as `type=NaN` commons.
+
 Per-stock parquet files for delisted tickers end on their delisting date,
 so you should filter by `date` rather than assume uniform coverage.
 

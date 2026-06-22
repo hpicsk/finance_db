@@ -1,6 +1,6 @@
 """Merge per-stock cap_red parquets into a single capital_reduction.parquet.
 
-cap_red/ contains 2,111 per-stock files but capital reductions are sparse:
+cap_red/ contains 2,154 per-stock files but capital reductions are sparse:
 most stocks have 0 events. Empty files are written with 0 columns; filter
 them out before concat. Output sorted by date.
 """

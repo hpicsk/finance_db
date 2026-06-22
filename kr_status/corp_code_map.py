@@ -97,7 +97,7 @@ def get_corp_code(dart, ticker: str, name: str | None = None) -> str | None:
     cache[ticker] = code or None
     if not code:
         _misses.add((ticker, name or ""))
-    return code or None
+    return code
 
 
 def flush_misses() -> Path | None:

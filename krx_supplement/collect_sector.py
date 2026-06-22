@@ -91,7 +91,7 @@ def fetch_sector_snapshot(date: str) -> pd.DataFrame:
 
 def collect_sector_mapping(
     start: str = "20150101",
-    end:   str = "20260320",
+    end:   str = DEFAULT_END,
     freq:  str = "monthly",
     output_path: Path = OUTPUT_DIR / "sector_mapping.parquet",
     resume: bool = True,

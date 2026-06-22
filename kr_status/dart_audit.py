@@ -35,7 +35,6 @@ import requests
 from kr_status.schema import STATUS_COLUMNS, events_path
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
-    DELISTING_CSV,
 )
 
 OPINIONS_PATH = DATA_DIR / "dart_audit_opinions.parquet"
@@ -58,29 +57,8 @@ QUALIFIED_OPINIONS = {"한정", "부적정", "의견거절"}
 
 
 def _working_universe() -> pd.DataFrame:
-    rows: list[dict] = []
-    panel_path = Path(__file__).resolve().parents[1] / "kr_marcap" / "cache" / "universe_panel.parquet"
-    if panel_path.exists():
-        p = pd.read_parquet(panel_path, columns=["code", "name", "kind",
-                                                  "first_date", "last_date"])
-        live = p[p["kind"] == "common"]
-        rows.extend(
-            live.rename(columns={"code": "ticker"})[
-                ["ticker", "name", "first_date", "last_date"]
-            ].to_dict("records")
-        )
-    if DELISTING_CSV.exists():
-        d = pd.read_csv(DELISTING_CSV, dtype={"ticker": str})
-        d["ticker"] = d["ticker"].str.zfill(6)
-        d["delisting_date"] = pd.to_datetime(d["delisting_date"])
-        for _, r in d.iterrows():
-            rows.append({
-                "ticker":     r["ticker"],
-                "name":       r["name"],
-                "first_date": pd.NaT,
-                "last_date":  r["delisting_date"],
-            })
-    return pd.DataFrame(rows).drop_duplicates("ticker").reset_index(drop=True)
+    from _universe import load_working_universe
+    return load_working_universe(include_dates=True)
 
 
 def _years_for_ticker(row: dict, year_from: int, year_to: int) -> list[int]:
@@ -224,7 +202,10 @@ def harvest(api_key: str | None = None,
             opinion_text = str(df.iloc[0].get("adt_opinion", "")
                                or df.iloc[0].get("opinion", "")
                                or "")
-            receipt_dt = df.iloc[0].get("rcept_dt") or df.iloc[0].get("rceipt_dt")
+            receipt_dt = df.iloc[0].get("rcept_dt")
+            if receipt_dt is None:
+                logger.warning("rcept_dt missing for ticker %s year %s, skipping", ticker, y)
+                continue
             new_rows.append({
                 "ticker":      ticker,
                 "bsns_year":   y,
@@ -272,8 +253,10 @@ def build_events(opinions: pd.DataFrame) -> pd.DataFrame:
     full["opinion_code"] = full["raw"].map(_classify)
     full["receipt_dt"] = pd.to_datetime(full["receipt_dt"])
     full = full.sort_values(["ticker", "receipt_dt", "bsns_year"])
-    full["next_receipt"] = full.groupby("ticker")["receipt_dt"].shift(-1)
     quals = full[full["opinion_code"].isin(QUALIFIED_OPINIONS)].copy()
+    # Compute next_receipt on qualified-only rows so each qualified opinion's window
+    # ends at the next qualified opinion (not any intervening non-qualified filing).
+    quals["next_receipt"] = quals.groupby("ticker")["receipt_dt"].shift(-1)
     # Bound the open (most-recent) qualified opinion to one annual cycle so it
     # doesn't read as an indefinite exclusion (NaT → +∞) downstream.
     quals["end_date"] = quals["next_receipt"].fillna(

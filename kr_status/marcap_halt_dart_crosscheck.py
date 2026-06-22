@@ -182,7 +182,10 @@ def main() -> None:
     n_q_conf = queryable.confirmed.sum()
     print(f"\n=== marcap halt → DART cross-check ({n} samples, seed={args.seed}) ===")
     print(f"queryable (corp_code in cache):  {n_q} / {n}")
-    print(f"DART-substantiated (cause filings in ±14d window):  {n_q_conf} / {n_q}  ({n_q_conf/n_q:.1%})")
+    if n_q > 0:
+        print(f"DART-substantiated (cause filings in ±14d window):  {n_q_conf} / {n_q}  ({n_q_conf/n_q:.1%})")
+    else:
+        print(f"DART-substantiated (cause filings in ±14d window):  0 / 0  (N/A)")
     print()
     print("By halt duration bucket (queryable only):")
     queryable = queryable.copy()

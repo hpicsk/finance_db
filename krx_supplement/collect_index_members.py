@@ -80,7 +80,6 @@ def fetch_index_members(
     df = df.rename(columns={
         "ISU_SRT_CD": "ticker",
         "ISU_ABBRV":  "name",
-        "ISU_NM":     "name",
     })
 
     if "ticker" not in df.columns:
@@ -99,7 +98,7 @@ def fetch_index_members(
 
 def collect_index_members(
     start: str = "19940615",
-    end:   str = "20260320",
+    end:   str = DEFAULT_END,
     freq:  str = "monthly",
     targets: Dict[str, Tuple[str, str]] = None,
     output_path: Path = OUTPUT_DIR / "index_members.parquet",
@@ -128,8 +127,10 @@ def collect_index_members(
     save_every = 30
     total    = len(dates) * len(targets)
     count    = 0
+    date_count = 0
 
     for date in dates:
+        date_count += 1
         for idx_name, (group_id, ind_idx2) in targets.items():
             count += 1
             if (date, idx_name) in done_keys:
@@ -146,7 +147,7 @@ def collect_index_members(
 
             time.sleep(delay)
 
-        if count % (save_every * len(targets)) < len(targets) and frames:
+        if date_count % save_every == 0 and frames:
             pd.concat(frames, ignore_index=True).to_parquet(output_path, index=False)
             logger.info("  [체크포인트 저장]")
 

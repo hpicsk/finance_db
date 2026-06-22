@@ -2,7 +2,7 @@
 
 ## Overview
 
-- **7 xlsx files** in `raw/`, ~5.6 GB total
+- **8 xlsx files** in `raw/`, ~5.7 GB total
 - **Source:** FnGuide DataGuide (Korean financial data platform)
 - **Layout:** Raw vendor exports live under `raw/`. Two flat helper
   modules (`fnguide_io.py`, `investor_loader.py`) sit at the directory
@@ -20,7 +20,7 @@
   series for single-ticker work. For point-in-time membership, use
   `kr_marcap.universe(date, kind='common')`.
 - **Survivorship bias — not a problem for the files kept here.** All
-  seven xlsx files were exported with DataGuide's **"all codes"
+  eight xlsx files were exported with DataGuide's **"all codes"
   (전체 / 상폐 포함)** filter and are **effectively
   survivorship-bias-free for KOSPI/KOSDAQ common stocks** — paired with
   `kr_marcap.universe(date, 'common', strict=True)`, the live universe
@@ -48,6 +48,9 @@
   - **Annual financial statements + monthly market cap** (1 file:
     data2\_0203) — balance sheet, income statement items (IFRS
     consolidated), 1999--2025
+  - **Short-selling / securities-lending / free-float** (1 file:
+    short_sale_lending) — daily short-sale balance & turnover, lending
+    balance, and free-float ratio, split KOSPI/KOSDAQ, 2002--2026
 
 ## Data Summary
 
@@ -55,9 +58,10 @@
 |--------|-------|-------------|----------|
 | **Investor Trading (12 types, buy+sell, volume+amount)** | data0203--data0208 | Daily | ~3,902 stocks, 2000--2026 |
 | **Financials (consolidated)** | data2_0203 | Annual + Monthly (시가총액) | IFRS(C): balance sheet, operating profit, total assets, market cap |
+| **Short-selling / lending / free-float** | short_sale_lending | Daily | ~4,041 stocks (KOSPI+KOSDAQ split), 2002--2026 |
 
-**NOT available in this dataset:** OHLCV / market cap / shares / short
-selling (use `kr_marcap/` and `kr_delisted/` instead), main-entity
+**NOT available in this dataset:** OHLCV / market cap / shares (use
+`kr_marcap/` and `kr_delisted/` instead), main-entity
 (IFRS-M) financials, L2 order book / tick data, bid-ask spread,
 analyst coverage / consensus estimates, CB/BW/mezzanine event
 calendar, index composition & rebalancing events, tick size /
@@ -125,6 +129,18 @@ inline parsing using the documented 14-row layout.**
   net columns. Design rationale and an integrity report (vs the
   legacy `qf_next/investor_data/` data1229/data1230 export) live in
   `docs/investor/`.
+- `subinvestor_loader.py` —
+  `load_subinvestor_flow(start, end, *, raw_dir, subinvestor_types=<all 8>, cache_dir=None)`
+  returns a long `(date, ticker, subinvestor_type, buy_value, sell_value,
+  net_buy_value)` panel (KRW) decomposing the 기관계 aggregate into its 8 KRX
+  sub-types (pension/연기금등, insurance/보험, investment_trust/투신,
+  pe_funds/사모펀드, financial_inv/금융투자, other_financial/기타금융,
+  bank/은행, government/국가) from `raw/data0204/0205/0206/0207/0208.xlsx`.
+  `SUBINVESTOR_SOURCES` is the canonical 8-type → (file, sheet) map; sibling
+  `to_wide_net_sub(flow)` pivots to one net column per sub-type. A missing/
+  renamed sheet raises (fail loud); consumers requiring all 8 (e.g. qf_paper's
+  Capacity-Bound = pension + insurance) should error on an absent type rather
+  than zero-fill.
 
 For OHLCV / market cap / listed shares, see `kr_marcap` in this repo —
 `kr_marcap.market_loader.load_market_data` (`date, ticker, open, high,
@@ -342,6 +358,40 @@ df = df.set_index("date")
 - **Date range:** 1999-12-31 to 2025-12-31 (annual; trailing 2026-02-02 current-snapshot row); 1999-01-31 to 2026-01-31 (monthly; trailing 2026-02-02 current-snapshot row)
 - **Kind:** NFS-IFRS(C) for financial statements, SSC for market cap
 - **Notes:** This is the only file with non-daily data. Annual dates are fiscal year-end dates (typically 12-31). Market cap is in millions of KRW. Ignore Sheet13 (empty). For daily market cap on currently-listed names, prefer `kr_marcap.market_loader.load_market_data` (column `market_cap`).
+
+---
+
+### 8. `raw/short_sale_lending.xlsx` (876 MB)
+
+**Content:** Short-selling, securities-lending, and free-float series.
+This is the **only** short-selling/lending source in the repo — the
+investor-flow and financials files carry none of it.
+
+| Sheet (per KOSPI + KOSDAQ) | English | Item Code | Unit | First obs |
+|---|---|---|---|---|
+| 대차잔고 | Securities-lending balance | S410100400 | Shares | 2002-01-04 |
+| 차입공매도금액 | Covered short-sale turnover (daily) | S410000920 | KRW | 2008-01-03 |
+| 공매도잔고금액 | Short-sale balance (value) | S410000994 | mn KRW | 2008-08-07 |
+| 공매도잔고 | Short-sale balance (shares) | S410000992 | Shares | 2016-06-30 |
+| 유동주식비율 | Free-float ratio | S420005150 | % | 2003-01-02 |
+
+- **Sheets:** 10 — each metric has a **separate KOSPI and KOSDAQ sheet**.
+  Unlike the investor-flow files, tickers are NOT pooled across markets:
+  read the market sheet you need, or concatenate both.
+- **Tickers:** 1,284 KOSPI + 2,773 KOSDAQ = 4,041 unique
+- **Frequency:** Daily
+- **Kind:** SSC
+- **Date axis:** padded back to a 1979-12-24 placeholder; real data
+  begins per-metric as in the table above and runs to 2026-06-10/12.
+- **Notes:** Short-sale *balance in shares* begins 2016-06-30, matching
+  KRX's public short-sale-balance disclosure start; the value series
+  (백만원) carries earlier dates. Tabs are named `KOSPI_<metric>` /
+  `KOSDAQ_<metric>` (e.g. `KOSDAQ_대차잔고`); the vendor's original
+  full-width `ＫＯＳＰＩ＿` / `ＫＯＳＤＡＱ＿` prefixes were normalized to
+  plain ASCII. Row 13 (Item Name) and row 11 (Kind) remain authoritative.
+  Survivorship-bias-free: 99.4% of genuine common KOSPI/KOSDAQ
+  delistings present (better than the investor-flow files) — see
+  `DELISTED_COVERAGE.md`.
 
 ---
 

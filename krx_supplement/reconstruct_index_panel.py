@@ -168,7 +168,7 @@ def _process_snap(state, in_date, in_source, in_bool, d, t,
                           "name": name_map.get(t)})
         return "OUT", None, None
     if state is None:
-        return "OUT", in_date, in_source
+        return "OUT", None, None
     return state, in_date, in_source  # OUT consistent
 
 

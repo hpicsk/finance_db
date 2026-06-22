@@ -30,10 +30,14 @@ def load_fnguide_sheet(
     If ``return_names`` is True, also return a ``{ticker: name}`` mapping
     drawn from row 10 of the metadata header.
     """
-    meta = pd.read_excel(filepath, sheet_name=sheet_name, header=None, nrows=14)
+    # engine="calamine" (python-calamine, Rust) — substantially faster than the
+    # default openpyxl reader on these large DataGuide exports.
+    meta = pd.read_excel(filepath, sheet_name=sheet_name, header=None, nrows=14,
+                         engine="calamine")
     tickers = list(meta.iloc[8, 1:].values)
 
-    df = pd.read_excel(filepath, sheet_name=sheet_name, header=None, skiprows=14)
+    df = pd.read_excel(filepath, sheet_name=sheet_name, header=None, skiprows=14,
+                       engine="calamine")
     df.columns = ['date'] + tickers
     df['date'] = pd.to_datetime(df['date'])
     df = df.set_index('date').sort_index()

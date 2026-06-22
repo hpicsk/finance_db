@@ -27,6 +27,21 @@ gap-crossing move is uncorroborated — a real share jump with no inverse price
 move, or a >300% price-regime leap (reuse off a delisting-floor ₩-sentinel).
 E.g. 지누스 (013890), 하이트진로 (000080), 우리은행 (000030).
 
+거래재개 administrative-reset override
+------------------------------------
+On a 거래재개 (resume after a suspension) KRX sometimes measures ChangesRatio
+against an evaluation reference price rather than the corporate-action 기준가, so
+the CR diverges from the actual traded close move (e.g. 232830 2023-06-29: CR
++205% while the price traded +21%). The share count is only modestly changed, so
+this slips past both the entity-break test and the gap test, and compounding the
+CR fabricates a return and mis-scales all pre-event history. These are caught by
+a resume-day volume explosion + an in-band modest share change + a CR that
+differs materially from the traded move (see the ``_RESET_*`` constants), and the
+day's gross is set to the traded close move instead — matching FnGuide 수정주가,
+which applies no factor on such days (68/68 cross-checked currently-listed-common
+cases agree exactly). Genuine same-day splits/free-issues/감자 do not spike 30x
+and are CR-correct anyway, so the override never touches them.
+
 Known limitation
 ----------------
 ChangesRatio is rounded to 0.01%, so compounded price *levels* carry a tiny
@@ -90,6 +105,19 @@ _GAP_DAYS = 365
 _GAP_SHARE_LOW = 0.67
 _GAP_SHARE_HIGH = 1.5
 _GAP_RESUME_RET = 3.0
+# A 거래재개 (trading-resume) administrative 기준가 reset: on a resume after a
+# suspension KRX may measure ChangesRatio against an evaluation reference price,
+# not the corporate-action 기준가, so the CR diverges from BOTH the traded close
+# move and the (modest) share change. Compounding it fabricates a return and
+# mis-scales pre-event history. Detected by a resume-day volume explosion + an
+# in-band MODEST share change + a CR whose implied factor is unjustified by that
+# share change; FnGuide 수정주가 applies no factor here (its adj return == the
+# traded close move), so we trust the traded move. (Calibrated 2026-06 against
+# the FnGuide cross-check; see PRICE_ADJUSTMENT.md.)
+_RESET_SHARE_MIN = 0.005   # a real share change that day (not rounding noise)
+_RESET_SHARE_MAX = 0.5     # ...but modest — excludes splits/감자 (price move == action artifact)
+_RESET_VOL_SPIKE = 30.0    # resume-day volume vs trailing-5d mean (거래재개 signature)
+_RESET_DIVERGE = 0.05      # CR must differ from the traded move (else the override is a no-op)
 
 
 def _load_all_marcap(marcap_dir: Path) -> pd.DataFrame:
@@ -142,9 +170,9 @@ def build_adjustment_factors(
     df['raw_ret'] = df['Close'] / close_prev - 1.0
 
     # Anomaly capture: missing/zero Stocks OR ratio outside [low, high].
-    missing = df['stocks_prev'].notna() & (
-        (df['Stocks'] <= 0) | (df['stocks_prev'] <= 0)
-    )
+    # Note: stocks_prev is NaN on first row of each ticker; flagging current=0 there
+    # is still valid (anomalous), but flagging prior=0 requires notna() guard.
+    missing = (df['Stocks'] <= 0) | (df['stocks_prev'].notna() & (df['stocks_prev'] <= 0))
     big_jump = df['ratio'].notna() & (
         (df['ratio'] < _RATIO_FLAG_LOW) | (df['ratio'] > _RATIO_FLAG_HIGH)
     )
@@ -218,17 +246,52 @@ def build_adjustment_factors(
         & (np.abs(df['ChangesRatio'].to_numpy()) > 1.0) & no_share_change
     )
 
+    # 거래재개 (trading-resume) administrative 기준가 reset (see the _RESET_*
+    # constants): on a resume after a suspension KRX may measure ChangesRatio
+    # against an evaluation reference rather than the corporate-action 기준가, so
+    # the CR diverges from the actual traded close move. Compounding it fabricates
+    # a return and mis-scales pre-event history (e.g. 232830 2023-06-29: CR +205%
+    # vs a +21% traded move, scaling pre-event prices x0.40). FnGuide 수정주가
+    # applies no factor here — its adjusted return equals the traded move on every
+    # such day (verified: 68/68 currently-listed-common cases, 2026-06 FnGuide
+    # cross-check) — so trust the traded move. Detected by a resume-day VOLUME
+    # EXPLOSION + an in-band MODEST share change (a corporate action, not a split/
+    # 감자, whose price move is not itself a split artifact) + a CR that materially
+    # differs from the traded move. The volume explosion is the discriminator:
+    # genuine same-day splits/free-issues/감자 do not spike 30x (and are CR-correct
+    # anyway), so this never fires on them; Samsung's 50:1 (ratio out of band) and
+    # entity breaks (is_break) are excluded outright.
+    vol_ref = df.groupby('Code', sort=False)['Volume'].transform(
+        lambda s: s.shift(1).rolling(5, min_periods=1).mean()
+    ).to_numpy()
+    ratio_np = df['ratio'].to_numpy()
+    one_plus_raw = 1.0 + df['raw_ret'].to_numpy()
+    gross_cr = 1.0 + df['ChangesRatio'].to_numpy() / 100.0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        injected = gross_cr / one_plus_raw                  # factor CR would inject into history
+        vol_spike = vol_now / vol_ref
+    reset_cr = (
+        (ratio_np >= _RATIO_FLAG_LOW) & (ratio_np <= _RATIO_FLAG_HIGH)
+        & (np.abs(ratio_np - 1.0) > _RESET_SHARE_MIN)
+        & (np.abs(ratio_np - 1.0) < _RESET_SHARE_MAX)
+        & np.isfinite(vol_spike) & (vol_spike > _RESET_VOL_SPIKE)
+        & np.isfinite(injected) & (np.abs(injected - 1.0) > _RESET_DIVERGE)
+        & ~is_break.to_numpy() & ~sentinel_prev & ~phantom_cr
+        & (gross_cr > 0.0) & (df['Close'].to_numpy() > 0.0) & (one_plus_raw > 0.0)
+    )
+
     # Daily gross return from the exchange's official ChangesRatio (등락률).
     # NaN (first row), non-positive/garbage, no-trade (Close<=0), entity-change
     # break days, ₩1-sentinel resumes, and phantom-CR no-trade days do not compound:
     # a break day's move is across two different entities and its pre-break history
     # is dropped anyway.
-    gross = 1.0 + df['ChangesRatio'].to_numpy() / 100.0
     gross = np.where(
-        np.isnan(gross) | (gross <= 0.0) | is_break.to_numpy()
+        np.isnan(gross_cr) | (gross_cr <= 0.0) | is_break.to_numpy()
         | (df['Close'].to_numpy() <= 0.0) | sentinel_prev | phantom_cr,
-        1.0, gross,
+        1.0, gross_cr,
     )
+    # 거래재개 reset days: replace the reset CR with the traded close move (== FnGuide).
+    gross = np.where(reset_cr, one_plus_raw, gross)
     df['gross'] = gross
 
     # Back-adjusted close: compound ChangesRatio per ticker, anchored so the

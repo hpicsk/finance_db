@@ -96,7 +96,9 @@ timeline = [(event_date, 'event', 'ADD'|'REMOVE', 'log')]
 | `index` | str |
 | `ticker` | str |
 
-기본 시작일: KOSPI 200 = 1994-06-15 (출시일), KOSDAQ 150 = 2015-07-07 (출시일).
+기본 시작일 (CLI `--start-*` 기본값): KOSPI 200 = 1994-06-15 (출시일),
+KOSDAQ 150 = 2015-07-07 (출시일). 단, 실제 패널은 이벤트 로그/스냅샷이
+존재하는 첫 일자부터 시작한다 (KOSPI 200 = 1999-01-04, 아래 §한계 참조).
 
 ### `output/index_reconstruction_sanity.csv`
 모든 스냅샷 일자에 대해 (실제 vs 재구성) 교차검증.
@@ -113,12 +115,12 @@ timeline = [(event_date, 'event', 'ADD'|'REMOVE', 'log')]
 [코스피 200] 238 snapshots: 2004-01-30 ~ 2026-02-27 (200 anchor members)
 [코스피 200] intervals: 730, synthetic events: 12
 [코스피 200] sanity: 238/238 snapshots match exactly
-[코스피 200] daily panel: 1,637,958 rows (1994-06-15 ~ 2026-02-27)
+[코스피 200] daily panel: 1,257,120 rows (1999-01-04 ~ 2026-02-27)
 
 [코스닥 150] 113 snapshots: 2015-07-31 ~ 2026-02-27 (150 anchor members)
 [코스닥 150] intervals: 656, synthetic events: 9
 [코스닥 150] sanity: 113/113 snapshots match exactly
-[코스닥 150] daily panel: 416,943 rows (2015-07-07 ~ 2026-02-27)
+[코스닥 150] daily panel: 416,115 rows (2015-07-07 ~ 2026-02-27)
 ```
 
 `in_source` / `out_source` 분포:
@@ -145,10 +147,11 @@ in_source                  out_source
    로 스냅샷 주기를 줄여 재수집 후 재구성.
 
 2. **인덱스 출시일 ~ 첫 스냅샷 사이**:
-   - KOSPI 200: 1994-06-15 ~ 2004-01-29 구간. 이벤트 로그는 1999-01-04 부터 있음.
-     1994-1999 의 변경은 이벤트도 스냅샷도 없음 → 그 기간 모두
-     `initial_set` (185 종목) 으로 고정. 실제 200 종목이 아니므로
-     daily panel 의 1994-1998 멤버 수는 185.
+   - KOSPI 200: 출시일 1994-06-15 이지만 이벤트 로그가 1999-01-04 부터만
+     존재 → daily panel 은 1994-1998 구간을 포함하지 않고 1999-01-04 부터
+     시작한다. 이벤트 로그로만 구성원을 누적하므로 1999-2004 구간은 멤버 수가
+     점진적으로 증가한다 (1999-01-04 의 1 종목 → 2004 말 200 종목 도달).
+     분석 윈도우인 2005-2024 구간은 매일 완전한 200 종목이다.
    - KOSDAQ 150: 2015-07-07 ~ 2015-07-30 구간. 같은 이슈로 다소 부정확할 수
      있음 (출시 직후 ~24 일).
 

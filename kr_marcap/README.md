@@ -216,14 +216,17 @@ real −2.1 % move). What remains:
   are faithfully reflected rather than suppressed, and most are penny stocks or
   preferreds that liquid-universe filters exclude. The real fabrications are moves
   that did *not* trade — ₩1 ticker-reuse sentinels and phantom-`ChangesRatio`
-  no-trade days — which are neutralised (`gross = 1`). See
-  [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
+  no-trade days — which are neutralised (`gross = 1`), plus the one fabrication on
+  a day that *did* trade: a 거래재개 resume whose `ChangesRatio` is measured against
+  an administrative reference and diverges from the traded close move, corrected by
+  using the traded move (`reset_cr`; see [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md)
+  §5b). See [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
 
 ## Cross-checked against FnGuide 수정주가
 
 The adjustment layer was validated against professional FnGuide DataGuide 수정주가
 exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with return-based
-comparison (daily log returns are anchor-invariant). Two results:
+comparison (daily log returns are anchor-invariant). Three results:
 
 - **Dividend treatment agrees.** Across all 2,528 common names, none track a
   total-return series — FnGuide 수정주가 reflects capital changes only, *not* cash
@@ -235,6 +238,14 @@ comparison (daily log returns are anchor-invariant). Two results:
   tickers (`max_abs > 1` vs. FnGuide) from 9 to 3, the 3 remaining being gap-free
   1999-01-04 early-data artifacts inside the gated pre-2015 window. No false
   breaks; the Samsung 50:1 split is unaffected.
+- **It surfaced the 거래재개 reset class** (2026-06 re-check, extending the scan
+  below the splice band). On a 거래재개 KRX sometimes measures `ChangesRatio`
+  against an administrative reference, so compounding it mis-scaled pre-event
+  history for ~60 currently-listed names (e.g. 232830 by ×2.5). The `reset_cr`
+  override (uses the traded close move on these days; see `PRICE_ADJUSTMENT.md`
+  §5b) closes it: post-2015 disagreement `> 0.3` band **12 → 0**, names agreeing
+  to <1 % every day **94.1 % → 96.5 %**, with no name worse and the splice/Samsung
+  results unchanged. FnGuide-calibrated — 68/68 cross-checked cases agree exactly.
 
 ## Files in `cache/` (gitignored)
 

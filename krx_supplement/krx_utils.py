@@ -39,7 +39,7 @@ def trading_dates(start: str, end: str, freq: str) -> List[str]:
     elif freq == "monthly":
         dates = pd.date_range(s, e, freq=BMonthEnd())
     elif freq == "yearly":
-        dates = pd.date_range(s, e, freq="BY")
+        dates = pd.date_range(s, e, freq="BYE")
     else:
         raise ValueError(f"Unknown freq: {freq}")
     return [d.strftime("%Y%m%d") for d in dates]

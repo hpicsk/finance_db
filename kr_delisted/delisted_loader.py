@@ -12,6 +12,7 @@ Prices are unadjusted (matches marcap's native storage and KRX's raw history).
 """
 import os
 import glob
+import warnings
 import pandas as pd
 from functools import lru_cache
 
@@ -61,6 +62,8 @@ def load_delisted(ticker, start=None, end=None):
     df['Date'] = pd.to_datetime(df['Date'])
     if 'ChangeRate' in df.columns:
         df['ChangeRate'] = pd.to_numeric(df['ChangeRate'], errors='coerce') / 100.0
+    else:
+        warnings.warn("ChangeRate column not found in delisted data", UserWarning)
 
     if start: df = df[df['Date'] >= pd.to_datetime(start)]
     if end:   df = df[df['Date'] <= pd.to_datetime(end)]
