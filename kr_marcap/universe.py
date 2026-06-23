@@ -46,13 +46,16 @@ RELIABLE_START = pd.Timestamp('2015-01-01')
 
 # Infrastructure / real-estate / resource trusts that classify_ticker marks
 # as 'common' (no 호 suffix, no 선박투자/리츠/REIT keyword) but are fund-like
-# in substance. Opt-in exclusion via universe(..., strict=True). These are
-# also the only live KOSPI/KOSDAQ commons missing from fnguide's master
-# table, so strict=True yields a 100% fnguide-aligned set.
+# in substance. Opt-in exclusion via universe(..., strict=True). These are the
+# fund-like trusts missing from fnguide's master table, so strict=True brings
+# the marcap commons close to fnguide's set. Note: fnguide's master is a static
+# export snapshot, so a genuine common that IPO'd after the export (e.g. 0001A0
+# 덕양에너젠, listed 2026-01-30) can also be absent from fnguide without being
+# fund-like — those are real commons and are deliberately NOT excluded here.
 STRICT_COMMON_EXCLUDE = frozenset({
-    '088980',   # 맥쿼리한국인프라투융자회사 (KOSPI 200 편입)
+    '088980',   # 맥쿼리인프라 (KOSPI 200 편입)
     '415640',   # KB발해인프라
-    '094800',   # 맵스미래에셋맵스리얼티1
+    '094800',   # 맵스리얼티
     '152550',   # 한국ANKOR유전
 })
 

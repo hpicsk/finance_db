@@ -2,6 +2,20 @@
 
 KOSDAQ GLOBAL is a tier of KOSDAQ (premium-listed names that meet stricter
 disclosure requirements) and is folded into 'common' under the KOSDAQ market.
+
+What marcap (the universe source) does and does NOT carry — verify before
+adding an "official label" collector for any of these axes:
+  - marcap is 주권-only (보통주/우선주). ETF/ETN/펀드 are NOT in marcap at all
+    (e.g. 069500 KODEX 200 is absent; Market ∈ {KOSPI, KOSDAQ, KONEX}). So the
+    'etf' branch below never fires on marcap-sourced rows — it only matters for
+    other callers (fnguide/kr_delisted exports). An official ETF/ETN label
+    pull does not improve the marcap universe.
+  - marcap's `Dept` column already carries official KRX 소속부 flags this
+    name-based classifier deliberately does NOT read: 'SPAC(소속부없음)' (an
+    official SPAC flag — better-founded than the 스팩 name match), plus
+    '관리종목'/'투자주의환기종목'/'외국기업' (admin/alert/foreign — consumed by
+    kr_status, see CLAUDE.md). classify_ticker takes only (code, name, market),
+    so it can't see Dept; a Dept-aware caller can flag SPAC officially.
 """
 from __future__ import annotations
 
@@ -9,11 +23,17 @@ import re
 
 KINDS = ('common', 'preferred', 'spac', 'reit', 'fund', 'etf', 'konex', 'other')
 
-# Compiled once at import.
-_PREF_SUFFIX_RE = re.compile(r'(?:우B|우|1우|2우|3우|MF)$')
+# Compiled once at import. The preferred test is keyed on the code's terminal
+# digit (KRX gives preferred shares a non-'0' last char), which is
+# authoritative — see the alphanumeric-code note in classify_ticker. We do NOT
+# match a 우-family name suffix: over the code test it adds zero true preferred
+# and wrongly catches commons whose names merely end in 우 (대우 / 미래에셋대우
+# / 포스코대우 / 연우 / 베스트플로우).
 _SPAC_RE = re.compile(r'스팩|SPAC', re.IGNORECASE)
 _REIT_RE = re.compile(r'리츠|REIT', re.IGNORECASE)
-_FUND_RE = re.compile(r'선박투자')
+# Ship-investment funds (선박투자) and mutual funds (뮤추얼펀드, '…MF') → 'fund'.
+# MF names carry code last-digit '0', so the preferred test above skips them.
+_FUND_RE = re.compile(r'선박투자|MF$')
 # ETF brand-name prefixes. Brand must be followed by whitespace so we don't
 # catch e.g. "ACE손해보험" or "타임폴리오". The list covers the major and
 # mid-tier brands that fnguide ships in its currently-listed export; extend
@@ -32,11 +52,11 @@ def classify_ticker(code: str, name: str, market: str) -> str:
     First-match-wins ordering:
       1. Name starts with an ETF brand prefix → 'etf'  (KODEX/TIGER/RISE/...)
       2. KONEX market         → 'konex'
-      3. Code last char != '0' OR name ends with 우|우B|1우|2우|3우|MF
-                              → 'preferred'
+      3. Code last char != '0'                    → 'preferred'
+                          (authoritative; KRX preferred shares end non-'0')
       4. Name contains 스팩 / SPAC                → 'spac'
       5. Name contains 리츠 / REIT                → 'reit'
-      6. Name ends with 호 OR contains 선박투자    → 'fund'
+      6. Name ends 호 / MF OR contains 선박투자    → 'fund'
       7. Market in KOSPI / KOSDAQ / KOSDAQ GLOBAL → 'common'
       8. Otherwise                                → 'other'
 
@@ -56,7 +76,7 @@ def classify_ticker(code: str, name: str, market: str) -> str:
     if market == 'KONEX':
         return 'konex'
 
-    if code[-1] != '0' or _PREF_SUFFIX_RE.search(name):
+    if code[-1] != '0':
         return 'preferred'
 
     if _SPAC_RE.search(name):
@@ -96,6 +116,15 @@ if __name__ == '__main__':
         ('0001A0', '덕양에너젠',     'KOSDAQ',        'common'),
         ('0030R0', '대신밸류리츠',   'KOSPI',         'reit'),
         ('0004Y0', '디비금융제14호스팩','KOSDAQ',     'spac'),
+        # Regression: real commons whose NAME ends in 우 must NOT be routed
+        # to 'preferred' — the code's '0' terminal digit governs. (A 우$
+        # name-suffix OR previously misclassified these.)
+        ('047050', '포스코대우',     'KOSPI',         'common'),
+        ('006800', '미래에셋대우',   'KOSPI',         'common'),
+        ('115960', '연우',           'KOSDAQ',        'common'),
+        ('294090', '이오플로우',     'KOSDAQ',        'common'),
+        # 뮤추얼펀드 → 'fund' (code ends '0', name ends MF)
+        ('035030', '파이오니어MF',   'KOSDAQ',        'fund'),
     ]
     pass_n = 0
     for code, name, market, expected in cases:

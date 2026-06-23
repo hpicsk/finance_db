@@ -30,7 +30,7 @@ history; no further trust-like tickers hide in the fnguide gaps. See
 
 ## ⚠️ Use post-2015 data for Korean stocks
 
-`marcap` reaches back to 1995, but two **independent** deficiencies make the
+`marcap` reaches back to 1995, but three **independent** deficiencies make the
 pre-2015 window unreliable for return research. **Start return panels at 2015.**
 Pre-2015 rows are *kept*, not deleted (no survivorship bias) — opt into the clip
 with `load_adjusted(ticker, reliable_only=True)`; the policy constant is
@@ -38,9 +38,17 @@ with `load_adjusted(ticker, reliable_only=True)`; the policy constant is
 
 | Window | Deficiency | Evidence (KOSPI+KOSDAQ common) |
 |---|---|---|
+| **1995–2000** | Raw marcap **codes and names are malformed**. Ticker codes lost their leading zeros (`5930`=삼성전자, `200`=대우중공업, `25620`=신우) and short names are space-padded to fixed width (`신    우`=신우, `삼양사(1우 )`). Because the codes are not 6 chars they will not join to any 6-digit-keyed table, and the universe filter / `len(ticker)==6` convention **silently drops the entire pre-2001 window** | 2,342 distinct non-6-char codes / ~1.78 M rows, all in 1995–2000 (2001+ codes are clean 6-digit); plus 416 space-padded names, concentrated 1996–2001 |
 | **1996–1999** | IMF-era illiquidity — a large share of listed names did not trade on a given day, so daily returns are stale/zero and the ChangesRatio chain rests on thin prints | no-trade (`Volume==0`) days **17 % (1996), 23 % (1997), 26 % (1998), 11 % (1999)** vs ~1–2 % in 2000–2024; ~720 of the 813 phantom no-trade ChangesRatio rows fall in 1996–99 (see [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md)) |
 | **pre-2014** | No cash-dividend data → no total return | DART's structured 배당 endpoint is populated only from fiscal 2014, so `adj_close_tr` is price-return-only before then |
 | 2000–2014 | Price data is otherwise sound | `ChangesRatio`/`Stocks` 100 % present every year; no-trade ~1–2 % |
+
+The 1995–2000 code/name corruption is **left as-is in marcap, not normalized**:
+those rows sit below the 2015 reliability floor and are already excluded by the
+standard `len(ticker)==6` / `universe()` filters, so zero-padding the codes would
+only re-admit a window that is unusable for the other two reasons above. (The
+classifier handles the padded names safely regardless — security kind is decided
+by the code's terminal digit, not a name suffix; see [What "common stock" means](#what-common-stock-means-here).)
 
 The binding constraint is **total return**: `adj_close_tr` reinvests dividends
 only from fiscal 2014 on, so 2015 is the first full year where both price
@@ -102,7 +110,7 @@ The classifier is the single source of truth. First match wins:
 
 1. Name starts with an ETF brand prefix (`KODEX|TIGER|RISE|ACE|...`) → `etf`
 2. Market is `KONEX` → `konex`
-3. Code's last character is not `'0'` OR name ends with `우|우B|1우|2우|3우|MF` → `preferred`
+3. Code's last character is not `'0'` (authoritative for preferred) OR name ends with `MF` (뮤추얼펀드) → `preferred`. The terminal-digit test is the real signal — we deliberately do **not** match a `우`-family name suffix, which adds zero true preferred over the code test and wrongly catches commons whose names merely end in 우 (`대우` / `미래에셋대우` / `포스코대우` / `연우` / `베스트플로우`)
 4. Name contains `스팩|SPAC` → `spac`
 5. Name contains `리츠|REIT` → `reit`
 6. Name ends with `호` OR contains `선박투자` → `fund`
@@ -143,27 +151,29 @@ returns — the pipeline's actual inputs — carry no accumulation.
 Volume gets the inverse: `adj_volume = volume / cum_factor`, so
 `adj_close × adj_volume ≈ raw_close × raw_volume` is continuous across splits.
 
-### Entity-change detection (series breaks)
+### Entity-change detection (series breaks) — official ground truth
 
-The `Stocks`-column ratio (`ratio[t] = Stocks[t-1] / Stocks[t]`) is **no longer
-the adjustment factor** — it is kept only to detect entity changes. A big ratio
-(`< 0.1` or `> 10`) whose same-day price move does *not* corroborate it (the
-residual `(1 + raw_ret) / ratio − 1` exceeds `_CORROBORATION_TOL = 0.5`) marks a
-**series break**: a SPAC merger, reverse listing, or ticker reuse where the
-share count jumped without an inverse price move. Every row before a ticker's
-last break is flagged `valid = False` and dropped at load time, so a pre-merger
-shell's prices never pollute the operating company's series. Anomalies and their
-break verdict are written to `cache/adjust_anomalies.csv`.
+Series breaks (where the listing's economic identity changes, so pre-break
+history belongs to a different entity and is flagged `valid = False`) come from
+[`kr_marcap.corp_actions`](corp_actions.py) — **deterministic lookups against
+official sources, no calibrated thresholds**:
 
-A second break path catches the same failure hidden behind a **long trading
-gap**: a delisting+ticker-reuse, 우회상장, or 인적분할 재상장 whose share count moved
-less than ×10 stays inside the `[0.1, 10]` band and escapes the test above. A
-resume after a gap of more than `_GAP_DAYS` (365) is therefore also broken when
-its gap-crossing move is uncorroborated — either a real share-count jump (ratio
-outside `[_GAP_SHARE_LOW, _GAP_SHARE_HIGH]` = `[0.67, 1.5]`) with no inverse
-price move, or a > 300 % price-regime leap (`_GAP_RESUME_RET`), the signature of
-a ticker reused off a delisting-floor ₩-sentinel. Examples: 지누스 (013890,
-2019-10-30), 하이트진로 (000080, 2009-10-19), 우리은행 (000030, 2014-11-19).
+- **SPAC merger** — marcap `Name` goes `…스팩…` → real company (the shell becomes
+  the operating company). E.g. 미래에셋제4호스팩 → 쎄노텍 (222420).
+- **Ticker reuse** — a code with a *genuine* KIND delisting (a real exit, not a
+  이전상장/재상장 market transfer) trades again under a new issuer. E.g. 지누스
+  (013890, delisted 2005 자본전액잠식, code reused 2019).
+- **Entity restructuring** — DART records a 회사합병 / 회사분할 / 회사분할합병 / 주식교환
+  around a large share-count jump (reverse merger, 인적분할 재상장, 지주사 전환). E.g.
+  우리은행 (000030, 2019 완전자회사화).
+- **Manual override** — `corp_action_overrides.csv` (reviewed) for the rest.
+
+A *large* share-count jump no official source explains is written to
+`cache/corp_action_residuals.csv` (loud, for review) and defaults to **not** a
+break — the ChangesRatio backbone keeps the series continuous and the oracle
+validation below flags any real miss. The removed heuristics — price
+corroboration (`_CORROBORATION_TOL`) and the long-gap test (`_GAP_*`) — are gone.
+See [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) for the full pipeline.
 
 ### Why ChangesRatio, not the `Stocks` ratio
 
@@ -180,15 +190,15 @@ only −15.5 % (the real move, matching ChangesRatio). The Stocks-ratio factor
 scaled the shell-era prices down ×0.0527, fabricating a **+1504 %** adjusted
 daily return.
 
-"Just drop the anomalies" doesn't work either: of the 715 rows flagged outside
-`[0.1, 10]`, **457 are genuine splits** (including Samsung's 50:1). The
-distinguishing signal is whether the price moved *inversely* to the shares — the
-corroboration residual `(1 + raw_ret) / ratio − 1`. Genuine actions leave
-`|residual| ≤ 0.495`; entity changes leave `≥ 0.522`, so `_CORROBORATION_TOL =
-0.5` separates them cleanly. Adjusting from ChangesRatio and demoting the Stocks
-ratio to this break detector cut the max daily return from **+1865 % to +700 %**
-and `#|R_t| > 3` from **116 to 8** (each survivor is a penny-stock relisting the
-exchange itself reported, not a glitch).
+"Just drop the anomalies" doesn't work either: of the ~715 rows flagged outside
+`[0.1, 10]`, the majority are genuine splits / 무상증자 / 감자 (including Samsung's
+50:1) that must be *kept*. The earlier version separated them with a
+price-corroboration threshold (`_CORROBORATION_TOL = 0.5`) tuned to a validation
+set — exactly the kind of calibrated heuristic this layer no longer uses. The
+distinction is now made by **event type from official sources** (DART
+증자/감자/합병/분할, SPAC name, KIND delisting) rather than by how far the price
+moved; see [Entity-change detection](#entity-change-detection-series-breaks--official-ground-truth)
+above and [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md).
 
 ## Known limitations
 
@@ -218,15 +228,28 @@ real −2.1 % move). What remains:
   that did *not* trade — ₩1 ticker-reuse sentinels and phantom-`ChangesRatio`
   no-trade days — which are neutralised (`gross = 1`), plus the one fabrication on
   a day that *did* trade: a 거래재개 resume whose `ChangesRatio` is measured against
-  an administrative reference and diverges from the traded close move, corrected by
-  using the traded move (`reset_cr`; see [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md)
-  §5b). See [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
+  an administrative reference and diverges from the traded close move. This is now
+  detected against KRX's own official 수정주가 (the [`krx_adj_oracle`](krx_adj_oracle.py),
+  reachable via pykrx) — where our compounded-CR return disagrees with KRX's, the
+  official move is used, with no volume/share heuristic (the removed `_RESET_*`).
+  See [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
 
-## Cross-checked against FnGuide 수정주가
+## Validation against KRX official 수정주가 (automated)
 
-The adjustment layer was validated against professional FnGuide DataGuide 수정주가
-exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with return-based
-comparison (daily log returns are anchor-invariant). Three results:
+The manual FnGuide DataGuide cross-check below has been **superseded by an
+automated, official, reproducible gate**:
+[`validate_against_oracle.py`](validate_against_oracle.py) compares every covered
+ticker's adjusted return to KRX's own 수정주가 (`krx_adj_oracle.parquet`, via
+pykrx). On the candidate set, **99.8 % of tickers agree with KRX on every shared
+day** at a material tolerance; the only material disagreement is 008080, where
+our ₩1-sentinel guard is provably better than KRX's own (dirty) series. Run it
+after every build (`python -m kr_marcap.validate_against_oracle`).
+
+### Historical: the FnGuide cross-check that surfaced these fixes
+
+The adjustment layer was first validated against professional FnGuide DataGuide
+수정주가 exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with
+return-based comparison (daily log returns are anchor-invariant). Three results:
 
 - **Dividend treatment agrees.** Across all 2,528 common names, none track a
   total-return series — FnGuide 수정주가 reflects capital changes only, *not* cash
@@ -254,5 +277,8 @@ comparison (daily log returns are anchor-invariant). Three results:
 | `universe_panel.parquet` | Per-ticker membership table (code, name, market, kind, first_date, last_date, n_days) | `python -m kr_marcap.universe build` |
 | `universe_conflicts.csv` | Tickers whose kind changed over their marcap lifetime | (same) |
 | `adj_factors.parquet` | Per-ticker daily (date, code, raw_close, stocks, ratio, cum_factor, adj_close, valid) — `ratio` is the diagnostic Stocks ratio, `valid=False` marks pre-series-break shell history | `python -m kr_marcap.adjust build` |
-| `adjust_anomalies.csv` | Ratio outside [0.1, 10] or missing Stocks, with corroboration verdict (raw_ret, adj_ret, is_break) | (same) |
+| `adjust_anomalies.csv` | Material share-jump candidates (ratio outside [0.1, 10]) tagged with the official break `source` or a `residual` flag | (same) |
+| `corp_action_residuals.csv` | Material share jumps no official source explained (review queue; default not-break) | (same) |
+| `krx_adj_oracle.parquet` | KRX official 수정주가 per (date, code) — reset detection + validation | `python -m kr_marcap.krx_adj_oracle --all` |
+| `oracle_validation.csv` | Days where our adjusted return disagrees with KRX 수정주가 | `python -m kr_marcap.validate_against_oracle` |
 | `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps) | `python -m kr_marcap.dividends build` |

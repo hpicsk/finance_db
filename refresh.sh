@@ -36,3 +36,14 @@ fi
 # ── 3. kr_marcap.status — unify event parquets into a single panel ────────
 #    Cadence: after any kr_status collector runs. Pure local read.
 # python -m kr_marcap.status.build_panel
+
+# ── 4. kr_marcap price adjustment — official corporate-action ground truth ─
+#    Cadence: after a marcap refresh. Replaces the old calibrated heuristics
+#    with DART/KIND/KRX-수정주가 sources. See kr_marcap/CORPORATE_ACTIONS_SPEC.md.
+#    Two-pass bootstrap (the DART collector keys off the candidate list the
+#    build writes); collectors are resume-safe.
+# python -m kr_marcap.adjust build                              # pass 0: seed candidates
+# python -m kr_status.dart_corp_actions                        # DART 증자/감자/합병/분할 (~30m)
+# python -m kr_marcap.krx_adj_oracle --all                     # KRX 수정주가 oracle (~1-2h)
+# python -m kr_marcap.adjust build                             # rebuild with ground truth
+# python -m kr_marcap.validate_against_oracle                  # automated gate vs KRX 수정주가

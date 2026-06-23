@@ -11,36 +11,32 @@ capital reductions (감자) correctly — including cases a shares-outstanding r
 misses (e.g. 감자/액면병합 where the Stocks update and the price reset fall on
 different days). ``cum_factor = adj_close / raw_close`` is stored for loaders.
 
-Entity-change detection
------------------------
-The Stocks (shares outstanding) ratio is no longer used for adjustment, only to
-detect *entity changes* — SPAC mergers, reverse listings, ticker reuse — where
-the share count jumps without an inverse price move. A big Stocks ratio whose
-same-day price move does not corroborate it (see ``_CORROBORATION_TOL``) is a
-series break: the pre-break history belongs to a different entity (e.g. the
-pre-merger shell) and is marked ``valid=False`` so loaders drop it.
+Entity-change detection — official ground truth, no calibrated thresholds
+------------------------------------------------------------------------
+Series breaks (where the listing's economic identity changes, so pre-break
+history belongs to a different entity and is marked ``valid=False``) come from
+``kr_marcap.corp_actions`` — deterministic lookups against official sources
+(SPAC-name transitions in marcap, KIND ticker-reuse, DART 회사합병/분할/주식교환),
+plus a reviewed ``corp_action_overrides.csv``. The old price-corroboration
+(``_CORROBORATION_TOL``) and gap (``_GAP_DAYS``) heuristics, which were tuned to a
+validation set rather than to ground truth, have been removed. A material share
+jump no official source explains is reported to ``corp_action_residuals.csv``
+(loud, not silently guessed) and defaults to *not* a break — the ChangesRatio
+backbone keeps the series continuous and the oracle validation below flags misses.
 
-Entity changes hidden behind a long trading gap (delisting+ticker-reuse,
-우회상장, 인적분할 재상장) escape the ratio band when the share count moves <10x,
-so a resume after a gap of > ``_GAP_DAYS`` is also tested and broken when its
-gap-crossing move is uncorroborated — a real share jump with no inverse price
-move, or a >300% price-regime leap (reuse off a delisting-floor ₩-sentinel).
-E.g. 지누스 (013890), 하이트진로 (000080), 우리은행 (000030).
-
-거래재개 administrative-reset override
-------------------------------------
+거래재개 administrative-reset override — KRX 수정주가 oracle, no heuristics
+---------------------------------------------------------------------------
 On a 거래재개 (resume after a suspension) KRX sometimes measures ChangesRatio
 against an evaluation reference price rather than the corporate-action 기준가, so
-the CR diverges from the actual traded close move (e.g. 232830 2023-06-29: CR
-+205% while the price traded +21%). The share count is only modestly changed, so
-this slips past both the entity-break test and the gap test, and compounding the
-CR fabricates a return and mis-scales all pre-event history. These are caught by
-a resume-day volume explosion + an in-band modest share change + a CR that
-differs materially from the traded move (see the ``_RESET_*`` constants), and the
-day's gross is set to the traded close move instead — matching FnGuide 수정주가,
-which applies no factor on such days (68/68 cross-checked currently-listed-common
-cases agree exactly). Genuine same-day splits/free-issues/감자 do not spike 30x
-and are CR-correct anyway, so the override never touches them.
+the CR diverges from the actual traded move (e.g. 232830 2023-06-29: CR +205%
+while it traded +21%); compounding it fabricates a return and mis-scales all
+pre-event history. Such a day is now identified by comparing our compounded-CR
+return to KRX's own official adjusted return (the ``kr_marcap.krx_adj_oracle``,
+reachable from this host via pykrx) — where they disagree (and no data-integrity
+guard fired) the official move is trusted (``gross = 1 + oracle_ret``). The old
+volume-spike / share-band heuristic (``_RESET_*``) has been removed; the
+divergence from the official series *is* the signal. On ordinary and genuine
+corporate-action days the two series agree, so the override never fires there.
 
 Known limitation
 ----------------
@@ -54,6 +50,10 @@ and the 2015 우선주 품절주 mania (e.g. 008705 +631% on real volume). These
 faithfully reflected and intentionally left intact. The adjustment only
 neutralises moves that did not trade — entity-change breaks, ₩1 sentinels, and
 phantom-CR no-trade days (see the gross overrides in build_adjustment_factors).
+
+The output parquet is stamped with the marcap vintage it was built from
+(commit + data span); read it back with ``provenance()`` to attribute a later
+rebuild that drifts (marcap is re-pulled wholesale and KRX restates history).
 
 Build once:
 
@@ -69,60 +69,37 @@ from __future__ import annotations
 
 import glob
 import os
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from kr_marcap.universe import RELIABLE_START
+from kr_marcap import corp_actions
+from kr_marcap.krx_adj_oracle import load_oracle
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MARCAP_DIR = REPO_ROOT / 'marcap' / 'data'
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 FACTORS_PATH = CACHE_DIR / 'adj_factors.parquet'
-ANOMALIES_PATH = CACHE_DIR / 'adjust_anomalies.csv'
+CANDIDATES_PATH = CACHE_DIR / 'adjust_anomalies.csv'   # material share jumps + break/residual verdicts
 DIVIDENDS_PATH = CACHE_DIR / 'dividends.parquet'
 
-# Stocks ratio outside this band flags a possible entity change for review.
-_RATIO_FLAG_LOW = 0.1
-_RATIO_FLAG_HIGH = 10.0
-# An anomalous Stocks ratio (outside the flag band) is a GENUINE corporate
-# action (split / free-issue) only if the same-day price moved inversely to the
-# share count, i.e. the residual adjusted return it would inject is near zero.
-# Empirically (2026-06 diagnosis) genuine actions leave |residual| <= 0.495
-# while entity changes (SPAC mergers, reverse listings, ticker reuse, data
-# errors) leave |residual| >= 0.522, so 0.5 cleanly separates the two.
-_CORROBORATION_TOL = 0.5
-# A resume after a long trading gap (> _GAP_DAYS) is a potential entity change
-# (suspension+ticker-reuse / 우회상장 / 인적분할 재상장) even when the share-count
-# ratio sits inside the [0.1, 10] big-jump band — those slip through otherwise
-# (e.g. 지누스 013890, 하이트진로 000080, 우리은행 000030). It is a break when the
-# gap-crossing move is uncorroborated: a real share-count jump (outside
-# [_GAP_SHARE_LOW, _GAP_SHARE_HIGH]) with no inverse price move, or a >300%
-# price-regime leap (ticker reused off a delisting-floor ₩-sentinel).
-_GAP_DAYS = 365
-_GAP_SHARE_LOW = 0.67
-_GAP_SHARE_HIGH = 1.5
-_GAP_RESUME_RET = 3.0
-# A 거래재개 (trading-resume) administrative 기준가 reset: on a resume after a
-# suspension KRX may measure ChangesRatio against an evaluation reference price,
-# not the corporate-action 기준가, so the CR diverges from BOTH the traded close
-# move and the (modest) share change. Compounding it fabricates a return and
-# mis-scales pre-event history. Detected by a resume-day volume explosion + an
-# in-band MODEST share change + a CR whose implied factor is unjustified by that
-# share change; FnGuide 수정주가 applies no factor here (its adj return == the
-# traded close move), so we trust the traded move. (Calibrated 2026-06 against
-# the FnGuide cross-check; see PRICE_ADJUSTMENT.md.)
-_RESET_SHARE_MIN = 0.005   # a real share change that day (not rounding noise)
-_RESET_SHARE_MAX = 0.5     # ...but modest — excludes splits/감자 (price move == action artifact)
-_RESET_VOL_SPIKE = 30.0    # resume-day volume vs trailing-5d mean (거래재개 signature)
-_RESET_DIVERGE = 0.05      # CR must differ from the traded move (else the override is a no-op)
+# Tolerance for the KRX-oracle 거래재개 reset detector. ChangesRatio is rounded to
+# 0.01%, so a legitimately-matching official return differs by <~1e-3; a real
+# administrative-reference reset differs by 10-90%. 1% cleanly excludes rounding
+# without catching any genuine action. This is a rounding tolerance, not a
+# classification threshold — the verdict is "our return != KRX's official return".
+_ORACLE_RESET_TOL = 0.01
 
 
 def _load_all_marcap(marcap_dir: Path) -> pd.DataFrame:
-    """Read every marcap year, keep only OHLCV+Stocks+ChangesRatio+Code+Date."""
-    cols = ['Date', 'Code', 'Open', 'High', 'Low', 'Close',
+    """Read every marcap year, keep only OHLCV+Stocks+Name+ChangesRatio+Code+Date."""
+    cols = ['Date', 'Code', 'Name', 'Open', 'High', 'Low', 'Close',
             'Volume', 'Amount', 'Marcap', 'Stocks', 'ChangesRatio']
     frames = []
     for fp in sorted(glob.glob(str(marcap_dir / 'marcap-*.parquet'))):
@@ -135,27 +112,77 @@ def _load_all_marcap(marcap_dir: Path) -> pd.DataFrame:
     return out
 
 
+def _marcap_provenance(marcap_dir: Path, df: pd.DataFrame) -> dict[str, str]:
+    """Vintage of the marcap clone this build was computed from.
+
+    marcap is an external git clone (gitignored here), re-pulled wholesale, so
+    the adjustment is a function of whichever vintage is on disk and KRX restates
+    history retroactively. Stamping the commit + data span makes a factors file
+    self-describing — which marcap produced these numbers — so a later rebuild
+    that drifts is attributable instead of silent.
+    """
+    repo = Path(marcap_dir).parent  # .../marcap/data -> .../marcap (the clone root)
+    try:
+        commit = subprocess.check_output(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        commit = 'unknown'
+        print(f'  WARNING: marcap at {repo} is not a git checkout — commit '
+              f'provenance unrecorded (build not reproducible across re-pulls)')
+    return {
+        'marcap_commit': commit,
+        'marcap_data_max_date': str(df['Date'].max().date()),
+        'marcap_n_rows': str(len(df)),
+    }
+
+
 def build_adjustment_factors(
     marcap_dir: Path = MARCAP_DIR,
     out_path: Path = FACTORS_PATH,
-    anomalies_path: Path = ANOMALIES_PATH,
+    candidates_path: Path = CANDIDATES_PATH,
 ) -> pd.DataFrame:
     """Compute back-adjusted factors from exchange ChangesRatio.
 
-    adj_close is built by compounding ChangesRatio (corporate-action-correct);
-    the Stocks ratio is used only to flag entity-change series breaks.
+    adj_close is built by compounding ChangesRatio (corporate-action-correct).
+    Entity-change series breaks come from ``kr_marcap.corp_actions`` (official
+    sources, no calibrated thresholds); the 거래재개 reset comes from the KRX
+    수정주가 oracle (``kr_marcap.krx_adj_oracle``).
 
     Output schema: date, code, raw_close, stocks, ratio, cum_factor, adj_close,
     valid (False before a ticker's last series break — pre-relisting history).
     ``ratio`` is the diagnostic Stocks ratio, not the adjustment factor.
-    Writes anomalies (Stocks ratio outside [0.1, 10] or missing Stocks, with the
-    corroboration verdict in ``raw_ret``/``adj_ret``/``is_break``) to a sidecar.
+    Writes the candidate share-jump list (with the official break ``source`` or a
+    ``residual`` flag) to a sidecar for the collectors and for audit.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df = _load_all_marcap(marcap_dir)
+    prov = _marcap_provenance(marcap_dir, df)
+
+    # --- Entity-change breaks from official ground truth (kr_marcap.corp_actions):
+    # SPAC-name transitions, KIND ticker-reuse, DART 회사합병/분할/주식교환, and a
+    # reviewed override CSV. No price-corroboration or gap thresholds.
+    breaks_df, residuals_df = corp_actions.classify(
+        df[['Code', 'Date', 'Name', 'Stocks']]
+    )
+    # Merge official ground truth (breaks + KRX 수정주가 oracle) onto marcap rows up
+    # front, then re-establish the canonical (Code, Date) order so every positional
+    # numpy view computed below stays aligned. (Code, Date) is unique in marcap and
+    # in both right frames, so neither merge reorders within a ticker or duplicates.
+    bk = (breaks_df.rename(columns={'code': 'Code', 'date': 'Date', 'source': '_break_source'})
+          [['Code', 'Date', '_break_source']])
+    df = df.merge(bk, on=['Code', 'Date'], how='left')
+    oracle = load_oracle()
+    if len(oracle):
+        om = oracle.rename(columns={'code': 'Code', 'date': 'Date'})[['Code', 'Date', 'krx_adj_close']]
+        df = df.merge(om, on=['Code', 'Date'], how='left')
+    else:
+        df['krx_adj_close'] = np.nan
+    df = df.sort_values(['Code', 'Date']).reset_index(drop=True)
+    is_break = df['_break_source'].notna().to_numpy()
 
     df['stocks_prev'] = df.groupby('Code', sort=False)['Stocks'].shift(1)
-    # ratio[t] = Stocks[t-1] / Stocks[t]  (back-adjusted: applied to history)
+    # ratio[t] = Stocks[t-1] / Stocks[t]  (diagnostic only — not the adjustment)
     with np.errstate(divide='ignore', invalid='ignore'):
         ratio = np.where(
             (df['Stocks'] > 0) & (df['stocks_prev'] > 0),
@@ -163,56 +190,22 @@ def build_adjustment_factors(
             np.nan,
         )
     df['ratio'] = ratio
-
-    # Same-day raw price move, used to corroborate that an anomalous Stocks
-    # jump is a real split (price moves inversely) vs an entity change.
     close_prev = df.groupby('Code', sort=False)['Close'].shift(1)
     df['raw_ret'] = df['Close'] / close_prev - 1.0
 
-    # Anomaly capture: missing/zero Stocks OR ratio outside [low, high].
-    # Note: stocks_prev is NaN on first row of each ticker; flagging current=0 there
-    # is still valid (anomalous), but flagging prior=0 requires notna() guard.
-    missing = (df['Stocks'] <= 0) | (df['stocks_prev'].notna() & (df['stocks_prev'] <= 0))
-    big_jump = df['ratio'].notna() & (
-        (df['ratio'] < _RATIO_FLAG_LOW) | (df['ratio'] > _RATIO_FLAG_HIGH)
-    )
-    # Residual return a big-jump ratio would inject after adjustment: ~0 means
-    # the price moved inversely to shares (real split); large means the share
-    # count changed without a matching price move (entity change / relisting).
-    adj_ret = (1.0 + df['raw_ret']) / df['ratio'] - 1.0
-    corroborated = (
-        big_jump & df['raw_ret'].notna() & (adj_ret.abs() < _CORROBORATION_TOL)
-    )
-    # A non-corroborated big jump is a series break: the listing changed hands
-    # (e.g. a SPAC merger), so its pre-break history belongs to a different
-    # entity and must be neither adjusted nor carried forward.
-    is_break = big_jump & ~corroborated
-
-    # Same failure mode hidden behind a long suspension gap: a share-count ratio
-    # inside the big-jump band escapes the test above, but a multi-year gap
-    # before the row marks a delisting+reuse / 재상장. Break it when the
-    # gap-crossing move is uncorroborated (see the _GAP_* constants).
-    gap_days = (df['Date'] - df.groupby('Code', sort=False)['Date'].shift(1)).dt.days
-    long_gap = gap_days > _GAP_DAYS
-    gap_share_break = (
-        long_gap & df['ratio'].notna()
-        & ((df['ratio'] < _GAP_SHARE_LOW) | (df['ratio'] > _GAP_SHARE_HIGH))
-        & (adj_ret.abs() >= _CORROBORATION_TOL)
-    )
-    gap_regime_break = long_gap & (df['raw_ret'].abs() >= _GAP_RESUME_RET)
-    is_break = is_break | gap_share_break | gap_regime_break
-
-    anomalies = df.loc[
-        missing | big_jump | gap_share_break | gap_regime_break,
-        ['Date', 'Code', 'stocks_prev', 'Stocks', 'ratio', 'Close'],
-    ].copy()
-    anomalies['raw_ret'] = df.loc[anomalies.index, 'raw_ret']
-    anomalies['adj_ret'] = adj_ret.loc[anomalies.index]
-    anomalies['is_break'] = is_break.loc[anomalies.index]
-    if not anomalies.empty:
-        anomalies.to_csv(anomalies_path, index=False)
-    elif anomalies_path.exists():
-        anomalies_path.unlink()
+    # Candidate sidecar: every material share jump, tagged with its official break
+    # source or marked residual (unexplained — for review / override).
+    res_keys = set(zip(residuals_df['code'], residuals_df['date'])) if len(residuals_df) else set()
+    cand_mask = (df['ratio'] < corp_actions._MATERIAL_LOW) | (df['ratio'] > corp_actions._MATERIAL_HIGH)
+    cand = df.loc[cand_mask, ['Date', 'Code', 'stocks_prev', 'Stocks', 'ratio',
+                              'Close', 'raw_ret', '_break_source']].copy()
+    cand['residual'] = [
+        (c, d) in res_keys for c, d in zip(cand['Code'], cand['Date'])
+    ]
+    if not cand.empty:
+        cand.to_csv(candidates_path, index=False)
+    elif candidates_path.exists():
+        candidates_path.unlink()
 
     # A ChangesRatio measured against a ₩1 non-trading sentinel is not a real
     # return. Some marcap vintages fill a suspension / ticker-reuse gap with
@@ -246,38 +239,28 @@ def build_adjustment_factors(
         & (np.abs(df['ChangesRatio'].to_numpy()) > 1.0) & no_share_change
     )
 
-    # 거래재개 (trading-resume) administrative 기준가 reset (see the _RESET_*
-    # constants): on a resume after a suspension KRX may measure ChangesRatio
-    # against an evaluation reference rather than the corporate-action 기준가, so
-    # the CR diverges from the actual traded close move. Compounding it fabricates
-    # a return and mis-scales pre-event history (e.g. 232830 2023-06-29: CR +205%
-    # vs a +21% traded move, scaling pre-event prices x0.40). FnGuide 수정주가
-    # applies no factor here — its adjusted return equals the traded move on every
-    # such day (verified: 68/68 currently-listed-common cases, 2026-06 FnGuide
-    # cross-check) — so trust the traded move. Detected by a resume-day VOLUME
-    # EXPLOSION + an in-band MODEST share change (a corporate action, not a split/
-    # 감자, whose price move is not itself a split artifact) + a CR that materially
-    # differs from the traded move. The volume explosion is the discriminator:
-    # genuine same-day splits/free-issues/감자 do not spike 30x (and are CR-correct
-    # anyway), so this never fires on them; Samsung's 50:1 (ratio out of band) and
-    # entity breaks (is_break) are excluded outright.
-    vol_ref = df.groupby('Code', sort=False)['Volume'].transform(
-        lambda s: s.shift(1).rolling(5, min_periods=1).mean()
-    ).to_numpy()
-    ratio_np = df['ratio'].to_numpy()
     one_plus_raw = 1.0 + df['raw_ret'].to_numpy()
     gross_cr = 1.0 + df['ChangesRatio'].to_numpy() / 100.0
+
+    # 거래재개 administrative 기준가 reset — detected against the KRX 수정주가 oracle.
+    # On a resume KRX may measure ChangesRatio against an evaluation reference, not
+    # the corporate-action 기준가, so the CR diverges from KRX's own official
+    # adjusted return (e.g. 232830 2023-06-29: CR +205% vs the +21% it traded).
+    # We compare our compounded-CR return to the oracle's official adjusted return
+    # between the same two trading days; where they disagree beyond rounding (and
+    # no data-integrity guard fired) we trust the official move (gross = oracle).
+    # No volume/share/gap thresholds — the divergence from the official series is
+    # the signal. Where the oracle is uncovered (oracle_gross NaN) nothing fires.
+    # (krx_adj_close was merged on up front; see the canonical-order note above.)
+    oracle_prev = df.groupby('Code', sort=False)['krx_adj_close'].shift(1).to_numpy()
     with np.errstate(divide='ignore', invalid='ignore'):
-        injected = gross_cr / one_plus_raw                  # factor CR would inject into history
-        vol_spike = vol_now / vol_ref
-    reset_cr = (
-        (ratio_np >= _RATIO_FLAG_LOW) & (ratio_np <= _RATIO_FLAG_HIGH)
-        & (np.abs(ratio_np - 1.0) > _RESET_SHARE_MIN)
-        & (np.abs(ratio_np - 1.0) < _RESET_SHARE_MAX)
-        & np.isfinite(vol_spike) & (vol_spike > _RESET_VOL_SPIKE)
-        & np.isfinite(injected) & (np.abs(injected - 1.0) > _RESET_DIVERGE)
-        & ~is_break.to_numpy() & ~sentinel_prev & ~phantom_cr
-        & (gross_cr > 0.0) & (df['Close'].to_numpy() > 0.0) & (one_plus_raw > 0.0)
+        oracle_gross = df['krx_adj_close'].to_numpy() / oracle_prev   # == 1 + oracle_ret
+    reset = (
+        np.isfinite(oracle_gross) & (oracle_gross > 0.0)
+        & np.isfinite(gross_cr) & (gross_cr > 0.0)
+        & (np.abs(oracle_gross - gross_cr) > _ORACLE_RESET_TOL)
+        & ~is_break & ~sentinel_prev & ~phantom_cr
+        & (df['Close'].to_numpy() > 0.0)
     )
 
     # Daily gross return from the exchange's official ChangesRatio (등락률).
@@ -286,12 +269,12 @@ def build_adjustment_factors(
     # a break day's move is across two different entities and its pre-break history
     # is dropped anyway.
     gross = np.where(
-        np.isnan(gross_cr) | (gross_cr <= 0.0) | is_break.to_numpy()
+        np.isnan(gross_cr) | (gross_cr <= 0.0) | is_break
         | (df['Close'].to_numpy() <= 0.0) | sentinel_prev | phantom_cr,
         1.0, gross_cr,
     )
-    # 거래재개 reset days: replace the reset CR with the traded close move (== FnGuide).
-    gross = np.where(reset_cr, one_plus_raw, gross)
+    # 거래재개 reset days: replace the reset CR with KRX's official adjusted move.
+    gross = np.where(reset, oracle_gross, gross)
     df['gross'] = gross
 
     # Back-adjusted close: compound ChangesRatio per ticker, anchored so the
@@ -317,7 +300,7 @@ def build_adjustment_factors(
     # valid=False for every row strictly before a ticker's LAST series break:
     # that history belongs to the pre-merger shell / a prior listing and is
     # dropped at load time (kr_marcap.market_loader).
-    df['is_break'] = is_break.to_numpy()
+    df['is_break'] = is_break
     last_break = df.loc[df['is_break']].groupby('Code', sort=False)['Date'].max()
     lb = df['Code'].map(last_break)
     df['valid'] = lb.isna() | (df['Date'] >= lb)
@@ -326,8 +309,21 @@ def build_adjustment_factors(
               'cum_factor', 'adj_close', 'valid']].copy()
     out.columns = ['date', 'code', 'raw_close', 'stocks', 'ratio',
                    'cum_factor', 'adj_close', 'valid']
-    out.to_parquet(out_path, index=False)
+    # Embed the marcap vintage stamp in the parquet's schema metadata so it
+    # travels with the file (read it back with provenance()).
+    table = pa.Table.from_pandas(out, preserve_index=False)
+    stamp = {k.encode(): v.encode() for k, v in prov.items()}
+    table = table.replace_schema_metadata({**(table.schema.metadata or {}), **stamp})
+    pq.write_table(table, out_path)
     return out
+
+
+def provenance(path: Path | None = None) -> dict[str, str]:
+    """Return the marcap-vintage stamp embedded in a factors file by
+    build_adjustment_factors. Empty dict if the file predates stamping."""
+    md = pq.read_schema(str(path or FACTORS_PATH)).metadata or {}
+    return {k.decode(): v.decode() for k, v in md.items()
+            if k.decode().startswith('marcap_')}
 
 
 @lru_cache(maxsize=1)
@@ -464,9 +460,14 @@ if __name__ == '__main__':
         print(f'  rows: {len(out):,}')
         print(f'  unique tickers: {out["code"].nunique():,}')
         print(f'  written to: {FACTORS_PATH}')
-        if ANOMALIES_PATH.exists():
-            n = sum(1 for _ in open(ANOMALIES_PATH)) - 1
-            print(f'  anomalies: {n} rows — see {ANOMALIES_PATH}')
+        for k, v in provenance(FACTORS_PATH).items():
+            print(f'  {k}: {v}')
+        if CANDIDATES_PATH.exists():
+            n = sum(1 for _ in open(CANDIDATES_PATH)) - 1
+            print(f'  share-jump candidates: {n} rows — see {CANDIDATES_PATH}')
+        if corp_actions.RESIDUALS_CSV.exists():
+            n = sum(1 for _ in open(corp_actions.RESIDUALS_CSV)) - 1
+            print(f'  unexplained residual jumps: {n} rows — see {corp_actions.RESIDUALS_CSV}')
     else:
         # Samsung 005930 split 50:1 on 2018-05-04.
         df = load_adjusted('005930')

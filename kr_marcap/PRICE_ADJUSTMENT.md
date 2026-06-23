@@ -5,6 +5,19 @@ corporate-action-adjusted series, the silent-fabrication failure modes that were
 found and fixed, and the residual large returns that are **real and kept on
 purpose**.
 
+> **2026-06 update — calibrated heuristics replaced by official ground truth.**
+> The entity-break classification (was `_CORROBORATION_TOL`, §2) and the 거래재개
+> reset (was `_RESET_*`, §5b) no longer use thresholds tuned to FnGuide. Breaks
+> now come from [`kr_marcap.corp_actions`](corp_actions.py) (DART
+> 합병/분할/주식교환, SPAC name, KIND ticker-reuse, reviewed overrides) and resets
+> from the KRX 수정주가 oracle ([`krx_adj_oracle`](krx_adj_oracle.py)). The
+> ₩1-sentinel and phantom-CR *data-integrity* guards (§4, §5) are deterministic,
+> not calibrated, and are kept. The manual FnGuide cross-check is replaced by an
+> automated oracle gate ([`validate_against_oracle.py`](validate_against_oracle.py);
+> 99.8 % agreement with KRX official 수정주가). Sections §2 and §5b below are the
+> historical diagnosis that motivated the move; the live method is in
+> [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md).
+
 All code lives in `kr_marcap/adjust.py` (`build_adjustment_factors`,
 `load_adjusted`); the materialised factors are `kr_marcap/cache/adj_factors.parquet`.
 Loaders that consume them (`kr_marcap/market_loader.py`) drop `valid == False`
@@ -20,7 +33,8 @@ adjusted series only when you need a continuous line through splits / 무상증�
 |---|---|
 | **Adjustment input** | KRX `ChangesRatio` (등락률), compounded — *not* `close/prev_close` |
 | **Why** | `ChangesRatio` is computed against KRX's corporate-action 기준가, so it already absorbs splits, 무상/유상증자, and 감자 — including cases a shares-outstanding ratio misses |
-| **Shares ratio role** | Detects *entity changes* (SPAC merger / reverse listing / ticker reuse) only — never used for the price adjustment itself |
+| **Entity-change breaks** | Official sources via `corp_actions` (DART 합병/분할/주식교환, SPAC name, KIND ticker-reuse) — *not* the Stocks ratio + a price threshold |
+| **Shares ratio role** | Only a coarse candidate filter (a >10x jump is worth classifying); the break verdict comes from the event type, not the ratio |
 | **Worst valid \|adj_ret\| before fixes** | **66,999×** (008080, a ₩1-sentinel fabrication) |
 | **Worst valid \|adj_ret\| after fixes** | **29.46×** (003260, a *real* 거래재개 after a month-long halt) |
 | **Returns neutralised** | only moves that **did not trade**: entity-change breaks, ₩1 sentinels, phantom-CR no-trade days |

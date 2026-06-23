@@ -9,15 +9,15 @@ survivorship-bias-free for KOSPI/KOSDAQ common stocks**. With the
 preferred, KONEX, REITs, ship/specialty funds) applied to the marcap
 universe:
 
-- **Live universe:** 2,544 / 2,548 (**99.8 %**) marcap commons as of
+- **Live universe:** 2,547 / 2,551 (**99.8 %**) marcap commons as of
   2026-02-20 have a column in `data0203`. The 4 exceptions are
-  infrastructure / real-estate / resource trusts (`088980` 맥쿼리한국
-  인프라투융자회사, `415640` KB발해인프라, `094800` 맵스미래에셋맵스리얼티1,
-  `152550` 한국ANKOR유전). They are bundled into the `STRICT_COMMON_EXCLUDE`
+  infrastructure / real-estate / resource trusts (`088980` 맥쿼리인프라,
+  `415640` KB발해인프라, `094800` 맵스리얼티, `152550` 한국ANKOR유전).
+  They are bundled into the `STRICT_COMMON_EXCLUDE`
   set in `kr_marcap.universe`; call
   `kr_marcap.universe(date, 'common', strict=True)` to drop them and
   get **100 %** agreement with FnGuide's master table.
-- **Delisted universe:** 563 / 619 (**91.0 %**) of common-kind
+- **Delisted universe:** 564 / 620 (**91.0 %**) of common-kind
   genuine delistings have a column, rising to **98.2 %** for delistings
   in 2021 onward (112 / 114). With `strict=True` the post-2021 figure
   becomes **112 / 113 (99.1 %)** — one of the 2 misses (`152550`
@@ -27,7 +27,7 @@ universe:
   trust-like issuer. Older missing names are FnGuide's master-table
   purge, documented in [Caveat 2](#2-older-delisting-purge-60-common-names-missing-from-the-investor-flow) below.
 - **`short_sale_lending.xlsx` (short-selling / lending / free-float):**
-  **615 / 619 (99.4 %)** of genuine common KOSPI/KOSDAQ delistings have
+  **616 / 620 (99.4 %)** of genuine common KOSPI/KOSDAQ delistings have
   a column — higher than the investor-flow batch because this export
   used a longer FnGuide retention window (≥99 % in every year-bucket
   back to 2005, vs the investor-flow batch's gradual erosion). Of the 4
@@ -72,12 +72,12 @@ bucketed via `kr_marcap.classify`:
 
 | Bucket | n | in `data0203` flow |
 |---|---:|---:|
-| Common KOSPI/KOSDAQ | 619 | 563 (**91.0 %**) |
+| Common KOSPI/KOSDAQ | 620 | 564 (**91.0 %**) |
 | SPAC | 117 | 117 (100 %) |
-| Preferred (우/우B/1우/MF + non-zero last digit) | 120 | 1 (0.8 %) |
+| Preferred (code[-1] != '0') | 118 | 0 (0 %) |
 | KONEX | 79 | 1 (1.3 %) |
 | REIT (리츠 / REIT) | 5 | 0 (0 %) |
-| Specialty fund (선박투자 / 호) | 64 | 2 (3.1 %) |
+| Specialty fund (선박투자 / 호 / MF) | 65 | 2 (3.1 %) |
 
 The investor-flow and IFRS-C files share the same 3,902-ticker universe
 (exported together with the "all codes" filter). The non-common buckets
@@ -93,7 +93,7 @@ window — most recent delistings are covered, older ones gradually drop:
 
 | Delisting year | Common KOSPI/KOSDAQ | In investor-flow |
 |---|---:|---:|
-| 2005–2010 | 253 | 229 (90.5 %) |
+| 2005–2010 | 254 | 230 (90.6 %) |
 | 2011–2014 | 167 | 144 (86.2 %) |
 | 2015–2020 | 85 | 78 (91.8 %) |
 | 2021–2026 | 114 | 112 (**98.2 %**) |
@@ -197,15 +197,16 @@ combining `kr_delisted` prices with fnguide investor flow:
 
 ```python
 import pandas as pd
+from kr_marcap.classify import classify_ticker
 
 # 1. Delisted universe — restrict to common KOSPI/KOSDAQ only
 cal = pd.read_csv("~/finance_db/kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
 cal = cal[(cal["is_genuine"] == "Y") & (cal["market"].isin(["KOSPI", "KOSDAQ"]))]
-# Drop preferred, SPAC, specialty funds by name suffix:
-is_pref      = cal["name"].str.endswith(("우", "우B", "1우", "2우", "MF"))
-is_spac      = cal["name"].str.contains("스팩|SPAC", case=False, na=False)
-is_fund      = cal["name"].str.endswith("호") | cal["name"].str.contains("선박투자|리츠")
-cal = cal[~(is_pref | is_spac | is_fund)].copy()
+# Drop preferred / SPAC / REIT / fund via the authoritative classifier (the
+# single source of truth). Preferred is keyed on the code's terminal digit, so
+# a common whose name merely ends in 우 (대우 / 연우) is NOT dropped:
+kind = cal.apply(lambda r: classify_ticker(r["ticker"], r["name"], r["market"]), axis=1)
+cal = cal[kind == "common"].copy()
 cal["fn_ticker"] = "A" + cal["ticker"]
 
 # 2. Load investor-flow sheet (institutional buy volume example)
@@ -252,14 +253,13 @@ cal["delisting_date"] = pd.to_datetime(cal["delisting_date"])
 cal = cal[cal["is_genuine"] == "Y"].copy()
 cal["fn_ticker"] = "A" + cal["ticker"]
 
-def bucket(row):
-    nm, mkt = str(row["name"]), row["market"]
-    if mkt == "KONEX": return "KONEX"
-    if "스팩" in nm or "SPAC" in nm.upper(): return "SPAC"
-    if nm.endswith(("우", "우B", "1우", "2우", "MF")): return "Preferred/Fund"
-    if nm.endswith("호") or "선박투자" in nm or "리츠" in nm: return "Specialty fund"
-    return "Common"
-cal["bucket"] = cal.apply(bucket, axis=1)
+from kr_marcap.classify import classify_ticker
+# Bucket via the authoritative classifier — the single source of truth. Kinds:
+# common / preferred / spac / reit / fund / konex. Preferred is keyed on the
+# code's terminal digit, so a common whose name merely ends in 우 (대우 / 연우)
+# stays common.
+cal["bucket"] = cal.apply(
+    lambda r: classify_ticker(r["ticker"], r["name"], r["market"]), axis=1)
 
 cal["in_flow"]  = cal["fn_ticker"].isin(flow_u)
 cal["in_ifrsc"] = cal["fn_ticker"].isin(ifrsc_u)
@@ -275,22 +275,9 @@ print(cal.groupby("bucket").agg(
 ))
 ```
 
-Expected output uses the simple inline bucketing above and will give
-slightly different counts than `kr_marcap.classify` (which catches more
-preferreds via the `code[-1] != '0'` rule and treats REITs as a
-separate kind). For the canonical headline numbers — 619 common
-delistings, 99.8 % live-universe coverage — use `kr_marcap.classify`
-directly:
-
-```python
-import sys, pandas as pd
-sys.path.insert(0, '/home/st/finance_db/kr_marcap')
-from classify import classify_ticker
-cal = pd.read_csv('/home/st/finance_db/kr_delisted/delisting_calendar.csv',
-                  dtype={'ticker': str})
-cal['kind'] = cal.apply(
-    lambda r: classify_ticker(r['ticker'], r['name'], r['market']), axis=1)
-```
+The bucketing above is via `kr_marcap.classify` — the single source of truth —
+and reproduces the headline numbers (620 common delistings, 99.8 % live-universe
+coverage).
 
 Drift in these numbers means either the underlying exports were
 re-downloaded (FnGuide may extend the delisted-code retention window

@@ -35,30 +35,77 @@ def test_kr_trading_days_2005_2024():
     return f"KR trading days = {n}"
 
 
-# ---- Korea: KOSPI-only common count (fn_percolation \nKospiTickers = 1,272) --
+# ---- Korea: KOSPI-only common count (fn_percolation \nKospiTickers) ----------
+# All-time count. Manuscript reported 1,272; corrected to 1,274 on 2026-06-23
+# when classify.py stopped routing names ending in 우 to 'preferred' — 003810 대우
+# and 009990 미우 are genuine KOSPI commons (code ends '0'), not preferred shares.
+# Both delisted pre-2005, so the 2005-2024 study window (1,027 in-window) is
+# unaffected; this is a descriptive all-time tally only.
 def test_kr_kospi_common_count():
     pan = pd.read_parquet(REPO / "kr_marcap/cache/universe_panel.parquet")
     com = pan[pan["kind"] == "common"]
     dominant = com.groupby("code")["market"].agg(lambda s: s.value_counts().index[0])
     n_kospi = int((dominant == "KOSPI").sum())
     n_common = int(com["code"].nunique())
-    assert n_kospi == 1272, f"KOSPI common = {n_kospi}, manuscript pins 1,272"
+    assert n_kospi == 1274, (
+        f"KOSPI common = {n_kospi}, expected 1,274 "
+        f"(manuscript's 1,272 predates the 우-suffix classifier fix)"
+    )
     return f"KOSPI common = {n_kospi}; total panel common = {n_common}"
 
 
-# ---- Korea: price-adjustment constants stay equal to PRICE_ADJUSTMENT.md ----
-def test_adjust_constants_match_doc():
+# ---- Korea: the calibrated adjustment heuristics stay REMOVED (official only) --
+def test_adjust_heuristics_removed():
+    """Entity-break/reset classification must come from official ground truth
+    (kr_marcap.corp_actions + krx_adj_oracle), never from constants tuned to a
+    validation set. Guards against reintroducing the removed heuristics."""
     sys.path.insert(0, str(REPO))
     from kr_marcap import adjust as A
-    expected = {
-        "_CORROBORATION_TOL": 0.5, "_GAP_DAYS": 365, "_GAP_SHARE_LOW": 0.67,
-        "_GAP_SHARE_HIGH": 1.5, "_GAP_RESUME_RET": 3.0, "_RESET_VOL_SPIKE": 30.0,
-        "_RESET_SHARE_MIN": 0.005, "_RESET_SHARE_MAX": 0.5, "_RESET_DIVERGE": 0.05,
-        "_RATIO_FLAG_LOW": 0.1, "_RATIO_FLAG_HIGH": 10.0,
-    }
-    bad = {k: getattr(A, k) for k, v in expected.items() if getattr(A, k) != v}
-    assert not bad, f"adjust.py constants drifted from PRICE_ADJUSTMENT.md: {bad}"
-    return "adjust.py constants == PRICE_ADJUSTMENT.md"
+    forbidden = ["_CORROBORATION_TOL", "_GAP_DAYS", "_GAP_SHARE_LOW",
+                 "_GAP_SHARE_HIGH", "_GAP_RESUME_RET", "_RESET_VOL_SPIKE",
+                 "_RESET_SHARE_MIN", "_RESET_SHARE_MAX", "_RESET_DIVERGE"]
+    present = [k for k in forbidden if hasattr(A, k)]
+    assert not present, f"removed adjustment heuristics reintroduced: {present}"
+    assert hasattr(A, "corp_actions") and hasattr(A, "load_oracle"), \
+        "adjust.py must consume corp_actions (official breaks) + krx_adj_oracle (reset)"
+    return "adjustment heuristics removed; official sources wired"
+
+
+# ---- Korea: adjusted series matches KRX official 수정주가 on the canonical cases -
+def test_adjust_canonical_cases():
+    sys.path.insert(0, str(REPO))
+    if not (REPO / "kr_marcap/cache/adj_factors.parquet").exists():
+        return "SKIP (adj_factors.parquet not built)"
+    from kr_marcap.adjust import load_adjusted
+
+    def adj_ret(code, day):
+        d = load_adjusted(code).sort_values("date")
+        d["r"] = d["adj_close"].pct_change()
+        row = d[d["date"] == pd.Timestamp(day)]
+        return float(row["r"].iloc[0]) if len(row) else float("nan")
+
+    # 005930 50:1 face split: adjusted series stays continuous (the ~ -2% it
+    # traded), not the raw -98% drop — ChangesRatio backbone, no break.
+    s = adj_ret("005930", "2018-05-04")
+    assert abs(s) < 0.1, f"Samsung 2018-05-04 split not continuous: adj_ret={s}"
+    # 232830 거래재개 reset: official KRX move (+21%), not the +205% admin-ref CR.
+    r = adj_ret("232830", "2023-06-29")
+    assert 0.15 < r < 0.30, f"232830 reset not at the traded move: adj_ret={r} (want ~0.21)"
+    return f"canonical: Samsung split adj_ret={s:+.3f}, 232830 reset adj_ret={r:+.3f}"
+
+
+# ---- adj_factors carries the marcap vintage stamp (reproducibility provenance) -
+def test_adjust_provenance_stamp():
+    """A factors file must self-describe the marcap vintage it was built from
+    (commit + data span), so a later rebuild that drifts is attributable."""
+    sys.path.insert(0, str(REPO))
+    if not (REPO / "kr_marcap/cache/adj_factors.parquet").exists():
+        return "SKIP (adj_factors.parquet not built)"
+    from kr_marcap.adjust import provenance
+    p = provenance()
+    assert p.get("marcap_commit"), f"no marcap_commit stamp in adj_factors: {p}"
+    assert p.get("marcap_data_max_date"), f"no marcap_data_max_date stamp: {p}"
+    return f"provenance: marcap @{p['marcap_commit'][:7]} through {p['marcap_data_max_date']}"
 
 
 # ---- Taiwan: one OHLCV file per universe id --------------------------------
@@ -136,7 +183,8 @@ def test_kospi200_panel_inwindow_complete():
 CHECKS = [
     test_kr_trading_days_2005_2024,
     test_kr_kospi_common_count,
-    test_adjust_constants_match_doc,
+    test_adjust_heuristics_removed,
+    test_adjust_canonical_cases,
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_overlay_covers_2005_2014,
     test_capital_reduction_artifact_exists,
