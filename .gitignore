@@ -64,8 +64,11 @@ fnguide_data/investor_aggregate/investor_trading_data.csv
 kr_delisted/.archived_*/
 
 # kr_marcap built caches (regenerable from marcap/ via build_universe_panel()
-# and build_adjustment_factors())
-kr_marcap/cache/
+# and build_adjustment_factors()). Exception: krx_adj_oracle.parquet is a pykrx
+# snapshot (live KRX, hours to recollect, NOT regenerable from marcap) — archived
+# so the price adjustment is reproducible without re-fetching the oracle.
+kr_marcap/cache/*
+!kr_marcap/cache/krx_adj_oracle.parquet
 
 # krx_supplement regenerable bulk output (collect_*.py rebuilds these; the
 # small index_* files and the 27 MB sector_mapping.parquet stay tracked).
