@@ -80,6 +80,15 @@ def build_events_panel(in_dir: Path = KR_STATUS_DATA,
         df = pd.read_parquet(f)
         missing = set(STATUS_COLUMNS) - set(df.columns)
         if missing:
+            # A *_events.parquet without a `status` column is not a status
+            # source at all (e.g. dart_corp_action_events.parquet, which feeds
+            # the price-adjustment layer, not this panel). Skip it rather than
+            # abort. A file that HAS `status` but is missing other required
+            # columns is a genuinely malformed status source — still fatal.
+            if "status" not in df.columns:
+                print(f"  [skip] {f.name}: not a status-events source "
+                      f"(missing {sorted(missing)})")
+                continue
             raise RuntimeError(f"{f.name} missing required columns: {missing}")
         frames.append(df[STATUS_COLUMNS])
 

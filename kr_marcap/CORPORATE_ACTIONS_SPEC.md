@@ -55,10 +55,14 @@ export OPEN_DART_API_KEY=...            # already in .env
 python -m kr_marcap.adjust build        # writes cache/adjust_anomalies.csv (candidates)
 
 # ── 1. DART corporate-action events (official entity/genuine classification) ──
-#    default scope = the candidate tickers (material share jumps); ~550 tickers.
+#    Scope = the candidate tickers (material ≥10× share jumps); ~550 tickers. This
+#    IS the complete set corp_actions.classify reads: it consults DART events only
+#    on days whose share-count ratio is outside [0.1, 10.0] — the same band that
+#    defines the candidate list — so events for any other ticker are never queried.
 python -m kr_status.dart_corp_actions             # resume-safe; ~25-40 min
-#    For completeness across the whole universe (long-running, ~3 h):
-#    python -m kr_status.dart_corp_actions --all-universe
+#    NB: `--all-universe` exists but does NOT change the adjustment output (it
+#    fetches ~3,800 tickers classify never queries) and would overflow DART's
+#    ~20k/day quota; don't run it for coverage.
 
 # ── 2. KRX 수정주가 oracle (reset detection + validation) ─────────────────────
 python -m kr_marcap.krx_adj_oracle --candidates   # ~10 min for the candidate set
@@ -74,15 +78,16 @@ python -m kr_marcap.validate_against_oracle
 #    or an oracle artifact; add real misses to corp_action_overrides.csv and rebuild.
 ```
 
-Re-running 1+2 with `--all-universe` / `--all` upgrades coverage; the build and
-validation are cheap to repeat.
+Re-running step 2 with `--all` widens the oracle's validation coverage (the build
+and validation are cheap to repeat). Step 1's `--all-universe` does NOT change the
+adjustment output — see the note above — so there is no coverage reason to run it.
 
 ---
 
 ## How a share-count change is classified (no thresholds)
 
 `corp_actions.classify(marcap)` walks each ticker's material share-count changes
-(ratio outside `[0.5, 2.0]` — a coarse *materiality* floor, not a decision) and
+(ratio outside `[0.1, 10.0]` — a coarse *materiality* floor, not a decision) and
 labels each from official sources, in precedence order:
 
 1. **SPAC merger** — `Name` went `…스팩…` → real company ⇒ **break** (`spac`).
