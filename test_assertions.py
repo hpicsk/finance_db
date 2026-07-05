@@ -5,8 +5,7 @@ Run from the repo root with the data trees populated:
 
     python test_assertions.py
 
-Each check prints PASS/FAIL; the script exits non-zero if any fail. See
-Research_Integrity_Audit.md for the finding each check guards.
+Each check prints PASS/FAIL; the script exits non-zero if any fail.
 """
 from __future__ import annotations
 
@@ -127,13 +126,13 @@ def test_taiwan_ohlcv_one_per_universe():
 
 
 def test_taiwan_overlay_covers_2005_2014():
-    """Survivorship invariant (Research_Integrity_Audit.md §1).
+    """Survivorship invariant.
 
     The 42-name overlay must cover every 2005-2014 4-digit common delisting
     FinMind purged. Codes are restricted to 4-digit numeric (the universe's own
     filter); pre-2005 names never trade in-window and 2015+ absentees are
     ETF/TDR instruments the universe excludes. The naive "all delisted ids have
-    OHLCV" form was a false alarm — see §1.
+    OHLCV" form was a false alarm.
     """
     u, d, uid, _ = _tw_ids()
     d = d.copy()
@@ -151,7 +150,7 @@ def test_taiwan_overlay_covers_2005_2014():
     return "2005-2014 commons fully covered; 42-name overlay present"
 
 
-# ---- consolidate_capred delivered artifact (S2) ----------------------------
+# ---- consolidate_capred delivered artifact ---------------------------------
 def test_capital_reduction_artifact_exists():
     fp = REPO / "finmind_data/capital_reduction.parquet"
     assert fp.exists(), "capital_reduction.parquet documented as delivered but missing"
@@ -164,7 +163,7 @@ def test_kospi200_panel_inwindow_complete():
     KOSPI200 panel carrying a complete ~200 members on every in-window date.
     Pre-2005 the panel ramps 1->200 (event-log-only reconstruction); that is
     out of scope. This tripwire fires if a panel regeneration ever collapses
-    in-window membership. See Research_Integrity_Audit.md D1/S4.
+    in-window membership.
     """
     fp = REPO / "krx_supplement/output/index_panel_daily.parquet"
     df = pd.read_parquet(fp)
