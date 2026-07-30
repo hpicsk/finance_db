@@ -70,6 +70,11 @@ _CASH_LEGS = ['CashEarningsDistribution', 'CashStatutorySurplus']
 # The declaration discloses its own cash ex-date, which agrees with div_result's
 # event date on 99.96 % of comparable rows (validate_adjust check [3]).
 _DECLARED_EX = 'CashExDividendTradingDate'
+# The exchange publishes before_price to two decimals, so agreement with a close
+# is agreement at the published precision. Not a fitted cut: the one filing this
+# rejects misses by 3.95, and every tolerance from 1e-6 to 0.5 rejects the same
+# one filing and no other.
+_TOL_BEFORE_PRICE = 1e-2
 
 # 除權息 columns: the exchange's official pre- and post-event reference prices.
 _DIV_BEFORE, _DIV_AFTER = 'before_price', 'after_price'
@@ -99,8 +104,10 @@ def _cash_dps(stock_id: str) -> pd.Series:
              .groupby(pd.to_datetime(d[_DECLARED_EX]))['D'].sum())
 
 
-def _read_events(stock_id: str) -> pd.DataFrame:
-    """Both event chains for one stock as (date, step, pr_step, kind), earliest first.
+def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
+    """Both event chains for one stock as (date, before, step, pr_step, kind).
+
+    Earliest first.
 
     ``step = before / after`` for both endpoints. For 除權息 the reference price
     falls, so step > 1 and history is scaled down; for 減資 it rises, so step < 1
@@ -111,6 +118,9 @@ def _read_events(stock_id: str) -> pd.DataFrame:
     除權 carry no cash and pass through unchanged; a cash-only 除息 is entirely
     cash, so its ``pr_step`` is 1; only a mixed 權息 needs ``D``, and its
     ``pr_step`` is NaN when the declaration is missing rather than silently 1.
+
+    ``px`` is this stock's own (date, close) series, sorted. Both filters below
+    need it: which dates it traded, and what it closed at.
     """
     out = []
     p = DIV_RESULT_DIR / f'{stock_id}.parquet'
@@ -134,7 +144,7 @@ def _read_events(stock_id: str) -> pd.DataFrame:
                        .rename(columns={_RED_BEFORE: 'before', _RED_AFTER: 'after'})
                        .assign(kind='減資', has_cash=False, has_stock=True))
     if not out:
-        return pd.DataFrame(columns=['date', 'step', 'pr_step', 'kind'])
+        return pd.DataFrame(columns=['date', 'before', 'step', 'pr_step', 'kind'])
 
     ev = pd.concat(out, ignore_index=True)
     ev['date'] = pd.to_datetime(ev['date'])
@@ -143,6 +153,36 @@ def _read_events(stock_id: str) -> pd.DataFrame:
     # only safe reading -- a zero would make the chain infinite or zero -- so it
     # is dropped here and counted by the caller into `events_dropped`.
     ev = ev[(ev['before'] > 0) & (ev['after'] > 0)].copy()
+
+    # The same action is occasionally filed twice, once under a date the stock
+    # did not trade. 2327 and 3018 each carry their 減資 under both the date
+    # trading was suspended and the date it resumed, with one pair of reference
+    # prices between them. Exact-date placement discarded the stray copy for
+    # free; placing on the next session instead would apply the step twice. So
+    # where a filing has an identical twin that fell on a session, keep the copy
+    # the exchange actually priced. A filing whose only copy missed a session is
+    # untouched — that is the typhoon case, and it is the one to postpone.
+    if len(ev) > 1:
+        traded = ev['date'].isin(set(px['date']))
+        twin_traded = traded.groupby(
+            [ev['kind'], ev['before'], ev['after']]).transform('any')
+        ev = ev[traded | ~twin_traded]
+
+    # That leaves the copy whose stray twin also fell on a session, which the
+    # calendar alone cannot tell apart. The reference price is computed off the
+    # last close before the event, so a filing whose predecessor closed at some
+    # other price is not describing this series: 6109 files its 2018 現金減資
+    # again under 2020-09-25, a date it traded straight through. The identity
+    # holds for 22,952 of the 22,953 filings that have a prior close to check
+    # against, so it rejects that one and leaves every other alone. A prior
+    # close of zero is a stale FinMind row rather than a price and anchors
+    # nothing, so those 41 pass unexamined.
+    ev = ev.sort_values('date')
+    prior = pd.merge_asof(ev[['date']], px, on='date', direction='backward',
+                          allow_exact_matches=False)['close'].to_numpy()
+    ev = ev[~(prior > 0)
+            | (np.abs(ev['before'].to_numpy() - prior) <= _TOL_BEFORE_PRICE)]
+
     ev['step'] = ev['before'] / ev['after']
 
     mixed = ev['has_cash'] & ev['has_stock']
@@ -150,7 +190,7 @@ def _read_events(stock_id: str) -> pd.DataFrame:
     ev['pr_step'] = np.where(
         mixed, ev['step'] * (1.0 - d_ps / ev['before']),
         np.where(ev['has_cash'], 1.0, ev['step']))
-    return ev.sort_values('date')[['date', 'step', 'pr_step', 'kind']].reset_index(drop=True)
+    return ev[['date', 'before', 'step', 'pr_step', 'kind']].reset_index(drop=True)
 
 
 def _assert_disjoint(ev: pd.DataFrame, stock_id: str) -> None:
@@ -183,11 +223,13 @@ def load_adjusted(stock_id: str,
     tr_factor`` — which is what makes the factors rather than the adjusted
     closes the primary output.
 
-    ``df.attrs`` carries ``events_placed``, ``events_unplaced`` (event date is
-    not a session of this stock's series, so the step is skipped rather than
-    shifted onto a neighbour), ``events_dropped`` (non-positive reference leg)
-    and ``pr_unresolved`` (mixed event with no declared cash leg — the price-
-    return columns are NaN before the last such event, and only there).
+    ``df.attrs`` carries ``events_placed``, ``events_postponed`` (the disclosed
+    date was not a session, so the step sits on the next one — see the placement
+    comment below), ``events_unplaced`` (no session on or after the event date at
+    all, so nothing is left to adjust), ``events_dropped`` (a non-positive
+    reference leg, or a duplicate filing superseded by the copy the exchange
+    priced) and ``pr_unresolved`` (mixed event with no declared cash leg — the
+    price-return columns are NaN before the last such event, and only there).
 
     Which one to use is a research choice, not a quality ranking.
     ``adj_close_tr`` measures what a holder earned; ``adj_close_pr`` measures the
@@ -210,21 +252,37 @@ def load_adjusted(stock_id: str,
     out['date'] = pd.to_datetime(out['date'])
     out = out.sort_values('date').reset_index(drop=True)
 
-    ev = _read_events(str(stock_id))
+    ev = _read_events(str(stock_id), out[['date', 'close']])
     _assert_disjoint(ev, str(stock_id))
 
     steps = np.ones(len(out))
     pr_steps = np.ones(len(out))
     is_ex = np.zeros(len(out), dtype=bool)
     is_red = np.zeros(len(out), dtype=bool)
-    idx = pd.Index(out['date']).get_indexer(ev['date']) if len(ev) else np.array([], int)
-    unresolved, pr_cut = 0, 0
-    for i, step, pr_step, kind in zip(idx, ev['step'].to_numpy(),
-                                      ev['pr_step'].to_numpy(), ev['kind'].to_numpy()):
-        # -1 == the event date is not a session of this series; 0 == first row,
-        # where a step has no history to scale and cancels in the normalisation.
-        if i <= 0:
+    # First session ON OR AFTER the event date, not the exact date. A disclosed
+    # event date is usually a session and this resolves to it, but 274 of the
+    # 22,997 filed events fall on a day the stock did not trade, and 271 of those
+    # are one of 21 dates when nothing traded at all — the exchange was shut,
+    # almost always for a typhoon. TWSE 順延s such an event to the next session,
+    # and the data says so: ``before_price`` equals the close of the session
+    # before the closure, and the next session's realised return matches the
+    # reference-price step to a mean 1 bp. So the step is right and only its date
+    # is stale; placing it on the resumption session is what removes the move,
+    # and skipping it would leave the full step inside a return. The remaining
+    # three are 減資 suspensions, where trading stops for 12 to 18 days to
+    # exchange certificates and the same reasoning applies to the resumption.
+    idx = (np.searchsorted(out['date'].to_numpy(), ev['date'].to_numpy(), 'left')
+           if len(ev) else np.array([], int))
+    unresolved, pr_cut, postponed = 0, 0, 0
+    for i, ev_date, step, pr_step, kind in zip(
+            idx, ev['date'].to_numpy(), ev['step'].to_numpy(),
+            ev['pr_step'].to_numpy(), ev['kind'].to_numpy()):
+        # 0 == at or before the first row, where a step has no history to scale
+        # and cancels in the normalisation; len(out) == no session on or after
+        # the event date, so there is nothing left to adjust.
+        if i <= 0 or i >= len(out):
             continue
+        postponed += out['date'].to_numpy()[i] != ev_date
         steps[i] *= step
         if np.isfinite(pr_step):
             pr_steps[i] *= pr_step
@@ -254,15 +312,16 @@ def load_adjusted(stock_id: str,
     out['adj_close_pr'] = close * pr
     out['is_ex_date'] = is_ex
     out['is_cap_red'] = is_red
-    out.attrs['events_placed'] = int((idx > 0).sum())
-    out.attrs['events_unplaced'] = int((idx <= 0).sum())
+    out.attrs['events_placed'] = int(((idx > 0) & (idx < len(out))).sum())
+    out.attrs['events_unplaced'] = int(((idx <= 0) | (idx >= len(out))).sum())
+    out.attrs['events_postponed'] = int(postponed)
     out.attrs['events_dropped'] = int(_raw_event_count(str(stock_id)) - len(ev))
     out.attrs['pr_unresolved'] = unresolved
     return out
 
 
 def _raw_event_count(stock_id: str) -> int:
-    """Events before the non-positive-leg filter, so `events_dropped` is real."""
+    """Events as filed, before any filter, so `events_dropped` is real."""
     n = 0
     p = DIV_RESULT_DIR / f'{stock_id}.parquet'
     if p.exists():
@@ -291,6 +350,7 @@ if __name__ == '__main__':
         print(f'\n{sid}: {len(df):,} sessions '
               f'{df["date"].min().date()}..{df["date"].max().date()} | '
               f'placed {df.attrs["events_placed"]} '
+              f'postponed {df.attrs["events_postponed"]} '
               f'unplaced {df.attrs["events_unplaced"]} '
               f'dropped {df.attrs["events_dropped"]}')
         print(f'  tr_factor {df["tr_factor"].min():.4f}..{df["tr_factor"].max():.4f}'

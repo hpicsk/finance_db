@@ -27,7 +27,7 @@ This file is about **verification**, not construction.
 | **Exchange publishes a total-return factor?** | **No** — KRX 수정주가 is structural only | **Yes** — `after_price/before_price` covers cash *and* rights |
 | **Raw input confirmed raw** | via KRX 수정주가 oracle | 99.87 % exact vs exchange `before_price` |
 | **Factor reproduced from first principles** | 96.2 % vs DART (independent 2nd source) | 100 % identity on 8,479 `除` events; 93.8 % via the TWSE formula |
-| **Residual after adjustment** | +82 bp on ex-dates | +31 bp on 除權息, −96 bp on 減資 |
+| **Residual after adjustment** | +82 bp on ex-dates | +29 bp on 除權息, −94 bp on 減資 |
 | **Residual is a defect?** | **No** — prices fall ~66 % of the dividend; the rest is the real ex-day effect | Same |
 | **Price-return series** | `adj_close` — free, it *is* `ChangesRatio` | `adj_close_pr` — derived by splitting the fused factor (§7) |
 | **Total-return series** | `adj_close_tr` — derived by adding SEIBro cash | `adj_close_tr` — free, it *is* `after_price/before_price` |
@@ -238,8 +238,8 @@ forward return spans an event, over 2020–2024:
 
 | | event | affected rows | raw | price-return | total-return |
 |---|---|---:|---:|---:|---:|
-| Taiwan | 除權息 (n = 7,411) | 0.336 % | −405 bp | −311 bp | **+31 bp** |
-| Taiwan | 減資 (n = 212) | 0.010 % | **+7,572 bp** | −96 bp | **−96 bp** |
+| Taiwan | 除權息 (n = 7,513) | 0.340 % | −405 bp | −311 bp | **+29 bp** |
+| Taiwan | 減資 (n = 211) | 0.010 % | **+7,609 bp** | −94 bp | **−94 bp** |
 | Korea | 배당락 | 0.219 % | −160 bp | — | **+82 bp** |
 
 The price-return column is a check as much as a result. On 減資 it must equal
@@ -253,7 +253,7 @@ they contaminate in opposite directions — 除權息 removes a price drop, 減�
 removes a price *rise*. Netting them reports −197 bp for a panel whose dividend
 contamination is really −405 bp.
 
-**減資 is the larger per-event distortion by an order of magnitude** — +7,572 bp
+**減資 is the larger per-event distortion by an order of magnitude** — +7,609 bp
 against −405 bp, roughly nineteen times — on a twentieth as many events. It is
 worth naming separately because the unadjusted Taiwan panel carries it in full:
 a capital reduction cancels shares, so the mechanical price jump is a
@@ -311,9 +311,9 @@ declared 配股率, since the declaration undercounts dilution (**99.65 %**). A
 two-sided failure would have indicted `D`; a one-sided one indicts only the term
 the split never reads.
 
-**What it costs.** 248 mixed events across 112 stocks have no declared cash leg
+**What it costs.** 250 mixed events across 113 stocks have no declared cash leg
 and cannot be split. Those stocks' price-return columns are NaN before the last
-such event — 122,811 rows — rather than carrying a guessed step. The
+such event — 122,973 rows — rather than carrying a guessed step. The
 total-return columns are unaffected.
 
 **Which one to use is a research choice.** `tr` measures what a holder earned;
@@ -327,10 +327,10 @@ fix of subtracting a date mean.
 
 ---
 
-## Two traps that cost a measurement each
+## Three traps that cost a measurement each
 
-Both produced confident, wrong numbers that the checks above caught. They are
-recorded because neither is obvious and both will recur.
+Each produced confident, wrong numbers that the checks above caught. They are
+recorded because none is obvious and all will recur.
 
 **Forward returns put the event on the previous row.** `R_t1` is the 1-day
 *forward* return, so an ex-day drop lands in the window `(t → t+1)` when `t+1`
@@ -352,6 +352,32 @@ So −0.809 versus −0.663 is a **universe** difference (full `kr_marcap` versu
 the research panel), not an estimator artefact. Quote the one whose universe
 matches the claim, and do not carry the level and the slope on the same warning.
 
+**A disclosed event date is not always a session, and a filing is not always
+unique.** Matching an event to its exact date left 274 of the 22,997 filed
+Taiwanese steps unapplied, which reads as a rounding error and is not one. 271 of them fall on
+one of 21 dates when *nothing* traded — 2009-08-07 (Morakot), 2016-07-08
+(Nepartak), 2023-08-03 (Khanun), 2024-07-24/25 (Gaemi), and so on. TWSE 順延s an
+event whose date lands on a closure, and the data says so: `before_price` equals
+the close of the session before the closure, and the resumption session's own
+return is the reference-price step. The remaining three are 減資 suspensions,
+where the stock stops trading for 12 to 18 days to exchange certificates and the
+disclosed date falls inside the gap. Both belong on the first session **on or
+after** the disclosed date, not on the exact date and not nowhere. The steps are
+large — one 100 % 無償配股 was sitting inside a −46 % one-day forward return.
+
+Switching to next-session placement then exposes the second half of the trap.
+Three filings are duplicates, the same action recorded twice under two dates,
+and exact-date matching had been discarding the stray copy for free. Next-session
+placement applies it a second time instead. Two of the three are told apart by
+the calendar (2327 and 3018 file their 減資 under both the suspension date and
+the resumption, and only one of those traded), but 6109 files its 2018 現金減資
+again under 2020-09-25, a date it traded straight through, so both copies look
+equally real. What separates them is the anchor: the reference price is computed
+off the last close before the event, so a filing whose predecessor closed at
+something else is not describing this series. 6109's stray copy misses by 3.95
+on a 10.50 reference. That copy was being applied by exact-date matching too, so
+the anchor is a correction to the old behaviour and not only a guard on the new.
+
 ---
 
 ## Free parameters, and which ones are load-bearing
@@ -365,6 +391,7 @@ sensitivity rather than quote one level.
 | delisting cut-off `> 2021-01-01` | Korean DART split | **deleted.** It selected the recent, cleaner delistings and read 98.9 % where the whole calendar reads 96.3 %; it also mislabelled 360 pre-2021 rows as "still listed". No result needed it. |
 | yield trim `TRIM_Q = 0.99` | Korean ex-date localisation | **kept, sensitivity now printed.** Load-bearing for the *slope* — untrimmed −0.31 against −0.81 at any trim from the top 1 % to the top 10 % — but the check's actual claim (the drop sits on ex+0 and nowhere else) holds at every level. |
 | tolerance `1e-6` / `1e-2` | Taiwan raw-input check | **kept, both reported.** `1e-2` is the exchange's own published precision; reporting one alone would let a tuned threshold pass for a result. |
+| tolerance `_TOL_BEFORE_PRICE = 1e-2` | Taiwan event placement | **kept, and not a cut.** It asks whether `before_price` agrees with the prior close at the exchange's own published precision. Every value from `1e-6` to `0.5` rejects the same single filing (6109's duplicate, off by 3.95) and no other, so there is no band to tune. |
 | tolerance `±0.5원` | Korean DART DPS match | **kept, justified by the unit.** DPS is quoted in won, so this is "rounds to the same won", not a fitted band. |
 | window `Y0, Y1 = 2020, 2024` | both | **kept, justified.** Five full years ending before the 2024 배당절차 개선 dispersed record dates out of December. |
 | `_SHORTFALL_TOL = 0.02` | SEIBro collection guard | **kept, weakest of the set.** The observed server-side count drift is ~0.4 %, so 2 % is a hand-picked 5× headroom. It only gates a fail-loud abort and touches no published number. |
@@ -399,12 +426,9 @@ python -m finmind_data.adjust                   # Taiwan adjusted-series demo
 - **2004 Korean dividend coverage is partial** — SEIBro refuses 1,303 rows of
   the 2004-12-31 window. Reported by the build rather than silently dropped;
   see the defect table in [`kr_marcap/README.md`](kr_marcap/README.md).
-- **274 Taiwanese events are unplaced** — the event date is not a session of
-  that stock's price series, so the step is skipped rather than shifted onto a
-  neighbour. 1.2 % of events; not yet diagnosed.
-- **248 Taiwanese mixed events cannot be split** — no declared cash leg, so the
-  price-return columns are NaN before the last such event in the 112 stocks
-  affected (§7). The total-return columns are unaffected, and whether the 122,811
+- **250 Taiwanese mixed events cannot be split** — no declared cash leg, so the
+  price-return columns are NaN before the last such event in the 113 stocks
+  affected (§7). The total-return columns are unaffected, and whether the 122,973
   NaN rows matter depends on which convention the study uses.
 - **Korea has no `is_cap_red` analogue.** `ChangesRatio` folds capital
   reductions in with everything else structural, so the Taiwanese finding that

@@ -125,7 +125,7 @@ def check_declared_ex_date(ev: pd.DataFrame) -> None:
 
 def check_code_identities(sample: list[str]) -> None:
     """Identities that must hold by construction, and the disjointness guard."""
-    ident, anchor, unplaced, dropped = [], [], 0, 0
+    ident, anchor, unplaced, dropped, postponed = [], [], 0, 0, 0
     pr_ident, pr_anchor, pr_unres, pr_stocks, pr_nan = [], [], 0, 0, 0
     for sid in sample:
         df = load_adjusted(sid)
@@ -133,6 +133,7 @@ def check_code_identities(sample: list[str]) -> None:
                                   - df['close'] * df['tr_factor']).max()))
         anchor.append(abs(float(df['adj_close_tr'].iloc[-1] - df['close'].iloc[-1])))
         unplaced += df.attrs['events_unplaced']
+        postponed += df.attrs['events_postponed']
         dropped += df.attrs['events_dropped']
         pr_ident.append(float(np.abs(df['adj_close_pr']
                                      - df['close'] * df['pr_factor']).max()))
@@ -145,7 +146,9 @@ def check_code_identities(sample: list[str]) -> None:
     print(f'  max |adj_close_tr[-1] - close[-1]|     {max(anchor):.3e}')
     print(f'  max |adj_close_pr - close*pr_factor|   {np.nanmax(pr_ident):.3e}')
     print(f'  max |adj_close_pr[-1] - close[-1]|     {max(pr_anchor):.3e}')
-    print(f'  events unplaced {unplaced:,}   dropped (non-positive leg) {dropped:,}')
+    print(f'  events postponed to the next session (closure) {postponed:,}')
+    print(f'  events unplaced {unplaced:,}   '
+          f'dropped (bad leg or duplicate filing) {dropped:,}')
     print(f'  pr unresolved (mixed event, no declared cash leg) {pr_unres:,} '
           f'in {pr_stocks:,} stocks → {pr_nan:,} NaN rows')
 
