@@ -29,8 +29,11 @@ DATASETS = {
     "instflow":          "TaiwanStockInstitutionalInvestorsBuySell",
     "shares":            "TaiwanStockShareholding",
     # priority extension (informed-trading / reversal research).
-    # TaiwanStockPriceAdj is paid-only; reconstruct total return from
-    # TaiwanStockDividend + existing TaiwanStockPrice instead.
+    # TaiwanStockPriceAdj is gated above our `register` level for every calling
+    # convention, so its "Free (with data_id)" doc line is wrong (re-probed
+    # 2026-07-29; see README "Excluded"). Build the adjusted series from
+    # TaiwanStockPrice plus the per-event exchange reference prices in
+    # div_result / cap_red below.
     "per_pbr":           "TaiwanStockPER",
     "margin_short":      "TaiwanStockMarginPurchaseShortSale",
     "month_rev":         "TaiwanStockMonthRevenue",
@@ -46,6 +49,10 @@ DATASETS = {
     # Most stocks have 0 rows; consolidate post-download with
     # consolidate_capred.py into a single capital_reduction.parquet.
     "cap_red":           "TaiwanStockCapitalReductionReferencePrice",
+    # exchange-published 除權息 reference prices (before_price/after_price),
+    # the per-event adjustment factor for a 還原股價 series. Verified reachable
+    # at register level 2026-07-29, unlike TaiwanStockPriceAdj above.
+    "div_result":        "TaiwanStockDividendResult",
 }
 
 

@@ -133,13 +133,16 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── fin_is/<stock_id>.parquet          quarterly income statement (incl. EPS row)         (2005-2024)
 ├── fin_bs/<stock_id>.parquet          quarterly balance sheet                            (2005-2024)
 ├── fin_cf/<stock_id>.parquet          quarterly cash-flow statement                      (2005-2024)
-├── dividend/<stock_id>.parquet        cash + stock dividends                             (2005-2024)
+├── dividend/<stock_id>.parquet        cash + stock dividends, declaration level          (2005-2024)
+├── div_result/<stock_id>.parquet      除權息 exchange reference prices → adj. factor      (2005-2024)
 ├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2024)
 ├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2005-2024)
 ├── *_2015_2024/<stock_id>.parquet     **backup** of pre-rollback (2015-2024) build       (~700 MB total)
 ├── build_universe.py                  universe construction script (incl. delisted merge)
 ├── download.py                        resumable downloader (--datasets to filter)
 ├── consolidate_capred.py              merges cap_red/*.parquet → capital_reduction.parquet
+├── adjust.py                          back-adjusted close, price-return and total-return
+├── validate_adjust.py                 read-only checks on what `adjust.py` builds
 ├── download.log                       per-stock progress log
 ├── nohup.bg2005.out                   2005-2024 re-download runtime log (started 2026-04-27)
 └── .token                             FinMind API token (chmod 600)
@@ -161,7 +164,7 @@ in the 10-year backup).
 |---|---|---|
 | `date`             | str    | YYYY-MM-DD |
 | `stock_id`         | str    | 4-digit ticker |
-| `open/max/min/close` | float64 | TWD, adjusted for capital changes per FinMind |
+| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — verified 99.87 % exact against the exchange's own pre-event `before_price` (see [`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md)) |
 | `spread`           | float64 | close − prior close (TWD) |
 | `Trading_Volume`   | int64  | shares traded |
 | `Trading_money`    | int64  | **trading value in TWD** (used for FFI normalization) |
@@ -243,6 +246,40 @@ df = (ohlcv.merge(flow_wide, on="date", how="left")
 df["mktcap_twd"] = df["close"] * df["NumberOfSharesIssued"]
 ```
 
+## Adjusted prices
+
+`ohlcv/close` is raw, so any return spanning a 除權息 or 減資 session
+carries the full reference-price step. `adjust.py` rebuilds the
+back-adjusted series from the exchange's own published reference
+prices, in both conventions:
+
+```python
+from finmind_data.adjust import load_adjusted
+
+df = load_adjusted("2330")   # + pr_factor / adj_close_pr, tr_factor / adj_close_tr
+```
+
+| | removes | leaves | use when |
+|---|---|---|---|
+| `adj_close_pr` | 無償配股, 現增, 減資 | the cash drop, as a real return | you want a price series — the usual vendor "adjusted close", and the symmetric counterpart to KRX `ChangesRatio` |
+| `adj_close_tr` | all of it, cash included | +31 bp ex-day residual | you want what a holder earned |
+
+The factors are the primary output — any other price column adjusts the
+same way (`adj_open_tr = open * tr_factor`) — and both are normalised so
+the adjusted close equals `close` on the last row.
+
+`pr` costs something `tr` does not: the ex-day drop survives as a large
+mechanical negative return (−311 bp mean on 除權息 sessions, against
++31 bp under `tr`) on a seasonally clustered set of dates, which a
+flow-return study has to handle rather than ignore. `pr` is also NaN
+before the last mixed event whose cash leg was never declared — 248
+events in 112 stocks — rather than silently guessing a split.
+
+Verification results, the free parameters and the residual ex-day
+effect are in
+[`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md);
+`python -m finmind_data.validate_adjust` reproduces them.
+
 ## Load the full panel
 
 ```python
@@ -290,9 +327,12 @@ ohlcv_all = pd.concat(
 3. **ETFs, DRs, warrants** are intentionally excluded. 9 delisted
    non-equity products are not present (see `delisted_universe.parquet`
    vs `universe.parquet` for the diff).
-4. **Price adjustment**: FinMind returns close prices that reflect capital
-   reductions and splits, but verify against `taiwan_stock_dividend` if
-   doing dividend-inclusive total-return studies.
+4. **Price adjustment**: `TaiwanStockPrice` closes are **raw** — they reflect
+   nothing, not splits and not capital reductions. Build the adjusted series by
+   chaining the exchange's own reference prices: `div_result/` (除權息,
+   `after_price/before_price`, covers cash *and* rights) and `cap_red/` (減資).
+   The two event sets are disjoint, so the chains compose without double
+   counting. See [`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md).
 
 ## Cross-market notes (Korea ↔ Taiwan)
 
@@ -351,14 +391,15 @@ Second batch (free-tier verified):
 | `fin_is/` | `TaiwanStockFinancialStatements` | Quarterly income statement (includes EPS as a `type` row) |
 | `fin_bs/` | `TaiwanStockBalanceSheet` | Quarterly balance sheet |
 | `fin_cf/` | `TaiwanStockCashFlowsStatement` | Quarterly cash-flow statement |
-| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends; also used to reconstruct total-return series |
+| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends, at **declaration** level — the per-component split (`CashEarningsDistribution`, `StockEarningsDistribution`, `CashIncreaseSubscriptionRate`). Units differ per field: stock dividends are per NT$10 par, rights are 每仟股. Also carries `CashExDividendTradingDate`, a **declared ex-date usable as an independent second source** for `div_result`'s event date — the two agree on 19,722 of 19,730 comparable events (**99.96 %**; of 2,228 non-matches, 2,220 are outside that stock's `div_result` span and only 8 are real). Present for 1,768 of 2,154 stocks. |
+| `div_result/` | `TaiwanStockDividendResult` | 除權除息結果表 — the exchange's **published reference prices** per ex-event (`before_price`, `after_price`). 22,369 events / 1,926 stocks. This, not `dividend/`, is what the adjusted series is built from. |
 | `sec_lending/` | `TaiwanStockSecuritiesLending` | 借券/議借 — institutional short proxy |
 
 **Excluded — paid tier or not in FinMind enum:**
 
 | Endpoint | Reason | Workaround |
 |---|---|---|
-| `TaiwanStockPriceAdj` | Paid tier only | Compute total return from `TaiwanStockPrice.close` + `TaiwanStockDividend` |
+| `TaiwanStockPriceAdj` | Above `register`, our token's level. This is a **tier gate, not a dead endpoint**: the name is in the v4 dataset enum, and where a bogus name returns HTTP 422 with an empty body, this returns HTTP 400 `"Your level is register. Please update your user level"`. Identical across all four calling conventions — with `data_id`, one-day range, no `data_id`, no dates — so the docs' "Free (with data_id)" line is simply wrong. No other host serves it (`api.web…/v2/data`, `/api/v3/data` both 404). Which paid tier unlocks it is not stated; the API only points at the Sponsor page. Re-probed 2026-07-29. | **Not needed.** `div_result/` (`TaiwanStockDividendResult`) is free at register level and gives the exchange's own per-event factor, which is strictly better than a pre-built series. Chain it with `cap_red/`. |
 | `TaiwanStockHoldingSharesPer` | Paid tier only | Skip; use TEJ or MOPS for holder distribution if needed |
 | `TaiwanStockEPS` | Not a FinMind dataset | EPS lives inside `TaiwanStockFinancialStatements` as `type == 'EPS'` rows |
 | `TaiwanStockShareholdingClassification` | Not a FinMind dataset | Use MOPS insider-holdings disclosures directly |
@@ -378,6 +419,11 @@ Other follow-up not pursued:
 
 - `TaiwanStockNews` — event-study material; size and dedup overhead not
   worth the default download.
+- `TaiwanStockTotalReturnIndex` — free at register level, but requires
+  `data_id` (`TAIEX`; passing none is an error). Market-level 報酬指數, so it is
+  a benchmark, not a per-stock adjustment — irrelevant to the 還原股價 build,
+  worth a one-shot pull if a study ever needs a dividend-inclusive market
+  return. Probed 2026-07-29.
 
 ### ⚠️ Not in FinMind — external sources required
 
@@ -437,6 +483,9 @@ nohup python download.py --datasets cap_red \
 python consolidate_capred.py    # → capital_reduction.parquet
 # (Delisting events are already in delisted_universe.parquet — no
 # separate fetch needed; `TaiwanStockDelisting` produced this file.)
+
+# Adjustment — needs div_result/ and capital_reduction.parquet, no network
+python -m finmind_data.validate_adjust    # checks what adjust.py builds
 ```
 
 Re-running any command is safe: `download.py` skips stock-subdir pairs
