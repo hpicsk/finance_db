@@ -16,6 +16,8 @@ exactly how each universe was pulled, filtered, and joined.
 ```
 finance_db/
 ├── README.md                 (this file — overview + universe rules)
+├── ADJUSTED_PRICE_VERIFICATION.md  how the KR/TW adjusted + total-return series
+│                                   were verified, and the traps that faked results
 ├── .gitignore                (excludes large data + credentials)
 │
 ├── fnguide_data/             FnGuide DataGuide export tree (Korean equities)
