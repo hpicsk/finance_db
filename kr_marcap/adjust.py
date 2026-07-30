@@ -81,13 +81,13 @@ import pyarrow.parquet as pq
 from kr_marcap.universe import RELIABLE_START
 from kr_marcap import corp_actions
 from kr_marcap.krx_adj_oracle import load_oracle
+from kr_marcap.dividend_events import load_cash_events
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MARCAP_DIR = REPO_ROOT / 'marcap' / 'data'
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 FACTORS_PATH = CACHE_DIR / 'adj_factors.parquet'
 CANDIDATES_PATH = CACHE_DIR / 'adjust_anomalies.csv'   # material share jumps + break/residual verdicts
-DIVIDENDS_PATH = CACHE_DIR / 'dividends.parquet'
 
 # Tolerance for the KRX-oracle 거래재개 reset detector. ChangesRatio is rounded to
 # 0.01%, so a legitimately-matching official return differs by <~1e-3; a real
@@ -334,42 +334,52 @@ def _load_factors(path: str) -> pd.DataFrame:
 
 
 def _apply_total_return(out: pd.DataFrame, ticker: str,
-                        dividends_path: Path | None = None) -> pd.DataFrame:
-    """Add `tr_factor` and `adj_close_tr` by reinvesting cash dividends.
+                        events_path: Path | None = None) -> pd.DataFrame:
+    """Add `tr_factor`, `adj_close_tr` and `is_ex_date` by reinvesting cash dividends.
 
-    Each fiscal year's disclosed cash-dividend yield (DART 현금배당수익률, cached
-    by ``kr_marcap.dividends``) is reinvested on that year's last trading row —
-    the ex-dividend 배당락 lands at ~year-end and KRX 등락률 already carries the
-    matching price drop, so the bump offsets it (TR return ≈ price return + yield
-    on that day, == price return on every other day). The series is back-adjusted
-    (``tr_factor`` normalised to 1 today) so ``adj_close_tr`` today == raw close
-    and any ``adj_X_tr`` == ``adj_X * tr_factor``.
+    Each SEIBro cash-dividend event (``kr_marcap.dividend_events``) is reinvested
+    on the session it actually went ex — the 배당락일 derived from its 배정기준일
+    under KRX T+2 settlement — at that event's own yield, ``dps`` over the
+    previous session's close. KRX 등락률 carries the matching price drop on that
+    same day, so the bump offsets it there and the TR return equals the price
+    return on every other day. The series is back-adjusted (``tr_factor``
+    normalised to 1 today) so ``adj_close_tr`` today == raw close and any
+    ``adj_X_tr`` == ``adj_X * tr_factor``.
 
-    Approximation: annual yields are applied at calendar year-end, so mid-year
-    interim dividends are lumped to December — the annual total is correct and
-    multi-year horizons are unaffected. Dividends exist only for fiscal ≥2014
-    (DART structured 배당 coverage); earlier years stay price-return-only.
+    This replaced an annual approximation that reinvested DART's fiscal-year
+    yield on the year's last trading row. That row is one session *late* — the
+    배당락 sits on 폐장일 −1 — so it left the real ex-day drop uncorrected and
+    added a spurious spike on 폐장일; it also lumped quarterly payers' four
+    events into December. See ``kr_marcap.dividend_events`` for the measurement.
+
+    Events whose ex-date is not a row of this ticker's series (delisted before it,
+    or inside pre-series-break history dropped as ``valid=False``) are skipped
+    rather than shifted onto a neighbouring session, and counted in the returned
+    frame's ``attrs['tr_events_unplaced']``.
+
+    ``is_ex_date`` marks the rows carrying an add-back. Korean prices fall only
+    ~81 % of the dividend, so those sessions keep a real ~+29 bp mean abnormal
+    return (the ex-day tax/clientele effect, not a data defect) — daily-horizon
+    studies should flag or drop them explicitly.
     """
-    path = Path(dividends_path or DIVIDENDS_PATH)
-    if not path.exists():
-        raise FileNotFoundError(
-            f'dividends not found at {path} — run `python -m kr_marcap.dividends build` first'
-        )
-    div = pd.read_parquet(path)
-    div['code'] = div['code'].astype(str).str.zfill(6)
-    d = div[(div['code'] == ticker) & div['yield_pct'].notna() & (div['yield_pct'] > 0)]
-    years = out['date'].dt.year.to_numpy()
+    ev = load_cash_events(events_path)
+    d = ev[ev['code'] == ticker]
     steps = np.ones(len(out))
-    for fy, yld in zip(d['fiscal_year'].astype(int), d['yield_pct'].astype(float)):
-        idx = np.where(years == fy)[0]
-        if len(idx) == 0:
+    is_ex = np.zeros(len(out), dtype=bool)
+    close = out['close'].to_numpy(dtype=float)
+    idx = pd.Index(out['date']).get_indexer(d['ex_date'])
+    for i, dps in zip(idx, d['dps'].to_numpy(dtype=float)):
+        if i <= 0:                      # -1 == ex-date absent; 0 == no prior close
             continue
-        steps[idx[-1]] *= 1.0 + yld / 100.0
+        steps[i] *= 1.0 + dps / close[i - 1]
+        is_ex[i] = True
     tr = np.cumprod(steps)
     tr_norm = tr / tr[-1]
     out = out.copy()
     out['tr_factor'] = tr_norm
     out['adj_close_tr'] = out['adj_close'].to_numpy() * tr_norm
+    out['is_ex_date'] = is_ex
+    out.attrs['tr_events_unplaced'] = int((idx <= 0).sum())
     return out
 
 
@@ -378,7 +388,7 @@ def load_adjusted(
     factors_path: Path | None = None,
     marcap_dir: Path = MARCAP_DIR,
     total_return: bool = False,
-    dividends_path: Path | None = None,
+    events_path: Path | None = None,
     reliable_only: bool = False,
 ) -> pd.DataFrame:
     """Return a single ticker's full OHLCV history with adjusted columns.
@@ -389,13 +399,14 @@ def load_adjusted(
     Volume is also adjusted (multiplied by 1/cum_factor → shares scaled to
     today's share-count basis) so adj_close × adj_volume ≈ raw_close × raw_volume.
 
-    With ``total_return=True``, two more columns are added — ``tr_factor`` and
-    ``adj_close_tr`` — that reinvest DART cash dividends on top of the price
-    adjustment (see ``_apply_total_return``; requires the dividends cache).
+    With ``total_return=True``, three more columns are added — ``tr_factor``,
+    ``adj_close_tr`` and ``is_ex_date`` — reinvesting each SEIBro cash-dividend
+    event on the session it went ex (see ``_apply_total_return``; requires the
+    ``kr_marcap.dividend_events`` cache).
 
     ``reliable_only=True`` drops rows before ``RELIABLE_START`` (2015-01-01) —
-    the opt-in for the deficient pre-2015 window (1996-99 illiquidity; no
-    total-return data pre-2014). Default off (full history, no survivorship bias).
+    the opt-in for the deficient pre-2015 window (1996-99 illiquidity; thinner
+    dividend coverage). Default off (full history, no survivorship bias).
     """
     path = str(factors_path or FACTORS_PATH)
     if not os.path.exists(path):
@@ -448,7 +459,7 @@ def load_adjusted(
     if reliable_only:
         out = out[out['date'] >= RELIABLE_START].reset_index(drop=True)
     if total_return:
-        out = _apply_total_return(out, ticker, dividends_path)
+        out = _apply_total_return(out, ticker, events_path)
     return out
 
 

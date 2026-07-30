@@ -1,11 +1,14 @@
-"""Cash-dividend collection from DART → total-return layer for kr_marcap.
+"""Annual cash-dividend collection from DART — cross-check for the TR layer.
 
-marcap's ChangesRatio adjustment (``adjust.py``) is a *price* return: KRX 등락률
-does not reset the 기준가 for ordinary cash dividends, so the adjusted series
-omits them. This module crawls DART's structured 배당 report for the full
-KOSPI+KOSDAQ common universe and caches per-(ticker, fiscal_year) cash-dividend
-yield. ``adjust.load_adjusted(..., total_return=True)`` reinvests that yield at
-each fiscal year-end to produce a total-return series (``adj_close_tr``).
+This module crawls DART's structured 배당 report for the full KOSPI+KOSDAQ common
+universe and caches per-(ticker, fiscal_year) cash-dividend yield. It is *annual*:
+one figure per fiscal year, no 기준일 and no 결산/중간/분기 split, so it cannot say
+which session the 배당락 fell on. ``kr_marcap.dividend_events`` (SEIBro, event-level)
+now feeds ``adjust.load_adjusted(..., total_return=True)``; this file is kept as an
+independent second source — summing the SEIBro events over a December fiscal year
+reproduces DART's annual DPS for 96.2 % of 12.1 k (ticker, FY) pairs and 98.9 % of
+the delisted subset, which is a real check because the two are collected
+independently (예탁원 권리배정 record vs 사업보고서 disclosure).
 
 Coverage: DART's structured 배당 endpoint is populated from ~fiscal 2014 only;
 earlier years return no data and stay price-return-only. This is one of the

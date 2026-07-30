@@ -40,7 +40,7 @@ with `load_adjusted(ticker, reliable_only=True)`; the policy constant is
 |---|---|---|
 | **1995–2000** | Raw marcap **codes and names are malformed**. Ticker codes lost their leading zeros (`5930`=삼성전자, `200`=대우중공업, `25620`=신우) and short names are space-padded to fixed width (`신    우`=신우, `삼양사(1우 )`). Because the codes are not 6 chars they will not join to any 6-digit-keyed table, and the universe filter / `len(ticker)==6` convention **silently drops the entire pre-2001 window** | 2,342 distinct non-6-char codes / ~1.78 M rows, all in 1995–2000 (2001+ codes are clean 6-digit); plus 416 space-padded names, concentrated 1996–2001 |
 | **1996–1999** | IMF-era illiquidity — a large share of listed names did not trade on a given day, so daily returns are stale/zero and the ChangesRatio chain rests on thin prints | no-trade (`Volume==0`) days **17 % (1996), 23 % (1997), 26 % (1998), 11 % (1999)** vs ~1–2 % in 2000–2024; ~720 of the 813 phantom no-trade ChangesRatio rows fall in 1996–99 (see [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md)) |
-| **pre-2014** | No cash-dividend data → no total return | DART's structured 배당 endpoint is populated only from fiscal 2014, so `adj_close_tr` is price-return-only before then |
+| **pre-2002, and 2004** | Thin / partial cash-dividend data → `adj_close_tr` degrades toward price return | SEIBro 배당내역 returns 3 events in 2000 and 3 in 2001 against ~1,000/yr from 2002 on; 2004 keeps only 333 because the server refuses 1,303 rows of the 2004-12-31 window (reported by the build, not silently dropped) |
 | 2000–2014 | Price data is otherwise sound | `ChangesRatio`/`Stocks` 100 % present every year; no-trade ~1–2 % |
 
 The 1995–2000 code/name corruption is **left as-is in marcap, not normalized**:
@@ -50,9 +50,10 @@ only re-admit a window that is unusable for the other two reasons above. (The
 classifier handles the padded names safely regardless — security kind is decided
 by the code's terminal digit, not a name suffix; see [What "common stock" means](#what-common-stock-means-here).)
 
-The binding constraint is **total return**: `adj_close_tr` reinvests dividends
-only from fiscal 2014 on, so 2015 is the first full year where both price
-liquidity *and* total-return coverage are clean.
+Total return is no longer the binding constraint — SEIBro dividend events run
+from 2002, not fiscal 2014 as the old DART layer did. 2015 remains the
+reliability floor for the price reasons above (liquidity, code/name corruption),
+with 2004 the one later year whose dividend coverage is knowingly partial.
 
 ## Quick start
 
@@ -62,9 +63,9 @@ from kr_marcap.universe import build_universe_panel
 from kr_marcap.adjust import build_adjustment_factors
 build_universe_panel()
 build_adjustment_factors()
-# optional — only if you need total_return=True (needs OPEN_DART_API_KEY, ~30 min):
-from kr_marcap.dividends import build_dividends
-build_dividends()
+# optional — only if you need total_return=True (no API key, ~12 min):
+from kr_marcap.dividend_events import build_dividend_events
+build_dividend_events()
 
 # 2. point-in-time common-stock universe
 from kr_marcap.universe import universe
@@ -79,8 +80,8 @@ df = load_adjusted('005930')                    # Samsung Electronics (price ret
 # columns: date, open, high, low, close, volume, amount, market_cap, stocks,
 #          cum_factor, adj_open, adj_high, adj_low, adj_close, adj_volume
 
-# 4. total return (reinvests DART cash dividends; needs the dividends cache)
-df = load_adjusted('005930', total_return=True)  # + tr_factor, adj_close_tr
+# 4. total return (reinvests each cash dividend on its own 배당락일)
+df = load_adjusted('005930', total_return=True)  # + tr_factor, adj_close_tr, is_ex_date
 df = load_adjusted('005930', reliable_only=True) # drop deficient pre-2015 rows
 ```
 
@@ -91,8 +92,11 @@ python -m kr_marcap.universe build           # build the panel
 python -m kr_marcap.universe                 # quick membership demo
 python -m kr_marcap.adjust build             # build adjustment factors
 python -m kr_marcap.adjust                   # Samsung 50:1 split spot-check
-python -m kr_marcap.dividends build          # crawl DART dividends (needs OPEN_DART_API_KEY, ~30 min)
-python -m kr_marcap.dividends                # Samsung dividend-yield demo
+python -m kr_marcap.dividend_events build    # pull SEIBro dividend events (no API key, ~12 min)
+python -m kr_marcap.dividend_events          # Samsung quarterly ex-date demo
+python -m kr_marcap.dividends build          # DART annual 배당 (cross-check only; needs OPEN_DART_API_KEY)
+python -m kr_marcap.validate_dividend_events  # re-run the five total-return checks
+python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEIBro window
 ```
 
 ## Module map
@@ -102,7 +106,15 @@ python -m kr_marcap.dividends                # Samsung dividend-yield demo
 | `classify.py` | Pure `classify_ticker(code, name, market) → kind`. Returns one of `common / preferred / spac / reit / fund / etf / konex / other`. Run as `__main__` for the smoketest. |
 | `universe.py` | Builds `cache/universe_panel.parquet` (per-ticker membership window + kind). `universe(date, kind)` returns the active set. |
 | `adjust.py` | Builds `cache/adj_factors.parquet` by compounding the exchange `ChangesRatio` (등락률); the `Stocks`-column ratio is kept only to detect entity-change series breaks. `load_adjusted(ticker)` returns adjusted OHLCV for one name (`total_return=True` adds the dividend-reinvested series; `reliable_only=True` clips pre-2015). |
-| `dividends.py` | Builds `cache/dividends.parquet` by crawling DART's structured 배당 report (fiscal 2014+) for the full common universe. Consumed by `load_adjusted(..., total_return=True)`. |
+| `dividend_events.py` | Builds `cache/dividend_events.parquet` from SEIBro 배당내역 — one row per dividend *event* (배정기준일, 배당구분, 주당배당금), with the 배당락일 derived under KRX T+2. No API key. Consumed by `load_adjusted(..., total_return=True)`. |
+| `dividends.py` | Builds `cache/dividends.parquet` by crawling DART's structured 배당 report (fiscal 2014+). Annual only — kept as an independent cross-check on `dividend_events.py`, no longer wired into the total-return path. |
+| `validate_dividend_events.py` | Re-runs the five checks behind the total-return claims: ex-date localisation, drop-off robustness, the December artifact, event placement, and the DART reconciliation. Read-only, ~1 min. |
+| `seibro_probe.py` | Raw SEIBro endpoint inspection — `raw` (every field of a window, incl. the ones the loader drops), `count` (LIST_CNT vs rows served, per quarter), `hole` (bisect for the first row offset the server refuses). For diagnosing a build, not for building. |
+
+Why any of these checks establish anything — and the two measurement traps that
+produced confident wrong numbers — is in
+[`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md), which
+covers the Taiwanese series on the same terms.
 
 ## What "common stock" means here
 
@@ -210,16 +222,26 @@ real −2.1 % move). What remains:
 
 - **Cash dividends** — `adj_close` is a *price* return: KRX 등락률 does not reset
   the 기준가 for ordinary cash dividends, so it matches KRX exactly but understates
-  total return. This gap is now **quantified and optionally closed** —
-  `load_adjusted(ticker, total_return=True)` adds `adj_close_tr`, reinvesting DART
-  cash-dividend yields (`kr_marcap.dividends`, fiscal 2014+). Measured on a
-  stratified 300-stock 2014–2024 DART sample, the omitted drift is
-  **~1.4 %/yr cap-weighted** (≈ KOSPI's published yield): negligible for
-  daily/h-day returns — it lands only on the single annual ex-dividend day — but
-  **~15 % over a decade and ~32 % over 20 yr** for buy-and-hold totals (KOSPI
-  names ≈2× KOSDAQ; ~21 % of names never pay, i.e. zero drift). Pre-2014 has no
-  dividend data, so `adj_close_tr` is price-return-only there (see
-  [Use post-2015 data](#️-use-post-2015-data-for-korean-stocks)).
+  total return. This gap is **quantified and optionally closed** —
+  `load_adjusted(ticker, total_return=True)` adds `adj_close_tr`, reinvesting each
+  SEIBro cash-dividend event (`kr_marcap.dividend_events`, 2002+) on the 배당락일
+  derived from its 배정기준일 under KRX T+2. The omitted drift is **~1.4 %/yr
+  cap-weighted** (≈ KOSPI's published yield): **~15 % over a decade and ~32 % over
+  20 yr** for buy-and-hold totals (KOSPI names ≈2× KOSDAQ; ~21 % of names never
+  pay, i.e. zero drift).
+
+  It is *not* negligible for daily work in the way an annual approximation
+  suggests. On 2020–2024 KOSPI+KOSDAQ common, payers underperform non-payers by
+  **−155 bp** on the second-to-last December session — the actual 배당락일, one
+  day before 폐장일. Reinvesting per event moves that to **+71 bp**; the ~+29 bp
+  that remains over the neighbouring baseline is the real ex-day drop-off (Korean
+  prices fall ~81 % of the dividend: cross-sectional slope **−0.809**, t = −37.0,
+  against +0.08 on the session before), not a residual data error. The slope is
+  trimmed at the 99th yield percentile — untrimmed it reads −0.311, swung by a few
+  genuine return-of-capital payouts, and is stable at −0.81/−0.81/−0.79 for
+  1/2/5 % trims. `is_ex_date` marks those sessions so a daily-horizon study can
+  flag or drop them. Every number in this bullet is reproduced by
+  `python -m kr_marcap.validate_dividend_events`.
 - **The largest surviving returns are real, not errors.** Relisting / 거래재개
   first days after a long halt (no price limit) and the 2015 우선주 품절주 mania
   produce extreme but genuine adjusted returns the exchange itself reported; they
@@ -281,4 +303,5 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
 | `corp_action_residuals.csv` | Material share jumps no official source explained (review queue; default not-break) | (same) |
 | `krx_adj_oracle.parquet` | KRX official 수정주가 per (date, code) — reset detection + validation | `python -m kr_marcap.krx_adj_oracle --all` |
 | `oracle_validation.csv` | Days where our adjusted return disagrees with KRX 수정주가 | `python -m kr_marcap.validate_against_oracle` |
-| `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps) | `python -m kr_marcap.dividends build` |
+| `dividend_events.parquet` | One row per SEIBro dividend event (code, record_date, ex_date, cum_date, kind, share_class, dps, stock_ratio, pay_date, market_label) — 62 k rows / 29.6 k cash events / 2,982 tickers, 2000–2026 | `python -m kr_marcap.dividend_events build` |
+| `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps). Cross-check only — reconciles to the event sums for 96.2 % of 12.1 k (ticker, FY) pairs, 98.9 % on the delisted subset | `python -m kr_marcap.dividends build` |
