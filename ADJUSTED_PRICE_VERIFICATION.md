@@ -265,6 +265,11 @@ ex-dates (0.665) and scattered interim ones (0.643). The holder receives 100 %
 of the cash, so a total-return series must add 100 %, and the difference is the
 real ex-day tax/clientele effect. It is marked, not erased.
 
+The Korean row and that 0.663 are one measurement, taken on the qf_paper panel
+as a same-date payer-versus-non-payer contrast. Nothing in this repo rebuilds
+them, and the Taiwanese rows are a different estimator that happens to answer
+the same question. See Open before comparing the two.
+
 ---
 
 ## 7. Can the fused Taiwanese factor be split?
@@ -396,15 +401,22 @@ sensitivity rather than quote one level.
 | window `Y0, Y1 = 2020, 2024` | both | **kept, justified.** Five full years ending before the 2024 배당절차 개선 dispersed record dates out of December. |
 | `_SHORTFALL_TOL = 0.02` | SEIBro collection guard | **kept, weakest of the set.** The observed server-side count drift is ~0.4 %, so 2 % is a hand-picked 5× headroom. It only gates a fail-loud abort and touches no published number. |
 
-**The step convention is a free parameter too, and the two markets differ.**
-Korea uses the linearised `1 + dps/close_cum`; Taiwan uses the exact
-`before/after`. The exact form exceeds the linear one by `x²`. This is not
-pedantry in Taiwan, where `x` carries share-count changes as well as cash —
-median 4.6 % of the cum price, q95 12.6 % — so the linear form would be off by a
-median 22.6 bp per event and a median 3.7 % compounded over a stock's history
-(q99 30.5 %). In Korea `x` is a true dividend yield, median 1.7 %, and the gap is a
-median 2.9 bp per event, 0.83 % compounded over a typical ticker's ~11 events.
-Small, real, and in the direction of understatement.
+**The step convention was a free parameter, and is no longer.** Both markets now
+use the exact step — Taiwan's `before/after`, Korea's `1 + dps/close_ex`. The
+distinction is not cosmetic. A one-period total return is `(P_ex + D)/P_cum`,
+so in *return* space the cum close is the exact denominator and
+`ChangesRatio + dps/close_cum` is right, which is what the payer-versus-non-payer
+check above uses. But a back-adjustment factor composes *multiplicatively* across
+time, and there the same step telescopes correctly only with the ex close.
+Korea used the cum close and so understated the factor. On a 200-ticker sample
+(1,694 events) the correction is a median 0.88 bp per event and a median 0.105 %
+compounded, but it scales as the yield squared, so the tail is not small: q95
+32.3 bp per event, and a maximum of 806 bp on one event and +44.1 % compounded
+over a ticker's history, on the return-of-capital payers whose yields run to tens
+of percent. Taiwan's step is larger still — median 4.6 % of the cum price, q95
+12.6 %, since it carries share-count changes as well as cash — so the linear form
+there would have been off by a median 22.6 bp per event and a median 3.7 %
+compounded (q99 30.5 %).
 
 ## Reproducing
 
@@ -418,11 +430,26 @@ python -m finmind_data.adjust                   # Taiwan adjusted-series demo
 
 ## Open
 
-- **Korea's step is linearised.** `kr_marcap.adjust._apply_total_return` uses
-  `1 + dps/close_cum` where reinvestment at the ex price gives
-  `1 + dps/close_ex`. The understatement is a median 2.9 bp per event and 0.83 %
-  compounded; correcting it would align the two markets on one convention, at
-  the cost of moving every Korean total-return number slightly.
+- **The Korean row of §6 has no generator in this repo.** The two Taiwanese rows
+  come out of `finmind_data.validate_adjust` check [5] and re-measure themselves
+  on every run. The −160 bp / +82 bp pair does not: it is same-date payer versus
+  non-payer across the 23 ex-dates in the window, measured once on the *qf_paper*
+  panel rather than on `marcap/`, which is why nothing here rebuilds it. It is
+  the only number in this document a re-run would not catch drifting.
+
+  Three estimators of the same ex-day drop-off are in play and none of them is a
+  reading of another. The published 0.663 is that same-date contrast over all 23
+  ex-dates. Check [3] runs the identical contrast restricted to the December
+  session alone and reads −155 bp / +71 bp. A port of Taiwan's check [5] — mean
+  raw against mean `ChangesRatio + dps/close_cum` over affected rows, no
+  payer/non-payer differencing at all — reads −73 bp / +145 bp on 0.209 % of
+  rows, a ratio of 0.33, while check [1]'s cross-sectional slope reads 0.81
+  trimmed and 0.31 untrimmed. The affected-row share is the one quantity all of
+  them agree on. Quote the estimator with the number, always.
+
+  The step-convention change above is not a candidate explanation for any of the
+  gaps: on a 400-ticker measurement of the multiplicative path it moves the mean
+  total return on ex rows by +5 bp.
 - **2004 Korean dividend coverage is partial** — SEIBro refuses 1,303 rows of
   the 2004-12-31 window. Reported by the build rather than silently dropped;
   see the defect table in [`kr_marcap/README.md`](kr_marcap/README.md).

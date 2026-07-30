@@ -45,11 +45,13 @@ trusting the global result.
 Convention. Each event contributes ``step = before / after``, placed on the
 event row, accumulated with ``cumprod`` and normalised so the factor is 1.0 on
 the last row — ``adj_close_tr[today] == close[today]``. This is the exact
-reference-price ratio, and it is deliberately *not* kr_marcap's linearised
-``1 + dps/close_cum``: Taiwan's step is large (median 4.6 % of the cum price,
-q95 12.6 %, because it carries share-count changes as well as cash), where the
-linear form is understated by ``x**2`` — a median 22.6 bp per event, compounding
-to a median 3.7 % and a q99 30.5 % over a stock's full history.
+reference-price ratio, matching kr_marcap's ``1 + dps/close_ex`` in taking the
+step at the ex price rather than the cum one. Both are back-adjustment factors,
+which compose multiplicatively, and only the ex price telescopes correctly there.
+Taiwan's step is large — median 4.6 % of the cum price, q95 12.6 %, because it
+carries share-count changes as well as cash — so a cum-price form would be
+understated by ``x**2``, a median 22.6 bp per event compounding to a median 3.7 %
+and a q99 30.5 % over a stock's full history.
 """
 from __future__ import annotations
 

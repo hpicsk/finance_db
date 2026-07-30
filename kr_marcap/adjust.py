@@ -339,12 +339,18 @@ def _apply_total_return(out: pd.DataFrame, ticker: str,
 
     Each SEIBro cash-dividend event (``kr_marcap.dividend_events``) is reinvested
     on the session it actually went ex — the 배당락일 derived from its 배정기준일
-    under KRX T+2 settlement — at that event's own yield, ``dps`` over the
-    previous session's close. KRX 등락률 carries the matching price drop on that
-    same day, so the bump offsets it there and the TR return equals the price
-    return on every other day. The series is back-adjusted (``tr_factor``
-    normalised to 1 today) so ``adj_close_tr`` today == raw close and any
-    ``adj_X_tr`` == ``adj_X * tr_factor``.
+    under KRX T+2 settlement — buying shares at the price the cash could actually
+    buy them at, so the step is ``1 + dps/close_ex``. The ex close is what makes
+    the step exact rather than first-order: composed multiplicatively onto the
+    price return it telescopes to ``(P_ex + dps)/P_cum``, the one-period total
+    return. Reinvesting at the cum close instead overstates the shares bought
+    and understates the factor by a median 0.9 bp per event — but the gap goes as
+    the yield squared, so it reaches 806 bp on a single return-of-capital event
+    and 44 % compounded over one ticker's history. KRX 등락률 carries
+    the matching price drop on that same day, so the bump offsets it there and
+    the TR return equals the price return on every other day. The series is
+    back-adjusted (``tr_factor`` normalised to 1 today) so ``adj_close_tr`` today
+    == raw close and any ``adj_X_tr`` == ``adj_X * tr_factor``.
 
     This replaced an annual approximation that reinvested DART's fiscal-year
     yield on the year's last trading row. That row is one session *late* — the
@@ -355,12 +361,22 @@ def _apply_total_return(out: pd.DataFrame, ticker: str,
     Events whose ex-date is not a row of this ticker's series (delisted before it,
     or inside pre-series-break history dropped as ``valid=False``) are skipped
     rather than shifted onto a neighbouring session, and counted in the returned
-    frame's ``attrs['tr_events_unplaced']``.
+    frame's ``attrs['tr_events_unplaced']``. Shifting them is not the Taiwanese
+    remedy in disguise: every one that falls inside a listed window falls inside
+    a multi-year gap, so the next session is years away and would receive a
+    decade of dividends at once. ``attrs['tr_events_unpriced']`` counts the
+    separate case of an ex row whose close is a stale zero.
 
     ``is_ex_date`` marks the rows carrying an add-back. Korean prices fall only
     ~81 % of the dividend, so those sessions keep a real ~+29 bp mean abnormal
     return (the ex-day tax/clientele effect, not a data defect) — daily-horizon
-    studies should flag or drop them explicitly.
+    studies should flag or drop them explicitly. That +29 bp is an *abnormal*
+    return in the strict sense and only in it: ``validate_dividend_events``
+    check [3] differences payers against non-payers on the 배당락 session, +71 bp,
+    then against the +42 bp the same contrast reads on the neighbouring sessions.
+    The unconditional mean total return on these rows is far larger — +145 bp
+    over 2020-2024 on KOSPI+KOSDAQ common — because it carries the market and
+    the December seasonal too. Quote the one the sentence needs.
     """
     ev = load_cash_events(events_path)
     d = ev[ev['code'] == ticker]
@@ -368,10 +384,21 @@ def _apply_total_return(out: pd.DataFrame, ticker: str,
     is_ex = np.zeros(len(out), dtype=bool)
     close = out['close'].to_numpy(dtype=float)
     idx = pd.Index(out['date']).get_indexer(d['ex_date'])
+    unpriced = 0
     for i, dps in zip(idx, d['dps'].to_numpy(dtype=float)):
-        if i <= 0:                      # -1 == ex-date absent; 0 == no prior close
+        # -1 == ex-date absent. 0 == the series' first row, which carries no
+        # return for the bump to offset, so the event has nothing to correct.
+        if i <= 0:
             continue
-        steps[i] *= 1.0 + dps / close[i - 1]
+        # A zero print on the ex row is a stale marcap row, not a price -- two of
+        # the 26,355 ex rows, both 2007 preferred lines. It cannot price a
+        # reinvestment, and dividing by it would take the whole cumprod to inf,
+        # so the event is skipped and counted rather than allowed to poison the
+        # ticker's entire factor.
+        if not close[i] > 0:
+            unpriced += 1
+            continue
+        steps[i] *= 1.0 + dps / close[i]
         is_ex[i] = True
     tr = np.cumprod(steps)
     tr_norm = tr / tr[-1]
@@ -380,6 +407,7 @@ def _apply_total_return(out: pd.DataFrame, ticker: str,
     out['adj_close_tr'] = out['adj_close'].to_numpy() * tr_norm
     out['is_ex_date'] = is_ex
     out.attrs['tr_events_unplaced'] = int((idx <= 0).sum())
+    out.attrs['tr_events_unpriced'] = unpriced
     return out
 
 
