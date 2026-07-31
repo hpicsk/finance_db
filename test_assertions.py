@@ -157,6 +157,67 @@ def test_capital_reduction_artifact_exists():
     return "capital_reduction.parquet present"
 
 
+# ---- Taiwan: the adjusted series on its three canonical corporate actions ---
+def test_taiwan_adjust_canonical_cases():
+    """ADJUSTED_PRICE_VERIFICATION.md §7 and §8, on the cases they name.
+
+    One case per mechanism the two sections claim: the 現金減資 split, the
+    pre-2011 reduction the event file cannot see, and FinMind's zero-close
+    encoding for a session that did not trade.
+    """
+    sys.path.insert(0, str(REPO))
+    if not (REPO / "finmind_data/unpriced_actions.parquet").exists():
+        return "SKIP (unpriced_actions.parquet not built)"
+    from finmind_data.adjust import load_adjusted
+
+    # 2412 中華電: a 20 % cash reduction, the filed ratio. §7 claims the par-10
+    # identity recovers the refund from the two reference prices alone, so the
+    # cash stays in the price-return chain: pr_step = step * (1 - C/before).
+    cr = pd.read_parquet(REPO / "finmind_data/capital_reduction.parquet")
+    e = cr[cr["stock_id"].astype(str) == "2412"].iloc[0]
+    b = float(e["ClosingPriceonTheLastTradingDay"])
+    a = float(e["PostReductionReferencePrice"])
+    r = (a - b) / (a - 10.0)
+    assert abs(r - 0.20) < 0.01, (
+        f"ADJUSTED_PRICE_VERIFICATION.md §7 claims the par-10 identity returns "
+        f"the filed reduction ratio (0.20 for 2412); got r={r:.4f}"
+    )
+    d = load_adjusted("2412")
+    i = int(d.index[d["is_cap_red"]][0])
+    step = d["tr_factor"].iloc[i] / d["tr_factor"].iloc[i - 1]
+    pr_step = d["pr_factor"].iloc[i] / d["pr_factor"].iloc[i - 1]
+    assert abs(pr_step - step * (1.0 - 10.0 * r / b)) < 1e-6, (
+        f"§7 claims a 現金減資 keeps its refund in adj_close_pr via "
+        f"pr_step = step*(1 - C/before); got pr_step={pr_step:.6f} against "
+        f"step={step:.6f}, which would be a cash-free treatment"
+    )
+
+    # 2357 華碩 2010-06-24: an 85 % share cancellation six months before the 減資
+    # endpoint's first row. §8 claims nothing prices it, so the history behind it
+    # is marked instead of silently carrying the jump.
+    d = load_adjusted("2357")
+    brk = pd.Timestamp("2010-06-24")
+    assert not d.loc[d["date"] < brk, "is_valid"].any(), (
+        "§8 claims 2357's pre-2010-06-24 history is marked is_valid=False "
+        "(unpriced capital reduction); some of it is still flagged valid"
+    )
+    assert d.loc[d["date"] >= brk, "is_valid"].all(), (
+        "§8 claims is_valid is False only *behind* the last break; 2357 has "
+        "invalid rows on or after 2010-06-24"
+    )
+
+    # §8: close == 0 is a no-trade session, not a price, so it adjusts to NaN.
+    d = load_adjusted("8934")
+    z = d["close"] == 0
+    assert z.sum() > 0 and d.loc[z, ["adj_close_tr", "adj_close_pr"]].isna().all().all(), (
+        f"§8 claims a close of 0 adjusts to NaN rather than 0.0; 8934 has "
+        f"{int(z.sum())} zero-close rows and "
+        f"{int(d.loc[z, 'adj_close_tr'].notna().sum())} of them carry a number"
+    )
+    return (f"2412 現金減資 r={r:.3f} split; 2357 pre-2011 break marked; "
+            f"8934 {int(z.sum())} zero closes → NaN")
+
+
 # ---- KOSPI200 index panel: in-window membership stays complete (App. B.3) ---
 def test_kospi200_panel_inwindow_complete():
     """fn_percolation's index-exclusion robustness (App. B.3) relies on the
@@ -187,6 +248,7 @@ CHECKS = [
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_overlay_covers_2005_2014,
     test_capital_reduction_artifact_exists,
+    test_taiwan_adjust_canonical_cases,
     test_kospi200_panel_inwindow_complete,
 ]
 

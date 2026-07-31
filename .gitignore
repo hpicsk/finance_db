@@ -58,6 +58,10 @@ finmind_data/*_2015_2024/
 # consolidate_capred.py
 finmind_data/capital_reduction.parquet
 
+# Unpriced share cancellations, regenerable from shares/ via
+# detect_unpriced_actions.py
+finmind_data/unpriced_actions.parquet
+
 # Investor-aggregate generated CSV (regenerable via transform_investor_data.py)
 fnguide_data/investor_aggregate/investor_trading_data.csv
 

@@ -9,7 +9,9 @@ families and the per-market results are written up in ADJUSTED_PRICE_VERIFICATIO
   [3] the event date is right   declared CashExDividendTradingDate as a 2nd source
   [4] the code is right         adj_close_tr == close * tr_factor, anchor, disjointness
   [5] the contamination is gone forward returns spanning an event, before vs after
-  [6] the pr split is right      D checked where 配股率 is zero by construction
+  [6] the pr split is right      D checked where 配股率 is zero by construction,
+                                 and the 減資 split against the share count
+  [7] nothing else is left       extreme adjusted moves no event accounts for
 """
 from __future__ import annotations
 
@@ -17,11 +19,23 @@ import numpy as np
 import pandas as pd
 
 from finmind_data.adjust import (CAP_RED_PATH, DIV_RESULT_DIR, DIVIDEND_DIR,
-                                 OHLCV_DIR, _cash_dps, available_stocks,
+                                 OHLCV_DIR, _PAR_VALUE, _RED_AFTER, _RED_BEFORE,
+                                 _RED_CASH_REASONS, _RED_REASON, _cash_dps,
+                                 _refund_per_share, available_stocks,
                                  load_adjusted)
+from finmind_data.detect_unpriced_actions import SHARES_DIR
 
 # The research window the documented figures are quoted on (twn_* pipeline).
 Y0, Y1 = '2020-01-01', '2024-12-31'
+# A 減資 suspends trading for 12 to 18 days and the share count updates somewhere
+# inside that hole, so the drop is looked for across the suspension rather than
+# on the event date. Wide enough to span the longest suspension, not so wide that
+# a second action falls in it.
+_SHARE_WINDOW = (np.timedelta64(40, 'D'), np.timedelta64(10, 'D'))
+# A one-day move this large in a back-adjusted series is not a price move. Set
+# where the panel's own distribution has long since flattened, so it reports a
+# handful of rows to look at rather than a tail to wade through.
+_EXTREME_MOVE = 0.35
 # before_price is published to 2 decimals; 1e-6 is "bit-identical", 1e-2 is
 # "identical at the exchange's own published precision". Both are reported so
 # neither doubles as a tuned pass mark.
@@ -127,30 +141,43 @@ def check_code_identities(sample: list[str]) -> None:
     """Identities that must hold by construction, and the disjointness guard."""
     ident, anchor, unplaced, dropped, postponed = [], [], 0, 0, 0
     pr_ident, pr_anchor, pr_unres, pr_stocks, pr_nan = [], [], 0, 0, 0
+    zero, breaks, brk_stocks, invalid, rows = 0, 0, 0, 0, 0
     for sid in sample:
         df = load_adjusted(sid)
         ident.append(float(np.abs(df['adj_close_tr']
                                   - df['close'] * df['tr_factor']).max()))
-        anchor.append(abs(float(df['adj_close_tr'].iloc[-1] - df['close'].iloc[-1])))
+        # The anchor is stated on the factor rather than the price: a stock whose
+        # series ends on a no-trade session has close == 0 there and NaN adjusts
+        # to NaN, but the normalisation still has to land the factor on 1.0.
+        anchor.append(abs(float(df['tr_factor'].iloc[-1]) - 1.0))
+        pr_anchor.append(abs(float(df['pr_factor'].iloc[-1]) - 1.0))
         unplaced += df.attrs['events_unplaced']
         postponed += df.attrs['events_postponed']
         dropped += df.attrs['events_dropped']
         pr_ident.append(float(np.abs(df['adj_close_pr']
                                      - df['close'] * df['pr_factor']).max()))
-        pr_anchor.append(abs(float(df['adj_close_pr'].iloc[-1] - df['close'].iloc[-1])))
         pr_unres += df.attrs['pr_unresolved']
         pr_stocks += int(df.attrs['pr_unresolved'] > 0)
         pr_nan += int(df['pr_factor'].isna().sum())
+        zero += int((df['close'] == 0).sum())
+        breaks += df.attrs['series_breaks']
+        brk_stocks += int(df.attrs['series_breaks'] > 0)
+        invalid += int((~df['is_valid']).sum())
+        rows += len(df)
     print(f'\n[4] construction identities  (n={len(sample)} stocks)')
     print(f'  max |adj_close_tr - close*tr_factor|   {np.nanmax(ident):.3e}')
-    print(f'  max |adj_close_tr[-1] - close[-1]|     {max(anchor):.3e}')
+    print(f'  max |tr_factor[-1] - 1|                {max(anchor):.3e}')
     print(f'  max |adj_close_pr - close*pr_factor|   {np.nanmax(pr_ident):.3e}')
-    print(f'  max |adj_close_pr[-1] - close[-1]|     {max(pr_anchor):.3e}')
+    print(f'  max |pr_factor[-1] - 1|                {max(pr_anchor):.3e}')
     print(f'  events postponed to the next session (closure) {postponed:,}')
     print(f'  events unplaced {unplaced:,}   '
           f'dropped (bad leg or duplicate filing) {dropped:,}')
-    print(f'  pr unresolved (mixed event, no declared cash leg) {pr_unres:,} '
+    print(f'  pr unresolved (fused event, cash leg unrecoverable) {pr_unres:,} '
           f'in {pr_stocks:,} stocks → {pr_nan:,} NaN rows')
+    print(f'  no-trade rows (close == 0 → adjusted closes NaN) {zero:,} / {rows:,} '
+          f'({100 * zero / max(rows, 1):.2f}%)')
+    print(f'  series breaks {breaks:,} in {brk_stocks:,} stocks → {invalid:,} rows '
+          f'marked is_valid=False ({100 * invalid / max(rows, 1):.2f}%)')
 
     ev = _events()
     cr = pd.read_parquet(CAP_RED_PATH)
@@ -168,11 +195,20 @@ def check_contamination(sample: list[str]) -> None:
     Joining on the ex-date row instead measures the post-drop session and
     understates the contamination roughly twentyfold.
     """
-    parts = {'除權息': ([], [], []), '減資': ([], [], [])}
+    parts = {'除權息': ([], [], []), '減資 現金': ([], [], []),
+             '減資 彌補虧損': ([], [], [])}
+    # Which reductions refunded cash, read straight from the endpoint and placed
+    # independently of the build, so the two rows below can disagree if the split
+    # is reading the reason wrong.
+    cr = pd.read_parquet(CAP_RED_PATH)
+    cr['date'] = pd.to_datetime(cr['date'])
+    cr['cash'] = cr[_RED_REASON].astype(str).str.contains(_RED_CASH_REASONS,
+                                                          regex=True)
+    red = {k: v for k, v in cr.groupby(cr['stock_id'].astype(str))}
     n_rows, n_hit = 0, 0
     for sid in sample:
         df = load_adjusted(sid)
-        df = df[(df['date'] >= Y0) & (df['date'] <= Y1)]
+        df = df[(df['date'] >= Y0) & (df['date'] <= Y1)].reset_index(drop=True)
         if len(df) < 3:
             continue
         c = df['close'].to_numpy(dtype=float)
@@ -184,10 +220,19 @@ def check_contamination(sample: list[str]) -> None:
         r_adj = np.where(ok, a[1:] / np.where(ok, a[:-1], 1.0) - 1.0, np.nan)
         r_pr = np.where(ok, p[1:] / np.where(ok, p[:-1], 1.0) - 1.0, np.nan)
         n_rows += int(ok.sum())
+        cash_red = np.zeros(len(df), dtype=bool)
+        c = red.get(sid)
+        if c is not None:
+            j = np.searchsorted(df['date'].to_numpy(), c['date'].to_numpy(), 'left')
+            sel = (j > 0) & (j < len(df)) & c['cash'].to_numpy()
+            cash_red[j[sel]] = True
+        is_red = df['is_cap_red'].to_numpy()
         # Row t's forward return spans t -> t+1, so an event on t+1 contaminates
         # row t. Joining on the event row instead measures the post-drop session.
-        for kind, col in (('除權息', 'is_ex_date'), ('減資', 'is_cap_red')):
-            m = df[col].to_numpy()[1:] & ok
+        for kind, flag in (('除權息', df['is_ex_date'].to_numpy()),
+                           ('減資 現金', is_red & cash_red),
+                           ('減資 彌補虧損', is_red & ~cash_red)):
+            m = flag[1:] & ok
             n_hit += int(m.sum())
             parts[kind][0].append(r_raw[m])
             parts[kind][1].append(r_adj[m])
@@ -210,10 +255,53 @@ def check_contamination(sample: list[str]) -> None:
               f'{np.median(p) * 1e4:>8.1f}b {np.median(a) * 1e4:>8.1f}b')
     print('  → 除權息 removes a price drop, 減資 removes a price rise, so the two are '
           'reported apart rather than netted')
-    print('  → pr keeps the cash drop by design, so on 除權息 it stays negative and on '
-          '減資 (no cash leg) it must equal tr exactly')
+    print('  → pr keeps cash by design: negative on 除權息, apart from tr on a 現金減資 '
+          'by the refund, and equal to tr on a 彌補虧損 減資, which pays nothing')
     print('  → tr\'s residual is the ex-day tax/clientele effect, not a defect: prices '
           'fall short of the full distribution, so it is marked, not erased')
+
+
+def check_unexplained_moves(sample: list[str]) -> None:
+    """What survives adjustment on the rows the series actually vouches for.
+
+    Everything the build knows about is excluded first: an event row carries a
+    step by design, and history behind a break is already marked
+    ``is_valid=False``. A move this large that clears both filters is a raw-data
+    artefact rather than an adjustment error — a stale near-zero close, a
+    pre-listing 興櫃 quote, a single corrupted row — and the value of the check is
+    that the list stays short enough to read.
+    """
+    hits, rows = [], 0
+    for sid in sample:
+        df = load_adjusted(sid)
+        # Exactly the filter load_adjusted's docstring tells a caller to apply.
+        df = df[df['is_valid']].reset_index(drop=True)
+        if len(df) < 2:
+            continue
+        a = df['adj_close_tr'].to_numpy(dtype=float)
+        ev = (df['is_ex_date'] | df['is_cap_red']).to_numpy()
+        ok = np.isfinite(a[:-1]) & np.isfinite(a[1:]) & (a[:-1] > 0)
+        rows += int(ok.sum())
+        r = np.where(ok, a[1:] / np.where(ok, a[:-1], 1.0) - 1.0, np.nan)
+        for i in np.nonzero(ok & (np.abs(r) > _EXTREME_MOVE) & ~ev[1:])[0]:
+            hits.append(dict(stock_id=sid, date=df['date'].iloc[i + 1],
+                             prev_close=float(df['close'].iloc[i]),
+                             close=float(df['close'].iloc[i + 1]),
+                             ret=float(r[i])))
+    h = pd.DataFrame(hits, columns=['stock_id', 'date', 'prev_close', 'close',
+                                    'ret'])
+    print(f'\n[7] moves no event accounts for  (|1-day adj return| > '
+          f'{_EXTREME_MOVE:.0%}, off-event, is_valid rows only)')
+    print(f'  {len(h):,} of {rows:,} adjacent-session pairs '
+          f'({1e4 * len(h) / max(rows, 1):.2f} per 10,000) in '
+          f'{h["stock_id"].nunique():,} stocks')
+    print(f'  of those, prior close < NT$1 (a stale or penny quote, where a '
+          f'one-tick move is a large return) {int((h["prev_close"] < 1.0).sum()):,}')
+    print('  10 largest:')
+    print(h.reindex(h['ret'].abs().sort_values(ascending=False).index).head(10)
+           .to_string(index=False))
+    print('  → these are raw-price artefacts, not adjustment failures: the '
+          'adjustment has no step to apply on any of them')
 
 
 def measure_pr_split() -> dict:
@@ -294,6 +382,69 @@ def check_pr_split() -> None:
           'declaration omitting employee/director dilution, which the split never reads')
 
 
+def check_cap_red_split() -> None:
+    """The 減資 split, against the share count the cancellation actually removed.
+
+    Neither branch can be checked against the reference prices it was derived
+    from — that is circular. ``shares/NumberOfSharesIssued`` comes from a
+    different endpoint and reports how many shares were cancelled, which is the
+    ``r`` both branches solve for. The test is deliberately two-sided: each
+    formula has to reproduce ``r`` on the reason it belongs to *and* miss on the
+    other one. If both worked everywhere, ``ReasonforCapitalReduction`` would not
+    be carrying the information the split reads out of it, and the earlier
+    cash-free treatment of the whole endpoint would have been harmless.
+    """
+    cr = pd.read_parquet(CAP_RED_PATH)
+    cr['date'] = pd.to_datetime(cr['date'])
+    before = cr[_RED_BEFORE].to_numpy(dtype=float)
+    after = cr[_RED_AFTER].to_numpy(dtype=float)
+    cash = cr[_RED_REASON].astype(str).str.contains(_RED_CASH_REASONS,
+                                                    regex=True).to_numpy()
+    # The refund branch is read back out of the shipped function rather than
+    # retyped here: a check that re-derives the formula cannot catch a bug in the
+    # formula's implementation, which is half of what there is to catch. A
+    # reduction that pays nothing prices at before/(1-r), so there r is the share
+    # ratio outright and the build uses no helper.
+    r_refund = _refund_per_share(before, after) / _PAR_VALUE
+    r_loss = 1.0 - before / after
+
+    back, fwd = _SHARE_WINDOW
+    r_sh = np.full(len(cr), np.nan)
+    for sid, g in cr.groupby(cr['stock_id'].astype(str)):
+        p = SHARES_DIR / f'{sid}.parquet'
+        if not p.exists():
+            continue
+        s = pd.read_parquet(p)
+        if s.empty or 'NumberOfSharesIssued' not in s.columns:
+            continue
+        s = s[s['NumberOfSharesIssued'] > 0].sort_values('date')
+        if len(s) < 2:
+            continue
+        n = s['NumberOfSharesIssued'].to_numpy(dtype=float)
+        d = pd.to_datetime(s['date']).to_numpy()[1:]
+        drop = 1.0 - n[1:] / n[:-1]
+        for i, ed in zip(g.index, g['date'].to_numpy()):
+            w = (d >= ed - back) & (d <= ed + fwd)
+            if w.any():
+                r_sh[i] = drop[w].max()
+    seen = np.isfinite(r_sh) & (r_sh > 1e-3)
+
+    print('\n  the 減資 split, against shares/NumberOfSharesIssued (3rd source)')
+    print(f'  {"reason":22} {"n":>5} {"own formula":>13} {"other formula":>15}')
+    for lab, m, own, other in (('現金減資 refunds par', cash, r_refund, r_loss),
+                               ('彌補虧損 pays nothing', ~cash, r_loss, r_refund)):
+        k = m & seen
+        print(f'  {lab:22} {int(k.sum()):>5,} '
+              f'{np.nanmedian(np.abs(own[k] - r_sh[k])):>13.5f} '
+              f'{np.nanmedian(np.abs(other[k] - r_sh[k])):>15.5f}')
+    print(f'  no share-count evidence in window '
+          f'{int((~seen).sum()):,} of {len(cr):,}   '
+          f'refund identity undefined {int(np.isnan(r_refund).sum()):,}')
+    print('  → each formula reproduces the cancelled fraction on its own reason and '
+          'misses by two to three orders of magnitude on the other, so the reason '
+          'label is load-bearing rather than assumed')
+
+
 def _declared_ratio(stock_id: str, dates: pd.Series) -> np.ndarray:
     """Declared 配股率 on each date — the comparison target of [6], never an input."""
     p = DIVIDEND_DIR / f'{stock_id}.parquet'
@@ -320,6 +471,8 @@ def main() -> None:
     check_code_identities(stocks)
     check_contamination(stocks)
     check_pr_split()
+    check_cap_red_split()
+    check_unexplained_moves(stocks)
 
 
 if __name__ == '__main__':

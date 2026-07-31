@@ -8,7 +8,7 @@ monthly revenue, fundamentals (IS/BS/CF), dividends, securities lending,
 and capital-reduction events. Plus market-wide reference files for
 delistings. Intended for informed-trading / return-reversal research as
 a cross-market validation of Korean-market findings (paired with
-`~/finance_db/fnguide_data`, which starts ~2000).
+`~/research/finance_db/fnguide_data`, which starts ~2000).
 
 The window was originally 2015-01-01 → 2024-12-31; on 2026-04-27 the
 start was rolled back to 2005-01-01 to give 20 years of overlap with
@@ -49,7 +49,7 @@ remain valid for the 2015-2024 window and are preserved as
 
 This filter set is deliberately aligned with the **fnguide root-level
 "all codes"** universe used on the Korean side
-(`~/finance_db/fnguide_data/data0203`–`data0208`, `data2_0203`; see
+(`~/research/finance_db/fnguide_data/data0203`–`data0208`, `data2_0203`; see
 `fnguide_data/DELISTED_COVERAGE.md` for why the root-level files, not
 the `currently_listed/` batch, are the correct Korean reference). Each fnguide
 exclusion has an explicit Taiwan counterpart here:
@@ -118,12 +118,13 @@ so you should filter by `date` rather than assume uniform coverage.
 ## Directory layout
 
 ```
-/home/st/finance_db/finmind_data/
+/home/st/research/finance_db/finmind_data/
 ├── README.md                          (this file)
 ├── universe.parquet                   2,154 common stocks (id, name, type, industry)
 ├── delisted_universe.parquet          315 historical delistings — `TaiwanStockDelisting` output
 ├── delisted_missing.parquet           9 delistings excluded from universe (ETFs/DRs)
-├── capital_reduction.parquet          consolidated cap-reduction events (sparse)
+├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
+├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
 ├── ohlcv/<stock_id>.parquet           daily prices & volume                              (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
 ├── shares/<stock_id>.parquet          shares outstanding + foreign ownership             (2005-2024)
@@ -136,11 +137,12 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── dividend/<stock_id>.parquet        cash + stock dividends, declaration level          (2005-2024)
 ├── div_result/<stock_id>.parquet      除權息 exchange reference prices → adj. factor      (2005-2024)
 ├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2024)
-├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2005-2024)
+├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2011-2024)
 ├── *_2015_2024/<stock_id>.parquet     **backup** of pre-rollback (2015-2024) build       (~700 MB total)
 ├── build_universe.py                  universe construction script (incl. delisted merge)
 ├── download.py                        resumable downloader (--datasets to filter)
 ├── consolidate_capred.py              merges cap_red/*.parquet → capital_reduction.parquet
+├── detect_unpriced_actions.py         share drops no filing explains → unpriced_actions.parquet
 ├── adjust.py                          back-adjusted close, price-return and total-return
 ├── validate_adjust.py                 read-only checks on what `adjust.py` builds
 ├── download.log                       per-stock progress log
@@ -229,7 +231,7 @@ One row per trading day.
 import pandas as pd
 from pathlib import Path
 
-R = Path("/home/st/finance_db/finmind_data")
+R = Path("/home/st/research/finance_db/finmind_data")
 sid = "2330"  # TSMC
 
 ohlcv = pd.read_parquet(R/"ohlcv"/f"{sid}.parquet")
@@ -261,19 +263,35 @@ df = load_adjusted("2330")   # + pr_factor / adj_close_pr, tr_factor / adj_close
 
 | | removes | leaves | use when |
 |---|---|---|---|
-| `adj_close_pr` | 無償配股, 現增, 減資 | the cash drop, as a real return | you want a price series — the usual vendor "adjusted close", and the symmetric counterpart to KRX `ChangesRatio` |
-| `adj_close_tr` | all of it, cash included | +31 bp ex-day residual | you want what a holder earned |
+| `adj_close_pr` | 無償配股, 現增, and the share-cancellation half of 減資 | every cash drop as a real return — dividends *and* 現金減資 refunds | you want a price series — the usual vendor "adjusted close", and the symmetric counterpart to KRX `ChangesRatio` |
+| `adj_close_tr` | all of it, cash included | +29 bp ex-day residual | you want what a holder earned |
 
 The factors are the primary output — any other price column adjusts the
-same way (`adj_open_tr = open * tr_factor`) — and both are normalised so
-the adjusted close equals `close` on the last row.
+same way (`adj_open_tr = open * tr_factor`) — and both are normalised to
+1.0 on the last row, so the adjusted close there is the raw close.
 
 `pr` costs something `tr` does not: the ex-day drop survives as a large
 mechanical negative return (−311 bp mean on 除權息 sessions, against
-+31 bp under `tr`) on a seasonally clustered set of dates, which a
++29 bp under `tr`) on a seasonally clustered set of dates, which a
 flow-return study has to handle rather than ignore. `pr` is also NaN
-before the last mixed event whose cash leg was never declared — 248
-events in 112 stocks — rather than silently guessing a split.
+before the last fused cash-and-share event whose cash leg could not be
+recovered — 250 events in 113 stocks — rather than silently guessing a
+split.
+
+Two columns say which rows to trust, and both need filtering, not
+reading past:
+
+```python
+df = load_adjusted("2330")
+df = df[df["is_valid"] & (df["close"] > 0)]   # then take returns
+```
+
+`is_valid` is False for history behind a series break — a share
+cancellation no filing priced, or a multi-year trading gap after which
+the ticker came back as a different listing (309 breaks in 231 stocks,
+3.0 % of rows). `close == 0` is FinMind's encoding for a session the
+stock did not trade, not a price, so both adjusted closes are NaN there
+(179,749 rows, 2.34 %).
 
 Verification results, the free parameters and the residual ex-day
 effect are in
@@ -286,7 +304,7 @@ effect are in
 import pandas as pd
 from pathlib import Path
 
-R = Path("/home/st/finance_db/finmind_data")
+R = Path("/home/st/research/finance_db/finmind_data")
 universe = pd.read_parquet(R/"universe.parquet")
 
 ohlcv_all = pd.concat(
@@ -333,6 +351,23 @@ ohlcv_all = pd.concat(
    `after_price/before_price`, covers cash *and* rights) and `cap_red/` (減資).
    The two event sets are disjoint, so the chains compose without double
    counting. See [`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md).
+5. **減資 events start on 2011-01-25**, six years after the prices do. This is
+   FinMind's endpoint, not the download — the reference prices for an earlier
+   reduction were never published to this account, so nothing reconstructs the
+   step. `detect_unpriced_actions.py` finds the cancellations from
+   `shares/NumberOfSharesIssued` instead (92.6 % precision, 92.0 % recall where
+   the filed events can score it) and `adjust.py` marks the history behind each
+   one `is_valid=False`. 250 such cancellations in 193 stocks fall in the
+   uncovered window. Run it after `consolidate_capred.py`; `load_adjusted`
+   raises if its output is missing rather than adjusting as if the window were
+   clean.
+6. **A handful of raw prices are wrong**, and no adjustment can repair a bad
+   input. `validate_adjust` check [7] lists what is left after adjustment on
+   rows the series vouches for: stale near-zero quotes, sporadic pre-listing
+   興櫃 sessions (2007-03-03 and 2007-04-14 carry clusters of them, all TPEx),
+   and at least one corrupted row — 8454 on 2014-09-09 reports `open` 241.04
+   and `max` 242.49 against `min` = `close` = 3.43, which reads as −98.6 %
+   followed by +6,853 %.
 
 ## Cross-market notes (Korea ↔ Taiwan)
 
@@ -413,7 +448,7 @@ Follow-up — delivered (top-level files, not in per-stock DATASETS):
 | File | Endpoint | Notes |
 |---|---|---|
 | `delisted_universe.parquet` | `TaiwanStockDelisting` | Already in repo — the existing file *is* the `TaiwanStockDelisting` market-wide one-shot output (315 rows, 2001-2026). Verified 2026-04-26. Columns: `date`, `stock_id`, `stock_name`, `year` (year derived from date). No re-download needed. |
-| `capital_reduction.parquet` | `TaiwanStockCapitalReductionReferencePrice` | Concatenated event log (sparse: most stocks have 0 events). 9 columns including `PostReductionReferencePrice`, `ExrightReferencePrice`, `ReasonforCapitalReduction`. Per-stock raw files in `cap_red/`; `consolidate_capred.py` merges them. |
+| `capital_reduction.parquet` | `TaiwanStockCapitalReductionReferencePrice` | Concatenated event log (sparse: most stocks have 0 events). 9 columns including `PostReductionReferencePrice`, `ExrightReferencePrice`, `ReasonforCapitalReduction`. Per-stock raw files in `cap_red/`; `consolidate_capred.py` merges them. **The endpoint's earliest row is 2011-01-25**, six years after the price series starts — see caveat 5. |
 
 Other follow-up not pursued:
 
@@ -484,7 +519,8 @@ python consolidate_capred.py    # → capital_reduction.parquet
 # (Delisting events are already in delisted_universe.parquet — no
 # separate fetch needed; `TaiwanStockDelisting` produced this file.)
 
-# Adjustment — needs div_result/ and capital_reduction.parquet, no network
+# Adjustment — needs div_result/, capital_reduction.parquet and shares/, no network
+python -m finmind_data.detect_unpriced_actions --calibrate   # → unpriced_actions.parquet
 python -m finmind_data.validate_adjust    # checks what adjust.py builds
 ```
 

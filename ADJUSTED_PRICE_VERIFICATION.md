@@ -27,7 +27,7 @@ This file is about **verification**, not construction.
 | **Exchange publishes a total-return factor?** | **No** — KRX 수정주가 is structural only | **Yes** — `after_price/before_price` covers cash *and* rights |
 | **Raw input confirmed raw** | via KRX 수정주가 oracle | 99.87 % exact vs exchange `before_price` |
 | **Factor reproduced from first principles** | 96.2 % vs DART (independent 2nd source) | 100 % identity on 8,479 `除` events; 93.8 % via the TWSE formula |
-| **Residual after adjustment** | +82 bp on ex-dates | +29 bp on 除權息, −94 bp on 減資 |
+| **Residual after adjustment** | +82 bp on ex-dates | +29 bp on 除權息; +48 bp on 現金減資, −190 bp on 彌補虧損 |
 | **Residual is a defect?** | **No** — prices fall ~66 % of the dividend; the rest is the real ex-day effect | Same |
 | **Price-return series** | `adj_close` — free, it *is* `ChangesRatio` | `adj_close_pr` — derived by splitting the fused factor (§7) |
 | **Total-return series** | `adj_close_tr` — derived by adding SEIBro cash | `adj_close_tr` — free, it *is* `after_price/before_price` |
@@ -229,7 +229,9 @@ disjoint:
   reset KRX's 기준가 and so live inside `ChangesRatio`. The 666 동시배당 events
   contribute their cash leg only.
 - Taiwan — 減資 (627 events, `cap_red`) and 除權息 (`div_result`) share **zero**
-  `(stock_id, date)` pairs, so the two chains compose without overlap.
+  `(stock_id, date)` pairs, so the two chains compose without overlap. Disjoint
+  is not the same as complete: the 減資 chain starts six years after the price
+  series does, which §8 covers.
 
 ## 6. Did the contamination actually go away?
 
@@ -239,14 +241,26 @@ forward return spans an event, over 2020–2024:
 | | event | affected rows | raw | price-return | total-return |
 |---|---|---:|---:|---:|---:|
 | Taiwan | 除權息 (n = 7,513) | 0.340 % | −405 bp | −311 bp | **+29 bp** |
-| Taiwan | 減資 (n = 211) | 0.010 % | **+7,609 bp** | −94 bp | **−94 bp** |
+| Taiwan | 減資 現金 (n = 85) | 0.004 % | **+1,613 bp** | −649 bp | **+48 bp** |
+| Taiwan | 減資 彌補虧損 (n = 126) | 0.006 % | **+11,654 bp** | −190 bp | **−190 bp** |
 | Korea | 배당락 | 0.219 % | −160 bp | — | **+82 bp** |
 
-The price-return column is a check as much as a result. On 減資 it must equal
-the total-return column *exactly*, since a capital reduction has no cash leg to
-remove — and it does, to the digit. On 除權息 it must sit strictly between raw
-and total-return, since it removes the structural part of the step and keeps the
-cash part — and it does, absorbing 94 of the 405 bp.
+The price-return column is a check as much as a result — but only on the rows
+where it can fail. On 除權息 it must sit strictly between raw and total-return,
+since it removes the structural part of the step and keeps the cash part, and it
+does, absorbing 94 of the 405 bp. On a 彌補虧損 減資 it must equal total-return to
+the digit, and it does — but that row is a construction identity rather than
+evidence: the build sets `pr_step = step` there, so nothing could make the two
+disagree. The falsifiable form of the same question is the share-count table in
+§7, which asks whether each branch recovers the right cancellation ratio from a
+third endpoint.
+
+The 現金減資 row is what that identity was hiding. Under the earlier treatment of
+the endpoint as uniformly cash-free the two columns agreed by construction on
+every reduction, and the combined row read −94 bp on both — a check that passed
+because it could not fail. Split by reason, the cash branch reads −649 bp on `pr`
+against +48 bp on `tr`, and the 697 bp between them is the refund the
+price-return series had been deleting as though it were a share-count artefact.
 
 The two Taiwanese event types are reported apart rather than netted, because
 they contaminate in opposite directions — 除權息 removes a price drop, 減資
@@ -254,10 +268,12 @@ removes a price *rise*. Netting them reports −197 bp for a panel whose dividen
 contamination is really −405 bp.
 
 **減資 is the larger per-event distortion by an order of magnitude** — +7,609 bp
-against −405 bp, roughly nineteen times — on a twentieth as many events. It is
-worth naming separately because the unadjusted Taiwan panel carries it in full:
-a capital reduction cancels shares, so the mechanical price jump is a
-share-count artefact with no return content whatsoever.
+across both reasons against −405 bp, roughly nineteen times — on a twentieth as
+many events. It is worth naming separately because the unadjusted Taiwan panel
+carries it in full: a capital reduction cancels shares, so the mechanical price
+jump is a share-count artefact with no return content whatsoever. The bulk sits
+in the loss-offset branch, which cancels roughly twice the fraction of shares a
+cash refund does — a median `r` of 0.423 against 0.199.
 
 **Nothing lands on zero, and that is correct.** Prices fall short of the full
 distribution — the Korean drop-off ratio is 0.663, stable across mass December
@@ -288,9 +304,11 @@ arithmetic at all:
 | 息 / 除息 — cash only | 15,888 | 71.0 % | none; `pr_step = 1` |
 | 權 / 除權 — stock only | 1,958 | 8.8 % | all of it; `pr_step = step` |
 | 權息 / 除權息 — both | 4,524 | 20.2 % | needs the split |
-| 減資 (separate endpoint) | 627 | — | all of it; `pr_step = step` |
+| 減資 彌補虧損 — loss offset, pays nothing | 351 | — | all of it; `pr_step = step` |
+| 減資 現金 — refunds cash | 276 | — | needs the split |
 
-So 79.8 % of 除權息 events, plus every 減資, resolve from the label alone.
+So 79.8 % of 除權息 events, plus the 351 減資 that pay nothing, resolve from the
+label alone.
 
 **The remaining 20.2 % need one number, and it is not the 配股率.** Writing the
 exchange's own relation as `after = (before − D)/(1 + r)`, the total-return step
@@ -316,7 +334,49 @@ declared 配股率, since the declaration undercounts dilution (**99.65 %**). A
 two-sided failure would have indicted `D`; a one-sided one indicts only the term
 the split never reads.
 
-**What it costs.** 250 mixed events across 113 stocks have no declared cash leg
+**A 現金減資 needs the same split, and needs no declaration to get it.** 276 of
+the 627 reductions refund cash for the shares they cancel. Treating the endpoint
+as uniformly cash-free — `pr_step = step`, which is what the first version of
+this build did — moved a real payment to holders into the structural chain and
+deleted it from the price-return series, at a median 6.8 % of the pre-event price
+per event and a compounded median 9.8 % over the 199 stocks affected. Par value
+settles it: a cash reduction refunds par, so cancelling a fraction `r` of the
+shares pays `C = 10r` and the exchange prices `after = (before − C)/(1 − r)`.
+Eliminating `r` between the two,
+
+```
+r = (after − before) / (after − 10),   C = 10 r,   pr_step = step × (1 − C/before)
+```
+
+— the same expression as the mixed 除權息 case, reached from a different premise.
+Nothing is declared and nothing is fitted; both published prices are already in
+hand. `ReasonforCapitalReduction` separates the two branches and was sitting
+unread in the same file the reference prices come from.
+
+**Here the split can be checked head-on.** `shares/NumberOfSharesIssued` is a
+third endpoint and reports how many shares a cancellation actually removed —
+which is the `r` both branches solve for. Median `|r_formula − r_shares|`:
+
+| reason | n | its own formula | the other branch's |
+|---|---:|---:|---:|
+| 現金減資 — `r = (after−before)/(after−10)` | 269 | **0.00018** | 0.061 |
+| 彌補虧損 — `r = 1 − before/after` | 326 | **0.00012** | 0.268 |
+
+Each formula reproduces the cancelled fraction on its own reason to the fourth
+decimal and misses by two to three orders of magnitude on the other. That is what
+makes the reason label load-bearing rather than assumed: were the column noise,
+both rows would be equally bad; were the cash leg negligible, both would be
+equally good. The separation is sharper than the table shows, because the refund
+identity is not merely inaccurate on a loss-offset filing — it is undefined on
+225 of the 351, putting `r` outside `[0, 1)`. Two different arithmetics, not two
+tunings of one. The remaining check is one-sided: 99.6 % of the implied `r` land
+within 0.5 pp of an integer percent, which is how these are filed.
+
+The check is run against the shipped `_refund_per_share` rather than a retyped
+copy of the formula, so it fails on a bug in the implementation and not only on a
+bug in the algebra.
+
+**What it costs.** 250 fused events across 113 stocks have no recoverable cash leg
 and cannot be split. Those stocks' price-return columns are NaN before the last
 such event — 122,973 rows — rather than carrying a guessed step. The
 total-return columns are unaffected.
@@ -329,6 +389,58 @@ and Taiwan's ex-dividend season is concentrated in July–September, so those
 sessions are calendar-clustered. Any flow-return study on `pr` has to handle
 that rather than ignore it, and the demeaning trap below rules out the reflex
 fix of subtracting a date mean.
+
+---
+
+## 8. What the sources do not cover
+
+Three limits live in the inputs rather than in the build. None is repairable by
+better arithmetic, so each is marked in the output instead of smoothed over.
+
+**減資 events begin on 2011-01-25; prices and 除權息 begin in 2005.** The
+capital-reduction endpoint has no earlier rows — this is not a truncated
+download, and the reference prices for an earlier reduction were never published
+to this account. A reduction inside the uncovered window therefore leaves its
+full mechanical price jump in the adjusted series with `is_cap_red` reading
+False. The canonical case is 2357 華碩 on 2010-06-24: shares fall 4,246,777,484 →
+637,016,623 (−85.0 %), trading stops for 38 days, the close goes 50.40 → 240.50,
+and `tr_factor` does not move.
+
+`shares/NumberOfSharesIssued` is a third endpoint and does cover 2005. It can say
+*that* a cancellation happened, never by how much the exchange repriced, so
+`detect_unpriced_actions.py` uses it strictly as a detector and never as a factor
+source. A material share drop straddling a trading suspension with no filing
+within 30 days is reported, and `adjust.py` marks the history behind it
+`is_valid = False`. Scored on the years where the filed events can score it,
+2011-01-25 onward, the detector runs **92.6 % precision and 92.0 % recall**. It
+finds 250 cancellations in 193 stocks inside the uncovered window; with splices
+included that is 309 breaks in 231 stocks, 3.0 % of rows marked invalid.
+
+Marking is the conservative direction and is not an assertion of error.
+`is_valid = False` means "this row does not connect to the rows after it", so a
+false positive costs history while a false negative is precisely the failure the
+flag exists to prevent. `load_adjusted` raises if `unpriced_actions.parquet` is
+absent rather than adjusting as though the window were clean.
+
+**A session with no trading is written `close = 0`, not omitted** — 179,749 rows,
+2.34 % of the panel, across 1,325 stocks; 8934 alone carries 2,441 of its 3,833.
+Zero is not a price, so both adjusted closes are NaN there while the factors stay
+defined. The earlier build multiplied the zero through to `adj_close_tr = 0.0`,
+which reads as −100 % followed by an infinite return. Every check in
+`validate_adjust` already masked these rows; `load_adjusted` did not — the shape
+of a silent failure is exactly that, knowledge that existed and never reached the
+output.
+
+**A few raw prices are simply wrong**, and no adjustment repairs a bad input.
+Check [7] is the standing report: extreme one-day adjusted moves on rows carrying
+no event and sitting after the last break. What it finds are stale near-zero
+quotes, sporadic pre-listing 興櫃 sessions (2007-03-03 and 2007-04-14 carry
+clusters, all TPEx), and isolated corrupted rows — 8454 on 2014-09-09 reports
+`open` 241.04 and `max` 242.49 against `min` = `close` = 3.43, a −98.6 % followed
+by +6,853 %. A systematic search finds no class behind that last one: zero rows
+in the whole panel have `close` outside `[min, max]`, and only 0.042 % have
+`max/min > 1.25`, mostly first sessions after listing. So it is listed rather
+than patched.
 
 ---
 
@@ -400,6 +512,11 @@ sensitivity rather than quote one level.
 | tolerance `±0.5원` | Korean DART DPS match | **kept, justified by the unit.** DPS is quoted in won, so this is "rounds to the same won", not a fitted band. |
 | window `Y0, Y1 = 2020, 2024` | both | **kept, justified.** Five full years ending before the 2024 배당절차 개선 dispersed record dates out of December. |
 | `_SHORTFALL_TOL = 0.02` | SEIBro collection guard | **kept, weakest of the set.** The observed server-side count drift is ~0.4 %, so 2 % is a hand-picked 5× headroom. It only gates a fail-loud abort and touches no published number. |
+| `_PAR_VALUE = 10.0` | Taiwan 現金減資 split | **not a free parameter.** NT$10 is the statutory par value of Taiwanese common stock and the amount a cash reduction refunds per cancelled share. Its correctness is what the share-count table in §7 tests: a wrong par would not reproduce `r` to the fourth decimal on 269 events. |
+| `_TWIN_WINDOW_DAYS = 30` | Taiwan duplicate filings | **kept, and the distribution has no band to tune.** A filing repeated under its suspension and its resumption date is days apart; the 28 same-price pairs that are *not* duplicates are years apart. Every cut between the two leaves the same 4 dropped events. |
+| `_BREAK_GAP_DAYS = 730` | Taiwan series splices | **kept, sits in an empty region.** Observed gap lengths run 91–419 days and then jump to 738–5,392 with nothing between, so every cut in (419, 738] marks the same 17 splices. The two populations differ by more than length: the short gaps reconnect at a median 10 % price move, the long ones at 537 %. |
+| `_MIN_SHARE_DROP = 0.05`, `_MIN_SUSPENSION_DAYS = 5` | Taiwan unpriced-action detector | **kept, calibrated against ground truth, and it does not touch a price.** 92.6 % precision / 92.0 % recall where the filed events can score it (§8). Precision is flat at ~92 % across drop thresholds once the suspension condition is on, so the drop floor buys recall rather than setting a pass mark. It only sets `is_valid`; no factor is derived from it. |
+| `_EXTREME_MOVE = 0.35` | Taiwan check [7] display | **kept, not load-bearing.** It sets how much of the residual tail check [7] prints. No published number depends on it. |
 
 **The step convention was a free parameter, and is no longer.** Both markets now
 use the exact step — Taiwan's `before/after`, Korea's `1 + dps/close_ex`. The
@@ -424,7 +541,9 @@ compounded (q99 30.5 %).
 python -m kr_marcap.validate_dividend_events    # Korean checks, read-only, ~1 min
 python -m kr_marcap.validate_against_oracle     # Korean structural vs KRX 수정주가 (§4)
 python -m kr_marcap.dividend_events             # Samsung quarterly ex-date demo
-python -m finmind_data.validate_adjust          # Taiwanese checks §1–§7, ~15 min
+python -m finmind_data.consolidate_capred       # cap_red/*.parquet → capital_reduction.parquet
+python -m finmind_data.detect_unpriced_actions --calibrate   # → unpriced_actions.parquet (§8)
+python -m finmind_data.validate_adjust          # Taiwanese checks §1–§7, ~20 min
 python -m finmind_data.adjust                   # Taiwan adjusted-series demo
 ```
 
@@ -453,10 +572,16 @@ python -m finmind_data.adjust                   # Taiwan adjusted-series demo
 - **2004 Korean dividend coverage is partial** — SEIBro refuses 1,303 rows of
   the 2004-12-31 window. Reported by the build rather than silently dropped;
   see the defect table in [`kr_marcap/README.md`](kr_marcap/README.md).
-- **250 Taiwanese mixed events cannot be split** — no declared cash leg, so the
+- **250 Taiwanese fused events cannot be split** — no recoverable cash leg, so the
   price-return columns are NaN before the last such event in the 113 stocks
   affected (§7). The total-return columns are unaffected, and whether the 122,973
   NaN rows matter depends on which convention the study uses.
+- **The pre-2011 減資 window is marked, not reconstructed.** §8 detects the
+  cancellations from a third endpoint and invalidates the history behind them,
+  which costs 3.0 % of rows and leaves ~7 % of the flags as false positives that
+  cost history they did not need to. A source that publishes Taiwanese
+  reference prices before 2011 would replace the detector outright; none is
+  reachable from this account's tier.
 - **Korea has no `is_cap_red` analogue.** `ChangesRatio` folds capital
   reductions in with everything else structural, so the Taiwanese finding that
   減資 is the larger per-event distortion (§6) cannot be checked on the Korean
