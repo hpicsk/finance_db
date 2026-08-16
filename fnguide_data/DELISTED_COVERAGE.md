@@ -35,6 +35,18 @@ universe:
   `STRICT_COMMON_EXCLUDE`. Universe: 1,284 KOSPI + 2,773 KOSDAQ = 4,041
   tickers, split into per-market sheets.
 
+- **`Price data.xlsx` (수정주가 + 수정주가(현금배당포함)):** **616 / 620
+  (99.4 %)** of genuine common KOSPI/KOSDAQ delistings since 2005 carry
+  real prices — the same retention window as `short_sale_lending.xlsx`.
+  All 4 misses are closed-end funds or a resource trust (`037500`
+  굿라이프5, `042950` 미래코리아1, `094520` 맵스베트남1, `152550`
+  한국ANKOR유전, the last already in `STRICT_COMMON_EXCLUDE`), not
+  ordinary commons. Universe: 1,284 KOSPI + 2,785 KOSDAQ columns, of
+  which 3,590 tickers carry prices in the 2005-01-03 – 2026-08-12 window.
+  The coverage figure is asserted in `test_assertions.py`
+  (`test_fnguide_price_delisted_coverage`), because a re-pull under the
+  "delisted excluded" (상폐제외) filter would drop every delisted name silently.
+
 For most analyses that stay within these files, you do **not** need to
 merge in an external delisted-data source.
 
@@ -42,8 +54,10 @@ The driver is the **DataGuide universe filter** chosen at export time:
 this batch was pulled with "all codes" (전체 / 상폐 포함), which
 retains delisted names for as long as FnGuide keeps them in the master
 code table. A historical `raw/currently_listed/` sub-batch pulled with
-the "currently listed" filter had 0% delisted coverage and was
-removed — see project history if you need that context. **If you
+the "delisted excluded" (상폐제외) filter had 0% delisted coverage and was
+removed — see project history if you need that context. The two
+`raw/0_*(상폐제외)` files still in the tree were pulled that way and carry
+the same 0% by construction; see README.md §10. **If you
 re-pull additional metrics from DataGuide, choose the "all codes"
 filter.**
 
@@ -51,9 +65,10 @@ filter.**
 
 | Dimension | Source for delisted names | Delisted-common coverage |
 |---|---|---:|
-| OHLCV daily (unadjusted) | `~/finance_db/kr_delisted/` (marcap) | 100 % |
-| OHLCV daily (adjusted) | `kr_marcap.adjust.load_adjusted(ticker)` | 100 % |
-| Daily market cap, shares | `~/finance_db/kr_delisted/` (marcap) | 100 % |
+| OHLCV daily (unadjusted) | `~/research/finance_db/kr_delisted/` (marcap) | 100 % |
+| Daily adjusted close, price + total return | `fnguide_data/raw/Price data.xlsx` (2005+) | 99.4 % |
+| OHLCV daily (adjusted, reconstructed from open sources) | `kr_marcap.adjust.load_adjusted(ticker)` | 100 % |
+| Daily market cap, shares | `~/research/finance_db/kr_delisted/` (marcap) | 100 % |
 | Investor-category daily flow | `fnguide_data/raw/data0203`–`data0208.xlsx` | 91.0 % (98.2 % since 2021) |
 | Annual consolidated financials (IFRS-C) | `fnguide_data/raw/data2_0203.xlsx` | 91.0 % (98.2 % since 2021) |
 | Monthly market cap (legacy) | `fnguide_data/raw/data2_0203.xlsx` (시가총액 sheet) | 91.0 % (98.2 % since 2021) |
@@ -67,7 +82,7 @@ sheets (row 9 of the 14-row header).
 ## Evidence
 
 Measured against the 1,004 genuine delistings in
-`~/finance_db/kr_delisted/delisting_calendar.csv` (`is_genuine == "Y"`),
+`~/research/finance_db/kr_delisted/delisting_calendar.csv` (`is_genuine == "Y"`),
 bucketed via `kr_marcap.classify`:
 
 | Bucket | n | in `data0203` flow |
@@ -200,7 +215,7 @@ import pandas as pd
 from kr_marcap.classify import classify_ticker
 
 # 1. Delisted universe — restrict to common KOSPI/KOSDAQ only
-cal = pd.read_csv("~/finance_db/kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
+cal = pd.read_csv("~/research/finance_db/kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
 cal = cal[(cal["is_genuine"] == "Y") & (cal["market"].isin(["KOSPI", "KOSDAQ"]))]
 # Drop preferred / SPAC / REIT / fund via the authoritative classifier (the
 # single source of truth). Preferred is keyed on the code's terminal digit, so
@@ -210,9 +225,9 @@ cal = cal[kind == "common"].copy()
 cal["fn_ticker"] = "A" + cal["ticker"]
 
 # 2. Load investor-flow sheet (institutional buy volume example)
-meta = pd.read_excel("~/finance_db/fnguide_data/raw/data0203.xlsx", sheet_name="매수수량(기관)",
+meta = pd.read_excel("~/research/finance_db/fnguide_data/raw/data0203.xlsx", sheet_name="매수수량(기관)",
                      header=None, nrows=14)
-flow = pd.read_excel("~/finance_db/fnguide_data/raw/data0203.xlsx", sheet_name="매수수량(기관)",
+flow = pd.read_excel("~/research/finance_db/fnguide_data/raw/data0203.xlsx", sheet_name="매수수량(기관)",
                      header=None, skiprows=14)
 flow.columns = ["date"] + meta.iloc[8, 1:].tolist()
 flow["date"] = pd.to_datetime(flow["date"])
@@ -238,8 +253,8 @@ metadata blocks of each workbook, not the full sheets.
 ```python
 import pandas as pd
 
-FNG = "/home/st/finance_db/fnguide_data/raw"
-CAL = "/home/st/finance_db/kr_delisted/delisting_calendar.csv"
+FNG = "/home/st/research/finance_db/fnguide_data/raw"
+CAL = "/home/st/research/finance_db/kr_delisted/delisting_calendar.csv"
 
 def universe(path, sheet):
     m = pd.read_excel(path, sheet_name=sheet, header=None, nrows=14)

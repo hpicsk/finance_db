@@ -2,25 +2,45 @@
 
 ## Overview
 
-- **8 xlsx files** in `raw/`, ~5.7 GB total
+- **11 xlsx files** in `raw/`, ~6.5 GB total. Nine were pulled with the
+  "all codes" universe filter; the two `0_*(상폐제외)` files were not — see
+  ["Every sheet has its own pull date"](#️-every-sheet-has-its-own-pull-date)
 - **Source:** FnGuide DataGuide (Korean financial data platform)
-- **Layout:** Raw vendor exports live under `raw/`. Two flat helper
-  modules (`fnguide_io.py`, `investor_loader.py`) sit at the directory
-  root for backward compatibility with older research projects. **Going
-  forward, new projects should parse the sheets inline rather than
-  depending on these helpers** — the layout is simple enough that
-  centralizing the parsers earns little.
+- **Not one snapshot.** The exports span 2026-02-14 to 2026-08-13 and each
+  carries its own end date and its own ticker universe. Read the pull-date
+  section before joining any two of them.
+- **Layout:** Raw vendor exports live under `raw/`. Loader modules sit at
+  the directory root: `price_loader.py` (adjusted close — the one research
+  reads), plus `fnguide_io.py`, `investor_loader.py` and
+  `subinvestor_loader.py`, flat and sys.path-imported for backward
+  compatibility with older research projects. **Beyond the price panel,
+  new projects should parse the sheets inline rather than depending on
+  these helpers** — the layout is simple enough that centralizing the
+  parsers earns little. All of them read xlsx through `engine="calamine"`.
 - **Coverage:** ~3,900 Korean listed stocks (KOSPI / KOSDAQ) for
   investor trading & financials.
-- **Price data is NOT in this directory.** Use `kr_marcap/` instead —
-  `kr_marcap.market_loader.load_market_data` is the canonical
-  survivorship-bias-free price loader (`date, ticker, open, high, low,
-  close, volume, amount, market_cap, listed_shares`), and
-  `kr_marcap.adjust.load_adjusted(ticker)` returns split-adjusted
-  series for single-ticker work. For point-in-time membership, use
-  `kr_marcap.universe(date, kind='common')`.
-- **Survivorship bias — not a problem for the files kept here.** All
-  eight xlsx files were exported with DataGuide's **"all codes"
+- **Adjusted prices live here; raw OHLCV does not.**
+  `raw/Price data.xlsx` carries both conventions FnGuide publishes —
+  수정주가 (price return) and 수정주가(현금배당포함) (total return) — for
+  KOSPI + KOSDAQ including delisted names, 2005-01-03 to 2026-08-12.
+  This is the price series research reads.
+  `python -m fnguide_data.price_loader` parses it once into
+  `cache/fnguide_price.parquet`; everything downstream reads the
+  parquet, not the xlsx. It carries **adjusted close only** — no volume,
+  market cap or share count, and no point-in-time market membership. For
+  those use `kr_marcap`: `kr_marcap.market_loader.load_market_data` (raw
+  OHLCV) and `kr_marcap.universe(date, kind='common')`.
+  Adjusted **open / high / low** exist in `raw/0_KOSPI 주가(상폐제외).xlsx`
+  and `raw/0_KOSDAQ 주가(상폐제외).xlsx`, but only for names listed on
+  2026-03-20 — see §10 before reaching for them.
+  `kr_marcap.adjusted_loader.load_adjusted_panel` builds the same two
+  adjusted conventions from openly available sources — it is the
+  *reconstruction* this file is the benchmark for, not a second source
+  to mix in; see
+  [`kr_marcap/CONSTRUCTION.md`](../kr_marcap/CONSTRUCTION.md).
+- **Survivorship bias — not a problem for the "all codes" nine.** The
+  `data0*`, `data2_0203`, `short_sale_lending` and `Price data` files were
+  exported with DataGuide's **"all codes"
   (전체 / 상폐 포함)** filter and are **effectively
   survivorship-bias-free for KOSPI/KOSDAQ common stocks** — paired with
   `kr_marcap.universe(date, 'common', strict=True)`, the live universe
@@ -30,15 +50,24 @@
   through its delisting date and goes NaN after. For most analyses that
   stay within these files, no external delisted-data merge is needed.
   See `DELISTED_COVERAGE.md` for the full breakdown.
+- **The two `0_*(상폐제외)` files are the exception** — pulled with
+  "delisted excluded", so they carry no delisted names at all and their
+  live-column count only ever rises. They add adjusted open/high/low and
+  1999--2004 history that no other file here has; both come with that
+  survivorship bias attached. See §10.
 - **If you re-pull additional metrics from DataGuide,** choose the
   "all codes" (전체 / 상폐 포함) filter to preserve delisted coverage.
   A previous `raw/currently_listed/` sub-batch pulled with the
-  "currently listed" filter had 0% delisted coverage by construction
+  "delisted excluded" filter had 0% delisted coverage by construction
   and was removed.
-- **Ticker-reassignment caveat (IFRS-C only):** `data2_0203.xlsx`
-  annual financials may return values from a later listing that
-  inherited the 6-digit KRX code. Truncate each series at
-  `delisting_date.year - 1` before use.
+- **Ticker-reassignment caveat — every code-keyed series, not just
+  financials.** A 6-digit KRX code freed by a delisting is reissued, and
+  FnGuide serves one column per *code*, so both occupants share it with a
+  multi-year NaN gap between them. `data2_0203.xlsx` annual financials may
+  return values from the later listing — truncate each series at
+  `delisting_date.year - 1`. The price panel splices the same way — 58 codes —
+  but there it is handled: `price_loader.py` emits a `segment` column and
+  research differences within `['ticker', 'segment']` (§9).
 - **Always-missing buckets:** preferred shares (우/우B/1우/MF, ~0.9%),
   KONEX (~2.6%), and specialty funds (선박투자/리츠/호, ~2.9%). These
   are usually excluded on methodological grounds anyway.
@@ -51,6 +80,147 @@
   - **Short-selling / securities-lending / free-float** (1 file:
     short_sale_lending) — daily short-sale balance & turnover, lending
     balance, and free-float ratio, split KOSPI/KOSDAQ, 2002--2026
+  - **Adjusted close, both conventions** (1 file: Price data) — daily
+    수정주가 (price return) and 수정주가(현금배당포함) (total return),
+    split KOSPI/KOSDAQ, 2005--2026
+  - **Adjusted OHLC, price-return convention only** (2 files:
+    0_KOSPI / 0_KOSDAQ 주가(상폐제외)) — daily 수정시가/고가/저가/주가,
+    1999--2026-03, currently-listed names only
+
+## ⚠️ Every sheet has its own pull date
+
+**The files in `raw/` are not one snapshot.** Each was exported in a separate
+DataGuide session, months apart in places, and DataGuide serves whatever the
+master table held on the day of the export. Row 8 (`Term` / `기간`) records the
+vendor's own stamp as `Current(YYYYMMDD)` / `최근일자(YYYYMMDD)`; that end date,
+the ticker-column count, and the universe behind them all differ file to file.
+
+This table is `vintages.csv` in prose; the file is the source of truth, and
+"ticker columns" there counts non-empty codes on the Symbol row.
+
+| File | Data through | Downloaded | Ticker columns |
+|---|---|---|---:|
+| `data0203.xlsx` | 2026-02-03 | 2026-02-14 | 3,902 |
+| `data0204.xlsx` | 2026-02-06 | 2026-02-14 | 3,902 |
+| `data0205.xlsx` | 2026-02-09 | 2026-02-19 | 3,902 |
+| `data0206.xlsx` | 2026-02-09 | 2026-02-19 | 3,902 |
+| `data0207.xlsx` | 2026-02-11 | 2026-02-19 | **3,904** |
+| `data0208.xlsx` | 2026-02-12 | 2026-02-19 | **3,904** |
+| `data2_0203.xlsx` | 2026-02-02 annual/monthly, 2026-02-03 시가총액 | 2026-02-19 | 3,902 |
+| `0_KOSPI 주가(상폐제외).xlsx` | 2026-03-20 | 2026-03-23 | 2,311 |
+| `0_KOSDAQ 주가(상폐제외).xlsx` | 2026-03-20 | 2026-03-23 | 1,815 / **1,813** |
+| `short_sale_lending.xlsx` | 2026-06-12, **2026-06-15** on three sheets | 2026-06-15 | 1,284 KOSPI / 2,773 KOSDAQ |
+| `Price data.xlsx` | **2026-08-12** | 2026-08-13 | 1,284 KOSPI / 2,785 KOSDAQ (3,590 priced) |
+
+**"Downloaded" is the vendor's build stamp, not the file's mtime.** The
+Korean-locale exports carry it on row 1 as `Refresh | Last Updated:
+YYYY-MM-DD HH:MM:SS` — the moment DataGuide assembled that *sheet*. Where the
+two disagree the Refresh row wins: the 상폐제외 pair was built on 2026-03-23 and
+did not land on this disk until 2026-06-07, and `short_sale_lending.xlsx` was
+built on 2026-06-15 and copied here on 2026-06-18. The English-locale
+`data0*` exports have no Refresh row at all, so for those the mtime is the only
+evidence there is.
+
+Five consequences, in the order they bite:
+
+1. **A join truncates to the earliest file in it, not the latest.** Investor
+   flow ends 2026-02-12 and adjusted close runs to 2026-08-12; a panel built
+   from both is six months shorter than the price file suggests. Date the
+   joined panel by the *minimum* end date of its inputs.
+2. **The universe is not constant across files.** 3,902 columns against 3,904
+   is not a formatting difference — it is two tickers that listed between the
+   14th and the 19th of February. A name that delisted between two pulls is
+   live in the earlier file and terminated in the later one; a name that listed
+   after a pull is absent from that file entirely and present in the next.
+   Left-joining on the wider file silently manufactures all-NaN columns.
+3. **Coverage figures are pinned to the pull that measured them.** "99.8 % of
+   live commons" was measured against a marcap vintage of 2026-02-20 and
+   describes the February batch. It is not a property of `Price data.xlsx`,
+   which was pulled six months later against a different live universe — that
+   file has its own figure (99.4 % of genuine common delistings since 2005) in
+   `DELISTED_COVERAGE.md`. Quote the figure with the pull it came from.
+4. **A re-pull of one file re-dates only that file.** Refreshing
+   `Price data.xlsx` does not extend the investor-flow window, and nothing in
+   the loaders detects the mismatch — the parse succeeds and the panel is just
+   short. `price_loader.py` asserts the item code on row 12 so a *swapped item*
+   raises at build time, but no check compares end dates across files.
+5. **It is per *sheet*, not per file — one file is not one snapshot either.**
+   DataGuide builds a workbook one sheet at a time, and the Refresh stamps show
+   the gaps: `short_sale_lending.xlsx` was assembled between 11:54 and 17:40 on
+   2026-06-15, and its last three sheets crossed that afternoon's 15:30 close —
+   their `기간` stamp reads 2026-06-15 where the other seven read 2026-06-12.
+   The same metric splits across markets there: `KOSDAQ_유동주식비율` (built
+   15:24) is stamped 2026-06-12, `KOSPI_유동주식비율` (17:18) 2026-06-15. Worse,
+   the universe
+   can move inside one file: `KOSDAQ_수정주가` in the 상폐제외 pair was built 29
+   minutes after `KOSDAQ_수정저가` and came back with **two fewer columns**
+   (§10). So align sheets on the row-9 code, never on column position, and take
+   a file's end date from the sheet you actually read.
+
+The same asymmetry crosses the repo boundary: `kr_marcap`'s benchmark against
+this export is bounded on the marcap side (2026-02-20), not the FnGuide side
+(2026-08-12), so the comparison runs only to February. See
+[`kr_marcap/CONSTRUCTION.md`](../kr_marcap/CONSTRUCTION.md).
+
+### What to do about it
+
+**Not** re-pull everything into one session. That alignment survives exactly
+until the next single-file refresh, costs a day, and re-anchors every
+back-adjusted level on the way — a name that split since the old pull comes back
+at a different price for its whole history, so every cached result built on the
+old vintage silently stops matching (§10 measures this: 24 of 2,577 shared
+tickers, at ratios of ×10, ×5, ×0.5, ×0.2). Re-pull a file when you need data
+past its end date, not to make the dates agree.
+
+What is worth fixing is that the vintage was invisible. It now lives in
+**`vintages.csv`** — one row per sheet, with the build stamp, the `기간` range,
+and the ticker count — committed, and regenerated by `python -m
+fnguide_data.vintages` whenever an export is replaced:
+
+```python
+from fnguide_data.vintages import end_date
+end_date('Price data.xlsx')                             # Timestamp('2026-08-12')
+min(end_date(f) for f in ('data0203.xlsx', 'Price data.xlsx'))   # date the join
+```
+
+Reading one header out of a 1.4 GB export costs a full sheet parse, so the scan
+takes ~15 minutes and the CSV exists to make the answer free at the point where
+someone is about to join two files. Three rules follow, and the manifest is what
+makes the first two checkable:
+
+1. **Date a joined panel by `min(end_date(...))` of its inputs, explicitly.**
+   Never let it be inferred from whichever frame happened to be on the left.
+2. **Quote a coverage figure with the pull that measured it** — see consequence
+   3 above.
+3. **One export per price series.** Never splice two pulls of the same series:
+   they disagree on levels wherever a corporate action fell between them, and on
+   returns by ₩1 rounding everywhere else (§10).
+
+`test_assertions.py` compares the manifest against `raw/` on every run, so a
+re-pull cannot land without the manifest — and the figures it dates — being
+revisited in the same commit.
+
+### The 상폐제외 pair uses the other universe filter
+
+Nine of the eleven files in `raw/` were pulled with DataGuide's **"all codes"
+(전체 / 상폐 포함)** filter. The two `0_*(상폐제외)` files were pulled with
+**"delisted excluded"**, so they carry no delisted names at all — measured, not
+assumed: of their 4,126 codes, 107 appear in `kr_delisted/delisting_calendar.csv`
+with a date before the pull, and every one of those is a code still occupied on
+the pull date (§10). Keep the two filters in separate panels; a union of them is
+survivorship-biased wherever the 상폐제외 side is the only source.
+
+A previous `raw/currently_listed/` sub-batch pulled under the same
+"delisted excluded" filter carried a hard defect worth knowing about before
+anyone re-pulls that way: its ticker count dropped from ~3,253 (Fri 2023-10-20)
+to ~1,843 (Mon 2023-10-23) in a single session and then climbed back via IPOs.
+~1,400 currently-listed common stocks silently disappear from the export from
+late-Oct-2023 onward and **only 10 of them are genuine delistings**, so a
+`kr_delisted/` overlay cannot recover them — the export had been pulled in two
+phases under different universe filters and concatenated horizontally. That
+batch has been removed (see the historical note in `integrity_report.md`); for
+OHLCV / market cap / shares use `marcap/` via `kr_marcap`, which covers every
+ticker that traded on every date.
 
 ## Data Summary
 
@@ -59,9 +229,12 @@
 | **Investor Trading (12 types, buy+sell, volume+amount)** | data0203--data0208 | Daily | ~3,902 stocks, 2000--2026 |
 | **Financials (consolidated)** | data2_0203 | Annual + Monthly (시가총액) | IFRS(C): balance sheet, operating profit, total assets, market cap |
 | **Short-selling / lending / free-float** | short_sale_lending | Daily | ~4,041 stocks (KOSPI+KOSDAQ split), 2002--2026 |
+| **Adjusted close (price return + total return)** | Price data | Daily | 3,590 stocks (KOSPI+KOSDAQ split), 2005--2026 |
+| **Adjusted OHLC (price return only)** | 0_KOSPI / 0_KOSDAQ 주가(상폐제외) | Daily | 4,126 codes incl. ETF/ETN, listed-on-2026-03-20 only, 1999--2026-03 |
 
-**NOT available in this dataset:** OHLCV / market cap / shares (use
-`kr_marcap/` and `kr_delisted/` instead), main-entity
+**NOT available in this dataset:** volume / market cap / shares (use
+`kr_marcap/` and `kr_delisted/`); adjusted open/high/low for *delisted*
+names — the only OHL here is the currently-listed 상폐제외 pair; main-entity
 (IFRS-M) financials, L2 order book / tick data, bid-ask spread,
 analyst coverage / consensus estimates, CB/BW/mezzanine event
 calendar, index composition & rebalancing events, tick size /
@@ -73,14 +246,14 @@ All sheets share the same FnGuide DataGuide export format:
 
 | Row | Field | Description |
 |-----|-------|-------------|
-| 1 | (blank) | -- |
+| 1 | Refresh | `Last Updated: YYYY-MM-DD HH:MM:SS` — when DataGuide built *this sheet*. Present in the Korean-locale exports (`Price data`, `short_sale_lending`, the 상폐제외 pair), blank in the `data0*` batch |
 | 2 | Calendar Basis | Calendar system used |
 | 3 | Portfolio | Currency unit (원 = KRW) |
 | 4 | Item | Spacer |
 | 5 | Frequency | Data frequency (일간=Daily / 월간=Monthly / 연간=Annual), currency code |
 | 6 | Non-Trading Day | Handling rule (Exclusive = skip non-trading days) |
 | 7 | Include Weekend | "ALL" |
-| 8 | Term | Date range: start (e.g. 20000101) to end (e.g. Current(20260203)) |
+| 8 | Term / 기간 | Date range: start (e.g. 20000101) to end (e.g. `Current(20260203)`, or `최근일자(20260320)` in the Korean-locale exports) |
 | 9 | **Symbol** | Stock ticker codes (e.g. A005930, A000660) |
 | 10 | **Symbol Name** | Company names in Korean (e.g. 삼성전자, SK하이닉스) |
 | 11 | Kind | Data category: CIA (investor trading), NFS-IFRS(C) (consolidated financials), SSC (stock stats) |
@@ -91,6 +264,16 @@ All sheets share the same FnGuide DataGuide export format:
 **Data starts at row 15.** Column A = date (datetime), columns B
 onward = one column per stock (~3,902--3,904 stocks).
 
+**The row numbers above are the `pd.read_excel` view, and only that view.**
+The English-locale exports have a genuinely *blank* first row where the
+Korean-locale ones have `Refresh`. `pd.read_excel` keeps it as a NaN row, so
+row 9 is `Symbol` in both — which is why `fnguide_io.py` and `price_loader.py`
+can use fixed indices. `python_calamine.CalamineWorkbook.to_python()` **trims**
+it, so under that reader the English files sit one row higher than the Korean
+ones and a fixed index silently returns 코드명 where 코드 was meant. Read
+headers with pandas, or locate rows by their column-A label as
+`vintages.py` does.
+
 ## Stock Universe
 
 - ~3,902--3,904 Korean listed stocks across KOSPI and KOSDAQ
@@ -98,18 +281,32 @@ onward = one column per stock (~3,902--3,904 stocks).
   = Samsung Electronics)
 - Columns are ordered approximately by market cap
 - Stocks not yet listed on a given date have `None`/NaN values
-- Minor column count differences between files (3,903 vs 3,905) due to
-  different download dates
-- **Survivorship-bias status:** all files in this directory were
-  pulled with DataGuide's "all codes" (전체 / 상폐 포함) filter and
+- Column counts differ between files (3,902 vs 3,904) because each was
+  pulled on its own date against its own live universe — this changes which
+  tickers exist, not just how many. See
+  ["Every sheet has its own pull date"](#️-every-sheet-has-its-own-pull-date)
+- **Not every column is a stock.** The 상폐제외 pair carries 388 `Q…` ETN
+  codes and 241 six-character alphanumeric codes alongside the plain 6-digit
+  equity codes, and its plain 6-digit set includes ETFs. Intersect with
+  `kr_marcap.universe(date, kind='common')` rather than pattern-matching the
+  code (§10).
+- **Survivorship-bias status:** the nine "all codes" (전체 / 상폐 포함) files
   are effectively survivorship-bias-free — ~90% of genuine delistings
   present, ~99% from 2021 onward. See `DELISTED_COVERAGE.md` for the
-  full breakdown.
+  full breakdown. The two 상폐제외 files have zero delisted coverage by
+  construction (§10).
 
 ## Python Loading Example
 
-Two flat helper modules ship in this directory for the common cases.
-They have no package boilerplate — put `~/finance_db/fnguide_data/` on
+**Every xlsx read in this directory goes through `engine="calamine"`**
+(python-calamine, a Rust reader). It is ~10× faster than openpyxl on these
+exports and a fraction of the memory — `Price data.xlsx` reads in ~4 s a
+sheet against ~45 s — and it is a prerequisite of this package, not an
+optional accelerator. Install with `pip install python-calamine`; the repo's
+dependency list is in `../CLAUDE.md`.
+
+Helper modules ship in this directory for the common cases. The flat ones
+have no package boilerplate — put `~/research/finance_db/fnguide_data/` on
 `sys.path` and import them by module name. **These exist for backward
 compat with current research projects; new projects should prefer
 inline parsing using the documented 14-row layout.**
@@ -117,6 +314,13 @@ inline parsing using the documented 14-row layout.**
 - `fnguide_io.py` — `load_fnguide_sheet(filepath, sheet_name)` returns
   a date-indexed wide DataFrame; `melt_fnguide_wide(df, value_name)`
   pivots it long.
+- `price_loader.py` — `load_price_panel()` returns the long
+  `(date, ticker, market, adj_close_pr, adj_close_tr, segment)`
+  adjusted-price panel (both conventions, 2005+, delisted included) from
+  `raw/Price data.xlsx`, building `cache/fnguide_price.parquet` on first
+  call. `segment` numbers each code's listing spells, so returns are
+  differenced within `['ticker', 'segment']`. This is the package's
+  research price input; see §9 below.
 - `investor_loader.py` —
   `load_investor_flow(start, end, *, raw_dir, investor_types=('기관','개인','외국인'), foreign_definition='등록외국인', cache_dir=None)`
   returns a long
@@ -149,6 +353,12 @@ low, close, volume, amount, market_cap, listed_shares`),
 series), and `kr_marcap.universe(date, kind='common')` (point-in-time
 common-stock membership). Both are survivorship-bias-free.
 
+`kr_marcap` also has its own adjusted-price loader,
+`kr_marcap.adjusted_loader.load_adjusted_panel()`, reconstructing both
+conventions from open sources. It is a separate project with a separate
+input chain — read it to study the reconstruction, not to source prices
+for research. Don't merge its output into a panel built on this one.
+
 For ad-hoc reads, the underlying xlsx layout is documented above —
 column codes on row 9, names on row 10, item codes on row 12, data
 starts row 15.
@@ -156,11 +366,12 @@ starts row 15.
 ```python
 import pandas as pd
 
-# Read a single sheet (skip first 14 header rows, use row 9 as column names)
-# For large files, consider using openpyxl read_only mode or chunked reading
+# Read a single sheet (skip first 14 header rows, use row 9 as column names).
+# engine="calamine" is not optional on files this size — see the note above.
 
 # Step 1: Read metadata rows to get stock symbols and item info
-meta = pd.read_excel("raw/data0203.xlsx", sheet_name="매수수량(기관)", header=None, nrows=14)
+meta = pd.read_excel("raw/data0203.xlsx", sheet_name="매수수량(기관)", header=None,
+                     nrows=14, engine="calamine")
 symbols = meta.iloc[8, 1:]       # Row 9: ticker codes (A005930, ...)
 names = meta.iloc[9, 1:]         # Row 10: company names (삼성전자, ...)
 item_code = meta.iloc[11, 1]     # Row 12: FnGuide item code
@@ -168,7 +379,7 @@ item_name = meta.iloc[12, 1]     # Row 13: metric name in Korean
 
 # Step 2: Read the time series data
 df = pd.read_excel("raw/data0203.xlsx", sheet_name="매수수량(기관)",
-                   header=None, skiprows=14)
+                   header=None, skiprows=14, engine="calamine")
 df.columns = ["date"] + list(symbols)
 df["date"] = pd.to_datetime(df["date"])
 df = df.set_index("date")
@@ -392,6 +603,175 @@ investor-flow and financials files carry none of it.
   Survivorship-bias-free: 99.4% of genuine common KOSPI/KOSDAQ
   delistings present (better than the investor-flow files) — see
   `DELISTED_COVERAGE.md`.
+
+---
+
+### 9. `raw/Price data.xlsx` (220 MB)
+
+**Content:** Both adjusted-price conventions FnGuide publishes, KOSPI and
+KOSDAQ in separate sheets.
+
+| Sheet Name | English | Item Code | Unit |
+|---|---|---|---|
+| 수정주가_KOSPI | Adjusted close, price return (KOSPI) | S410000700 | KRW (원) |
+| 수정주가_KOSDAQ | Adjusted close, price return (KOSDAQ) | S410000700 | KRW (원) |
+| 수정주가(현금배당포함)__KOSPI | Adjusted close, total return (KOSPI) | S410007700 | KRW (원) |
+| 수정주가(현금배당포함)_KOSDAQ | Adjusted close, total return (KOSDAQ) | S410007700 | KRW (원) |
+
+- **Sheets:** 4 (the doubled underscore in the third tab is the vendor's)
+- **Columns:** 1,284 KOSPI + 2,785 KOSDAQ; **3,590 tickers actually carry
+  prices** in-window (1,025 KOSPI, 2,551 KOSDAQ, 14 in both). The rest are
+  master-table columns for names that delisted before the window opens.
+- **Rows:** 5,332 sessions, **2005-01-03 to 2026-08-12**
+- **Kind:** SSC
+- **Observations:** 10,802,289 per convention — the two cover *exactly* the
+  same (session, ticker) cells, so a price-return figure always has its
+  total-return twin.
+- **Adjusted close only.** No volume, market cap or share count, and no
+  point-in-time market label. Adjusted open/high/low exists only in the
+  currently-listed 상폐제외 pair (§10), never for a delisted name.
+- **Values are rounded to the won.** Because both series are back-adjusted,
+  a name that later split carries single-digit adjusted prices early in its
+  history, where ₩1 quantisation is a percent-scale effect on the daily
+  return. This is the dominant source of small disagreement against any
+  independently built series.
+- **A code is not a company: 58 columns hand over to a second occupant.** KRX
+  reissues a 6-digit code once its first occupant is delisted and FnGuide keys a
+  series by code, so both companies arrive in one column with a NaN gap between
+  them. Differencing straight through the gap produces a median return of
+  **+1,802 %**, topping out at +8,136,485 % — 54 of the 58 inside the
+  2005--2024 window.
+  `price_loader.py` marks the handovers in a **`segment`** column; difference
+  within `['ticker', 'segment']`, never within `ticker` alone.
+- **The extreme returns that survive segmenting are real KRX prints, not
+  defects.** 52 one-session returns exceed **+100 %**, which KRX's ±30 % daily
+  limit makes impossible for ordinary trading. Every one is a session the limit
+  did not govern, and they come in two kinds:
+  - **A halt priced at a nominal constant, then released.** `008080`
+    에스와이코퍼레이션 sits at ₩1 on zero volume for twelve sessions and reopens at
+    ₩67,000; `058550` 네오리소스 sits at ₩100 for a week and reopens at ₩320 on a
+    12.5:1 감자 (`marcap` shows shares 68,996,138 → 5,519,691 that morning).
+    Four rows go further and carry an outright **`0`** (`009280`, `013090`,
+    `036840`, `038710`, all 2023) — the vendor writing a halt as a price rather
+    than as NaN.
+  - **정리매매**, where no price limit applies: `004230` 세신 runs
+    ₩360 → ₩25 → ₩5 → ₩30 in six sessions before delisting the next day.
+
+  Spot-checked against `marcap/`, FnGuide's adjusted value equals the raw close
+  **exactly** in every case above — the series is faithful. What it cannot
+  express is that a print was not tradeable, because it carries no volume and no
+  halt flag. That is what `kr_marcap` (`Volume`, `ChangeCode`) and
+  `kr_marcap.status.tradable_universe(date)` are for. Mask there; do not patch
+  the prices.
+- **Market transfers appear twice.** 14 tickers that moved KOSDAQ → KOSPI
+  (신세계푸드, KTF, 신세계건설, …) are served their *whole* history under both
+  market sheets at identical prices; `price_loader.py` collapses them
+  and marks them `market == 'BOTH'`.
+- **Survivorship-bias status:** **616 / 620 (99.4 %)** of genuine common
+  KOSPI/KOSDAQ delistings since 2005 carry real prices — matching
+  `short_sale_lending.xlsx`, and better than the investor-flow batch. All
+  4 misses are closed-end funds or resource trusts (`037500` 굿라이프5,
+  `042950` 미래코리아1, `094520` 맵스베트남1, `152550` 한국ANKOR유전), not
+  ordinary commons; the last is already in
+  `kr_marcap.universe.STRICT_COMMON_EXCLUDE`.
+
+Loading:
+
+```python
+from fnguide_data.price_loader import load_price_panel
+px = load_price_panel()      # date, ticker, market, adj_close_pr, adj_close_tr, segment
+
+# `segment` numbers a code's listing spells — differencing across the boundary
+# would compare two different companies that shared the 6-digit code.
+px["ret"] = px.groupby(["ticker", "segment"])["adj_close_tr"].pct_change()
+```
+
+---
+
+### 10. `raw/0_KOSPI 주가(상폐제외).xlsx` (292 MB) + `raw/0_KOSDAQ 주가(상폐제외).xlsx` (238 MB)
+
+**Content:** adjusted **open / high / low / close**, one sheet per field, one
+file per market. These are the only files in the package that carry adjusted
+open, high or low — everything else here is close-only.
+
+| Sheet | Item Code | Item Name |
+|---|---|---|
+| `KOSPI_수정시가` / `KOSDAQ_수정시가` | S410000650 | 수정시가(원) |
+| `KOSPI_수정고가` / `KOSDAQ_수정고가` | S410000660 | 수정고가(원) |
+| `KOSPI_수정저가` / `KOSDAQ_수정저가` | S410000670 | 수정저가(원) |
+| `KOSPI_수정주가` / `KOSDAQ_수정주가` | S410000700 | 수정주가(원) |
+
+- **Sheets:** 4 each. **Kind:** SSC. **Unit:** KRW, rounded to the won.
+- **Rows:** **1998-12-28 to 2026-03-20** (`기간` = 19990101 →
+  최근일자(20260320)) — six years deeper than `Price data.xlsx`, which starts
+  2005-01-03. 1,002 codes carry a pre-2005 price, 1.19 M cells over 1,477
+  extra sessions.
+- **Columns:** 2,311 KOSPI; 1,815 KOSDAQ on the OHL sheets and **1,813** on
+  `KOSDAQ_수정주가`.
+- **Built 2026-03-23**, 13:27:06 → 15:06:51, one DataGuide session per sheet
+  (row 1 `Refresh`). The 2026-06-07 mtime is when the copy landed here.
+- **Universe filter: 상폐제외 (delisted excluded)** — the opposite of the "all
+  codes" filter behind the other nine files, and the only two files in `raw/`
+  pulled under it. Nothing in this package reads them; `price_loader.py` reads
+  `Price data.xlsx`.
+
+**Not every column is a stock — least of all in the KOSPI file.** Of its 2,311
+codes, 1,716 are plain 6-digit KRX equity codes, **388 are `Q…` ETNs**, and 207
+are 6-character alphanumeric new-format codes carrying both ETFs (`0043B0`
+TIGER 머니마켓액티브) and ordinary companies (`0126Z0` 삼성에피스홀딩스). KOSDAQ is
+1,779 plain + 34 alphanumeric, no ETNs. Code shape does not separate stock from
+fund: of the 906 plain 6-digit codes that appear here and *not* in
+`Price data.xlsx`, only **4** are in `kr_marcap.universe(kind='common')` — the
+other 902 are ETFs and funds holding plain 6-digit codes. Filter against the
+marcap universe, not against the code.
+
+**The 상폐제외 filter holds, and the exceptions are code reuse.** 119 of the
+4,126 codes appear in `kr_delisted/delisting_calendar.csv`: 12 delisted *after*
+2026-03-20 (correctly live at pull time) and 107 before it. Of those 107, 102
+are `is_genuine == 'N'` — the code survived a holdco conversion, market transfer
+or rename (`035420` NHN → NAVER, `032640` LG텔레콤 → LG유플러스) — and 5 are
+genuine delistings whose code was later reassigned to a different company
+(`013890` 지누스, `037030` 파워넷, `101970` 우양에이치씨, `036220` 인포피아 →
+오상헬스케어, `198940` 한주금속 → 한주라이트메탈). No column continues past its
+occupant's delisting.
+
+The live-column count climbs from 583 at end-1998 to 4,124 at the pull and its
+largest single-session drop is −3 columns. That shape *is* the survivorship
+bias: a survivorship-free panel sheds columns at every delisting, and this one
+effectively never does. It
+also rules out the `currently_listed/` cliff — 2023-10-20 → 2023-10-23 holds at
+3,253 columns here, the same count the defective batch had immediately before it
+lost ~1,400.
+
+**Two sheets in the KOSDAQ file disagree about the universe.**
+`KOSDAQ_수정주가` (built 15:06) is missing `000250` 삼천당제약 and `043090`
+더테크놀로지, both present on the three OHL sheets built 14:37–14:57 and both
+still listed — they are in `Price data.xlsx` five months later. `000250` is the
+**first** data column of the OHL sheets, so stacking the four sheets by column
+position shifts the entire KOSDAQ frame by one. Join on the row-9 code.
+
+**Against `Price data.xlsx`, where the two pulls overlap** — 2,625 shared codes,
+2005-01-03 to 2026-03-20, 8.87 M cells present in both; on the 2,577 with more
+than 100 shared observations:
+
+| | tickers | what it means |
+|---|---:|---|
+| identical to the won | 2,296 | the two pulls agree exactly |
+| one exact constant ratio ≠ 1 | 24 | ×10, ×5, ×0.5, ×0.2 — a corporate action between 2026-03-20 and 2026-08-12 rescaled the whole back-adjusted history. Levels differ, returns do not. |
+| ratio not constant | 257 | ₩1 rounding at two different anchors |
+
+7.10 % of daily returns differ, but by a median of **0.56 bp** (p99 16.3 bp), and
+the p99 falls with the price level — 15.9 bp for prices in ₩100–1,000 against
+1.75 bp above ₩10,000, the ₩1-quantisation signature described in §9. So:
+**pick one export and use it end to end.** Back-adjusted *levels* from different
+pulls are not comparable for any name with an action in between, and splicing
+two pulls injects rounding noise into every early session of a heavily split
+name.
+
+**Use them for** adjusted OHL, and for 1999–2004 adjusted close if a
+survivor-only sample is acceptable. **Do not use them for** anything that needs
+delisted names, or as a second opinion on `Price data.xlsx` — it is the same
+vendor series at a different anchor, not an independent source.
 
 ---
 

@@ -1,4 +1,4 @@
-# kr_marcap — marcap as primary KR OHLCV source
+# kr_marcap — KR OHLCV, and FnGuide-quality prices from open sources
 
 `kr_marcap/` makes the locally-cloned `marcap/` parquets the primary source of
 Korean equity OHLCV — KOSPI + KOSDAQ + KONEX — and adds two thin layers on top:
@@ -7,8 +7,23 @@ Korean equity OHLCV — KOSPI + KOSDAQ + KONEX — and adds two thin layers on t
    panel is survivorship-bias-free without needing the `kr_delisted/`
    calendar overlay.
 2. A **ChangesRatio price adjustment** layer (`adjust.py`) so historical prices
-   are continuous across splits / 무상·유상증자 / 감자, putting marcap on par with
-   FnGuide's 수정주가 for those event types.
+   are continuous across splits / 무상·유상증자 / 감자, plus a SEIBro cash-dividend
+   layer for total return.
+
+Layer 2 is also the repo's standing project: **constructing FnGuide-quality
+adjusted prices from openly available data.** FnGuide DataGuide is the academic
+standard and a paid subscription; every input here — marcap, DART, KIND, SEIBro,
+KRX via pykrx — is free. Since the DataGuide 수정주가 export landed, the claim is
+measured rather than asserted: on the 10.26 M ticker-days the two series share,
+daily returns agree on **99.977 %** (price return) and **99.969 %** (total
+return), and the benchmark surfaced a defect in this package that the KRX-oracle
+gate structurally could not see. What it is built from, how close it gets, and
+what remains are in [`CONSTRUCTION.md`](CONSTRUCTION.md).
+
+For research, read FnGuide's own series
+(`fnguide_data.price_loader.load_price_panel`); this package is what that
+series is being reproduced *by*, plus the raw OHLCV, volume, market cap and
+share counts FnGuide's price export does not carry.
 
 It does **not** replace `fnguide_data/` for short selling, securities lending,
 floating ratio, investor flow, or financials — marcap doesn't carry those.
@@ -83,6 +98,10 @@ df = load_adjusted('005930')                    # Samsung Electronics (price ret
 # 4. total return (reinvests each cash dividend on its own 배당락일)
 df = load_adjusted('005930', total_return=True)  # + tr_factor, adj_close_tr, is_ex_date
 df = load_adjusted('005930', reliable_only=True) # drop deficient pre-2015 rows
+
+# 5. both conventions for every ticker at once — the reconstruction as a panel
+from kr_marcap.adjusted_loader import load_adjusted_panel
+px = load_adjusted_panel()   # date, code, raw_close, adj_close, adj_close_tr, sess
 ```
 
 Or via CLI:
@@ -96,6 +115,7 @@ python -m kr_marcap.dividend_events build    # pull SEIBro dividend events (no A
 python -m kr_marcap.dividend_events          # Samsung quarterly ex-date demo
 python -m kr_marcap.dividends build          # DART annual 배당 (cross-check only; needs OPEN_DART_API_KEY)
 python -m kr_marcap.validate_dividend_events  # re-run the five total-return checks
+python -m kr_marcap.validate_against_fnguide  # benchmark both conventions vs FnGuide (~5 min)
 python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEIBro window
 ```
 
@@ -106,9 +126,11 @@ python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEI
 | `classify.py` | Pure `classify_ticker(code, name, market) → kind`. Returns one of `common / preferred / spac / reit / fund / etf / konex / other`. Run as `__main__` for the smoketest. |
 | `universe.py` | Builds `cache/universe_panel.parquet` (per-ticker membership window + kind). `universe(date, kind)` returns the active set. |
 | `adjust.py` | Builds `cache/adj_factors.parquet` by compounding the exchange `ChangesRatio` (등락률); the `Stocks`-column ratio is kept only to detect entity-change series breaks. `load_adjusted(ticker)` returns adjusted OHLCV for one name (`total_return=True` adds the dividend-reinvested series; `reliable_only=True` clips pre-2015). |
+| `adjusted_loader.py` | `load_adjusted_panel()` — both adjusted-close conventions for the whole panel (`date, code, raw_close, adj_close, adj_close_tr, sess`), the vectorised counterpart to `load_adjusted(ticker, total_return=True)` and what the FnGuide gate compares. This package's price loader; `fnguide_data.price_loader` is the other project's. |
 | `dividend_events.py` | Builds `cache/dividend_events.parquet` from SEIBro 배당내역 — one row per dividend *event* (배정기준일, 배당구분, 주당배당금), with the 배당락일 derived under KRX T+2. No API key. Consumed by `load_adjusted(..., total_return=True)`. |
 | `dividends.py` | Builds `cache/dividends.parquet` by crawling DART's structured 배당 report (fiscal 2014+). Annual only — kept as an independent cross-check on `dividend_events.py`, no longer wired into the total-return path. |
 | `validate_dividend_events.py` | Re-runs the five checks behind the total-return claims: ex-date localisation, drop-off robustness, the December artifact, event placement, and the DART reconciliation. Read-only, ~1 min. |
+| `validate_against_fnguide.py` | The outside gate: both conventions against FnGuide's own 수정주가 / 수정주가(현금배당포함) on every shared ticker-day, scored on log returns against a rounding bar and a 10 bp bar, with each disagreeing day labelled by cause. Read-only, ~5 min. See [`CONSTRUCTION.md`](CONSTRUCTION.md). |
 | `seibro_probe.py` | Raw SEIBro endpoint inspection — `raw` (every field of a window, incl. the ones the loader drops), `count` (LIST_CNT vs rows served, per quarter), `hole` (bisect for the first row offset the server refuses). For diagnosing a build, not for building. |
 
 Why any of these checks establish anything — and the date-demeaning trap that
@@ -242,6 +264,25 @@ real −2.1 % move). What remains:
   1/2/5 % trims. `is_ex_date` marks those sessions so a daily-horizon study can
   flag or drop them. Every number in this bullet is reproduced by
   `python -m kr_marcap.validate_dividend_events`.
+
+  **A zero is a non-payment, and that was checked rather than assumed.** SEIBro
+  serves 6,413 cash-kind events priced at exactly ₩0 — a 배당구분 and a 배정기준일
+  with nothing attached — and `dps > 0` drops them as non-payers. None shares a
+  기준일 with a priced row, so they are standalone events, not the second half of
+  a 차등배당 pair, and reading them wrongly would put the whole total-return layer
+  on a false premise. DART settles it: over its FY2014–2025 window it reports a
+  positive dividend for **5.1 %** of the zeros against **78.3 %** of the priced
+  control, so a zero behaves like a company that paid nothing, not like a missing
+  amount. The 5.1 % is the filter's own false-negative rate where a second source
+  exists to measure it — 124 events, uncorrected, and unmeasurable before 2014.
+  `validate_dividend_events` check [5] reproduces both rates.
+
+  Two coverage limits are the collector's, not the filter's: 2000–2001 carry
+  almost no amounts at all (3 priced cash events each), and SEIBro's server
+  refuses the offsets past row 325 in the December 2004 window, costing 1,303
+  rows it admits exist (see `_fetch`, and the `refused` line the build prints).
+  The total-return layer is therefore usable from 2002, solid from 2005, and
+  should not be read across 2004.
 - **The largest surviving returns are real, not errors.** Relisting / 거래재개
   first days after a long halt (no price limit) and the 2015 우선주 품절주 mania
   produce extreme but genuine adjusted returns the exchange itself reported; they
@@ -256,10 +297,9 @@ real −2.1 % move). What remains:
   official move is used, with no volume/share heuristic (the removed `_RESET_*`).
   See [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
 
-## Validation against KRX official 수정주가 (automated)
+## Validation — two gates, and they ask different questions
 
-The manual FnGuide DataGuide cross-check below has been **superseded by an
-automated, official, reproducible gate**:
+**Inside gate — KRX official 수정주가.**
 [`validate_against_oracle.py`](validate_against_oracle.py) compares every covered
 ticker's adjusted return to KRX's own 수정주가 (`krx_adj_oracle.parquet`, via
 pykrx). On the candidate set, **99.8 % of tickers agree with KRX on every shared
@@ -267,7 +307,26 @@ day** at a material tolerance; the only material disagreement is 008080, where
 our ₩1-sentinel guard is provably better than KRX's own (dirty) series. Run it
 after every build (`python -m kr_marcap.validate_against_oracle`).
 
+**Outside gate — the FnGuide series itself.**
+[`validate_against_fnguide.py`](validate_against_fnguide.py) compares both our
+conventions to FnGuide's 수정주가 and 수정주가(현금배당포함) on all 10.26 M shared
+ticker-days: **99.977 %** and **99.969 %** of daily returns agree.
+
+The second is not a more expensive version of the first. `adjust.py` *consumes*
+the KRX oracle — on a 거래재개 reset it assigns our return from it — so on exactly
+the sessions where the oracle is wrong, the inside gate agrees by construction
+and reports nothing. That is not hypothetical: the FnGuide benchmark found 3,298
+ticker-days across 9 names where a stuck oracle value froze our series through a
+real move, 59.8 % of all disagreement, invisible to the oracle gate. Cause,
+worked example and the proposed guard are in
+[`CONSTRUCTION.md`](CONSTRUCTION.md).
+
 ### Historical: the FnGuide cross-check that surfaced these fixes
+
+Superseded by [`validate_against_fnguide.py`](validate_against_fnguide.py), which
+runs the same comparison automatically against a strictly better export —
+delisted names included, and both conventions rather than one. Kept because it is
+what surfaced the two fixes below.
 
 The adjustment layer was first validated against professional FnGuide DataGuide
 수정주가 exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with
@@ -277,7 +336,10 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
   total-return series — FnGuide 수정주가 reflects capital changes only, *not* cash
   dividends, exactly like `adj_close`. This confirms the [cash-dividend
   gap](#known-limitations) is a shared market convention, not a defect; use
-  `total_return=True` for the dividend-reinvested series.
+  `total_return=True` for the dividend-reinvested series. (FnGuide *does* publish
+  a dividend-inclusive series, as a separate item — 수정주가(현금배당포함),
+  `S410007700` — which is what `adj_close_tr` is now benchmarked against; it was
+  simply not in that export.)
 - **It surfaced the long-gap splice class.** The cross-check flagged entity
   changes the break detector missed; the gap-triggered break above cut splice
   tickers (`max_abs > 1` vs. FnGuide) from 9 to 3, the 3 remaining being gap-free
@@ -303,5 +365,7 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
 | `corp_action_residuals.csv` | Material share jumps no official source explained (review queue; default not-break) | (same) |
 | `krx_adj_oracle.parquet` | KRX official 수정주가 per (date, code) — reset detection + validation | `python -m kr_marcap.krx_adj_oracle --all` |
 | `oracle_validation.csv` | Days where our adjusted return disagrees with KRX 수정주가 | `python -m kr_marcap.validate_against_oracle` |
+| `fnguide_validation.csv` | Per-ticker agreement with FnGuide, both conventions (n_days, n_disagree, max/median \|Δ log-return\|, clean, delisted) | `python -m kr_marcap.validate_against_fnguide` |
+| `fnguide_validation_days.csv` | The disagreeing ticker-days, worst first, each labelled by cause | (same) |
 | `dividend_events.parquet` | One row per SEIBro dividend event (code, record_date, ex_date, cum_date, kind, share_class, dps, stock_ratio, pay_date, market_label) — 62 k rows / 29.6 k cash events / 2,982 tickers, 2000–2026 | `python -m kr_marcap.dividend_events build` |
 | `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps). Cross-check only — reconciles to the event sums for 96.2 % of 12.1 k (ticker, FY) pairs, 98.9 % on the delisted subset | `python -m kr_marcap.dividends build` |

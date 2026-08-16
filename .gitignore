@@ -22,6 +22,10 @@ fnguide_data/*.xlsx
 fnguide_data/currently_listed/*.xlsx
 fnguide_data/raw/*.xlsx
 
+# FnGuide adjusted-price panel (수정주가 + 수정주가(현금배당포함)), regenerable from
+# raw/Price data.xlsx via fnguide_data/price_loader.py
+fnguide_data/cache/
+
 # Root-level FnGuide validation corpus (0_KOSPI/0_KOSDAQ 주가.xlsx, ground-truth
 # for kr_marcap price adjustment — kept locally, far over GitHub's 100 MB limit)
 /*.xlsx

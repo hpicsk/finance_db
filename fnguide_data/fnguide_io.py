@@ -4,6 +4,10 @@ All FnGuide DataGuide export files share a 14-row metadata header
 (symbol codes on row 9, symbol names on row 10, item codes on row 12).
 Data starts at row 15. Column A is the date; columns B onward are one
 per ticker.
+
+Requires ``python-calamine``: every read here goes through
+``engine="calamine"``, which the exports' size makes a prerequisite rather
+than a tuning choice. See the parent README's loading section.
 """
 
 from __future__ import annotations
@@ -30,8 +34,9 @@ def load_fnguide_sheet(
     If ``return_names`` is True, also return a ``{ticker: name}`` mapping
     drawn from row 10 of the metadata header.
     """
-    # engine="calamine" (python-calamine, Rust) — substantially faster than the
-    # default openpyxl reader on these large DataGuide exports.
+    # engine="calamine" (python-calamine, Rust) is required, not an optimisation:
+    # on DataGuide exports this size the default openpyxl reader costs ~10x the
+    # time and several times the memory. python-calamine is a package dependency.
     meta = pd.read_excel(filepath, sheet_name=sheet_name, header=None, nrows=14,
                          engine="calamine")
     tickers = list(meta.iloc[8, 1:].values)

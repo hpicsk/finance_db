@@ -46,4 +46,21 @@ fi
 # python -m kr_status.dart_corp_actions                        # DART 증자/감자/합병/분할 (~30m)
 # python -m kr_marcap.krx_adj_oracle --all                     # KRX 수정주가 oracle (~1-2h)
 # python -m kr_marcap.adjust build                             # rebuild with ground truth
-# python -m kr_marcap.validate_against_oracle                  # automated gate vs KRX 수정주가
+# python -m kr_marcap.validate_against_oracle                  # inside gate vs KRX 수정주가
+
+# ── 5. Benchmark the reconstruction against the paid FnGuide series ───────
+#    Cadence: after any adjust rebuild, or a new DataGuide 수정주가 export.
+#    The oracle gate above cannot see reset-override failures — adjust.py
+#    assigns from the oracle there, so the two agree by construction. Only an
+#    outside source can. See kr_marcap/CONSTRUCTION.md.
+#    Note the two sides carry independent vintages: the comparison window is
+#    their intersection, so re-pulling *either* side changes what was graded.
+# python -m fnguide_data.price_loader                          # Price data.xlsx → parquet (~1m)
+# python -m kr_marcap.validate_against_fnguide                 # outside gate (~5m)
+
+# ── 5b. Re-pulled any DataGuide export? Re-stamp the vintage manifest ─────
+#    Cadence: after replacing ANY file in fnguide_data/raw/. Each sheet has its
+#    own pull date and its own universe; vintages.csv is what makes those
+#    readable without parsing 6.5 GB. ~30s — it streams headers, it does not
+#    read data.
+# python -m fnguide_data.vintages
