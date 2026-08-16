@@ -9,7 +9,7 @@ departs from a cash-retained one by 25-36 %. There is no price-return variant of
 the endpoint at any tier, so a study that needs the price alone has no source
 here.
 
-Three things happen on top of the vendor series, all of them marked in a column
+Four things happen on top of the vendor series, all of them marked in a column
 rather than done silently.
 
 **The survivorship hole is filled.** ``price_adj/`` serves nothing at all for 38
@@ -30,6 +30,18 @@ carried through the whole history behind it; one is a filing the vendor added a
 malformed duplicate row into. ``vendor_event_audit`` grades every event and
 finds both by shape, not by stock id.
 
+**Both edges of the vendor series are carried outward.** It begins one session
+after the raw series on 903 stocks and ends before it on 7, and a factor moves
+only on an ex date — so where no filing sits in the gap, the adjacent covered
+session's factor *is* the missing one, and carrying it is exact rather than an
+interpolation or a splice. That recovers 902 **first returns** — the price was
+never the loss; the session-1-to-session-2 return was — and prices the 3,089
+sessions seven delisted names went on being quoted for. The condition is tested
+per row against every filed 除權息 and 減資 plus the cancellations no filing
+explains, and it refuses the 903rd: 4141's first print sits 376 days before the
+vendor's first session, with a cancellation on that session. Those rows are
+``vendor_carried``.
+
 **Two conventions therefore live in one panel**, and ``adj_method`` says which.
 FinMind subtracts the *declared* distribution from the prior close; the rebuild
 reads the exchange's *published reference price*. The two name the same number
@@ -40,8 +52,8 @@ is the fixed record of that, so a step found at a vendor/rebuilt boundary is
 answered by a file rather than re-derived.
 
 Nothing else on the vendor side is re-derived. What this module adds beyond the
-above is the two places where the vendor series says something a return
-calculation should not believe, both measured against ``ohlcv/`` and
+above is the three places where the adjusted panel says something a return
+calculation should not believe, all measured against ``ohlcv/`` and
 ``unpriced_actions.parquet``:
 
 **A no-trade session carries a price.** FinMind writes a session the stock did
@@ -60,24 +72,31 @@ on 2010-06-24 has a vendor factor step of 1.0000, which leaves the raw 53.2 →
 finds those cancellations in the share count, and ``is_valid`` is False for every
 row before the last of them. The same flag carries series splices, where a ticker
 stops trading for years and comes back as a different listing, so
-``invalid_reason`` names which of the two cut the row off. ``is_valid`` says
-"this row connects to the rows after it", not "this row is wrong".
+``invalid_reason`` names which of the three disqualified it.
 
-Coverage after the fill is still not complete, and what remains is benign. 903
-stocks are short exactly their first traded session, which the vendor series
-begins one session after. 3,089 sessions sit past the end of a vendor series
-that stopped at a delisting while ``ohlcv/`` kept printing — five names hold
-3,001 of them, 1107 the largest at 1,151: adjusted ends 2007-10-19 against a
-2007-10-20 delisting, raw runs to 2012-06-06 at 249 sessions/yr on half the
-prior median volume. Those are 興櫃 quotes for a name that left the exchange, so
-the raw panel is over-reaching the listing rather than the adjusted panel
-falling short of it. Neither class is rebuilt: both would mean splicing a
-rebuilt segment onto a vendor series at a level the two do not share, and the
-whole-stock holes above have no such seam.
+**A price is not a permission.** The 3,089 carried sessions are 興櫃 quotes for
+names that left the exchange — 1107 is the largest at 1,151: the vendor ends
+2007-10-19 against a 2007-10-20 delisting and ``ohlcv/`` runs to 2012-06-06.
+興櫃 is a negotiated market: ``open`` is the previous session's average rather
+than a trade, a quote depends on a recommending broker standing behind it, and
+median volume across the seven runs at 3.6-48 % of each name's own listed-era
+median. A backtest holding those rows would be trading a book it could not have
+filled, which is why they carry ``is_valid`` False under
+``invalid_reason = 'post_delisting_emerging'``. What they *are* is the terminal
+value: where a delisted name converges over the months after it leaves is a
+market observation, and the last exchange close is not one. That is the use the
+fill is for, and the flag is what keeps it to that use.
 
-Both join as NaN rather than being dropped, so the gap stays visible beside the
-raw price that does cover it, and ``adj_source`` carries the distinction row by
-row — through ``concat``, ``merge`` and ``groupby``, which is what ``df.attrs``
+``is_valid`` is therefore "this row is a position a study could have held", and
+the two ways it fails are opposite ends of the series: a row before the last
+break belongs to a history this one does not continue, and a row after the last
+exchange session belongs to a market it could not have traded in.
+``invalid_reason`` is what separates them, and neither is "this price is wrong".
+
+What is left uncovered stays NaN rather than being dropped, so the gap stays
+visible beside the raw price that does cover it — the no-trade sessions, and the
+one row the carry guard refuses. ``adj_source`` carries the distinction row by
+row, through ``concat``, ``merge`` and ``groupby``, which is what ``df.attrs``
 does not do.
 """
 from __future__ import annotations
@@ -106,6 +125,7 @@ _BREAK_GAP_DAYS = 730
 _METHOD = {
     'vendor': 'declared_dividend',
     'vendor_patched': 'declared_dividend',
+    'vendor_carried': 'declared_dividend',
     'rebuilt_factored': 'exchange_reference',
     'rebuilt_noevent': 'none',
     '': '',
@@ -139,17 +159,18 @@ def load_adjusted(stock_id: str,
       ``tr_factor``      total-return back-adjustment factor, 1.0 on the last row
       ``adj_close_tr``   ``close * tr_factor`` — cash dividends removed as well
       ``adj_source``     where this row's factor came from: ``vendor``,
-                         ``vendor_patched``, ``rebuilt_factored``,
-                         ``rebuilt_noevent``, or ``''`` where nothing covers it
+                         ``vendor_patched``, ``vendor_carried``,
+                         ``rebuilt_factored``, ``rebuilt_noevent``, or ``''``
+                         where nothing covers it
       ``adj_method``     which convention produced its ex-date steps:
                          ``declared_dividend``, ``exchange_reference``, ``none``
       ``adj_covered``    the *vendor* served this date — False across a rebuilt
-                         stock, so the survivorship hole stays countable after
-                         it is filled
-      ``is_valid``       row connects to the rows after it — False before the
-                         last series break
-      ``invalid_reason`` which break cut it off: ``unpriced_cancellation`` or
-                         ``series_break``, ``''`` where valid
+                         stock and on a carried edge, so the survivorship hole
+                         stays countable after it is filled
+      ``is_valid``       this row is a position a study could have held
+      ``invalid_reason`` why not: ``unpriced_cancellation`` or ``series_break``
+                         behind the last break, ``post_delisting_emerging``
+                         past the last exchange session, ``''`` where valid
 
     Any other price column adjusts the same way — ``adj_open_tr = open *
     tr_factor`` — which is what makes the factor rather than the adjusted close
@@ -163,9 +184,10 @@ def load_adjusted(stock_id: str,
 
     ``adj_close_tr`` is NaN on a session the stock did not trade and on any
     session nothing covers; ``adj_source`` separates the two. ``df.attrs``
-    carries ``adj_coverage``, ``series_breaks``, ``vendor_only_sessions`` and
-    ``events_patched`` for a single stock, and is **not** the safe route for a
-    panel — read provenance off ``adj_source`` there.
+    carries ``adj_coverage``, ``series_breaks``, ``vendor_only_sessions``,
+    ``events_patched`` and ``sessions_carried`` for a single stock, and is
+    **not** the safe route for a panel — read provenance off ``adj_source``
+    there.
     """
     p = Path(ohlcv_dir) / f'{stock_id}.parquet'
     if not p.exists():
@@ -218,6 +240,7 @@ def load_adjusted(stock_id: str,
 
     covered = np.isfinite(factor)
     n_patched = 0
+    carried = np.zeros(len(out), dtype=bool)
     if covered.any():
         factor, n_patched = _patch(str(stock_id), out['date'].to_numpy(),
                                    covered, factor)
@@ -225,6 +248,11 @@ def load_adjusted(stock_id: str,
         if n_patched:
             source = _mark_patched(str(stock_id), out['date'].to_numpy(),
                                    covered, source)
+        # After the patch, so a first session carried back across a patched
+        # event inherits the corrected factor rather than the vendor's.
+        factor, carried = _carry_edges(str(stock_id), out['date'].to_numpy(),
+                                       traded, factor)
+        source[carried] = 'vendor_carried'
     else:
         # The vendor serves this stock nothing at all — the survivorship hole.
         # Rebuild it from the exchange's reference prices rather than return a
@@ -233,10 +261,10 @@ def load_adjusted(stock_id: str,
         factor = np.where(traded, factor, np.nan)
         kind = 'rebuilt_factored' if diag['events_placed'] else 'rebuilt_noevent'
         source = np.where(traded, kind, '').astype(object)
-        covered = np.isfinite(factor)
 
-    if covered.any():
-        factor = factor / factor[np.nonzero(covered)[0][-1]]
+    have = np.isfinite(factor)
+    if have.any():
+        factor = factor / factor[np.nonzero(have)[0][-1]]
     out['tr_factor'] = factor
     out['adj_close_tr'] = np.where(traded, close, np.nan) * factor
     out['adj_source'] = source
@@ -265,6 +293,24 @@ def load_adjusted(stock_id: str,
         # The break that determines validity is the last one, so its reason is
         # what every row it cut off carries.
         out.loc[:seen[-1] - 1, 'invalid_reason'] = reason[seen[-1]]
+
+    # The other end. A vendor series that stops while ``ohlcv/`` keeps printing
+    # stopped at a delisting: the name left the exchange and the quotes that
+    # follow are 興櫃, which is a negotiated market — ``open`` is the previous
+    # session's average price rather than a trade, median volume runs at 3.6-48 %
+    # of the prior year's, and a quote depends on a recommending broker standing
+    # behind it. Carrying the factor over those sessions makes the level
+    # continuous, which is what the price is wanted for; it does not make the
+    # sessions tradable, and this reason is what keeps a backtest from assuming
+    # they are. What they *are* good for is the terminal value — where a
+    # delisted name converges over the following months is a market observation,
+    # and the last exchange close is not one.
+    vendor_served = out['adj_covered'].to_numpy()
+    if vendor_served.any():
+        after = np.arange(len(out)) > np.nonzero(vendor_served)[0][-1]
+        if after.any():
+            valid[after] = False
+            out.loc[after, 'invalid_reason'] = 'post_delisting_emerging'
     out['is_valid'] = valid
 
     # Coverage is over traded sessions: the vendor also serves the no-trade rows
@@ -275,6 +321,7 @@ def load_adjusted(stock_id: str,
     out.attrs['series_breaks'] = int(len(seen))
     out.attrs['vendor_only_sessions'] = vendor_only
     out.attrs['events_patched'] = n_patched
+    out.attrs['sessions_carried'] = int(carried.sum())
     return out
 
 
@@ -305,6 +352,52 @@ def _patch(stock_id: str, dates: np.ndarray, covered: np.ndarray,
     return factor, n
 
 
+def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
+                 factor: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Extend the vendor's factor onto the traded sessions at either edge of it.
+
+    A back-adjustment factor moves only on an ex date, so between two filings it
+    is constant and a covered session's factor is also the factor of every
+    uncovered session next to it — not an interpolation but the same number, and
+    the level is continuous by construction rather than by a splice.
+
+    Two edges need it. The vendor series begins one session after the raw one on
+    903 stocks, which costs each of them its **first return** rather than its
+    first price, and a first return is the whole observation in a listing study.
+    It ends before the raw one on 7, which is the 3,089 sessions a delisted name
+    went on being quoted for.
+
+    The condition is checked per row rather than assumed: every date the stock
+    filed a 除權息 or a 減資 on, plus the share cancellations no filing explains,
+    and a row whose gap to its anchor contains one of them is left NaN. That is
+    not hypothetical — 4141's first print sits 376 days before the vendor's
+    first session with a cancellation on that very session, and it is the one
+    row of the 903 this refuses.
+
+    Returns the factor and the mask of rows it filled.
+    """
+    have = np.isfinite(factor)
+    carried = np.zeros(len(factor), dtype=bool)
+    if not have.any():
+        return factor, carried
+    blocking = np.concatenate([adjust.filed_event_dates(stock_id),
+                               _unpriced_dates(stock_id)])
+    seat = np.nonzero(have)[0]
+    todo = np.nonzero(traded & ~have)[0]
+    for i in todo[(todo < seat[0]) | (todo > seat[-1])]:
+        a = seat[0] if i < seat[0] else seat[-1]
+        lo, hi = sorted((dates[i], dates[a]))
+        # Half-open at the earlier end, whichever side the anchor is on: an
+        # event is placed on the first session at or after its date and carries
+        # in every row *behind* that, so it separates two rows exactly when it
+        # falls strictly after the earlier and no later than the later.
+        if ((blocking > lo) & (blocking <= hi)).any():
+            continue
+        factor[i] = factor[a]
+        carried[i] = True
+    return factor, carried
+
+
 def _mark_patched(stock_id: str, dates: np.ndarray, covered: np.ndarray,
                   source: np.ndarray) -> np.ndarray:
     """Label the rows a patch actually moved — those behind the last one."""
@@ -316,7 +409,8 @@ def _mark_patched(stock_id: str, dates: np.ndarray, covered: np.ndarray,
         while i < len(dates) and not covered[i]:
             i += 1
         last = max(last, i if i < len(dates) else 0)
-    source[:last] = np.where(source[:last] == 'vendor', 'vendor_patched', '')
+    head = source[:last]
+    source[:last] = np.where(head == 'vendor', 'vendor_patched', head)
     return source
 
 

@@ -166,6 +166,32 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
     return ev[['date', 'step', 'kind']].reset_index(drop=True)
 
 
+def filed_event_dates(stock_id: str) -> np.ndarray:
+    """Every date this stock filed a 除權息 or a 減資 on, unfiltered.
+
+    ``_read_events`` drops malformed and duplicate filings because a step is
+    computed from them. A caller asking only *whether* the factor could have
+    moved wants the opposite bias — every date anything was filed on, so a
+    filing this module would have discarded still blocks. That is the use here:
+    ``adjusted_loader`` carries the vendor's factor across a gap only where no
+    filing sits inside it.
+    """
+    out = []
+    p = DIV_RESULT_DIR / f'{stock_id}.parquet'
+    if p.exists():
+        d = pd.read_parquet(p)
+        if len(d):
+            out.append(pd.to_datetime(d['date']))
+    if CAP_RED_PATH.exists():
+        c = pd.read_parquet(CAP_RED_PATH, columns=['stock_id', 'date'])
+        c = c[c['stock_id'].astype(str) == str(stock_id)]
+        if len(c):
+            out.append(pd.to_datetime(c['date']))
+    if not out:
+        return np.array([], dtype='datetime64[ns]')
+    return np.sort(pd.concat(out).to_numpy())
+
+
 def _assert_disjoint(ev: pd.DataFrame, stock_id: str) -> None:
     """除權息 and 減資 must not land on the same session, or the step double counts."""
     dup = ev[ev.duplicated('date', keep=False)]

@@ -145,10 +145,20 @@ def test_taiwan_adjusted_coverage_decomposition():
         miss = ~tr["date"].isin(set(adj_dates))
         covered += int((~miss).sum())
         # A session past the vendor's last is the series stopping at a delisting
-        # the raw file kept printing through; anything else is the first-session
-        # offset the vendor series starts on.
+        # the raw file kept printing through. Everything else is the raw series'
+        # own first traded session, which the vendor series does not carry —
+        # verified as exactly that, one per stock, in
+        # test_taiwan_vendor_edges_are_carried. It is not always *before* the
+        # vendor's first date: on 39 stocks the vendor starts earlier, on
+        # sessions the raw endpoint has no row for at all.
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
         first += int((miss & (tr["date"] <= adj_dates.max())).sum())
+        assert not (miss & (tr["date"] <= adj_dates.max())
+                    & (tr.index > 0)).any(), (
+            f"{sid}: a session other than the first is missing from the vendor "
+            f"series inside its own date range, which is a hole rather than the "
+            f"documented offset and is not what the carry fills"
+        )
 
     assert (traded, covered) == (7509555, 7494582), (
         f"README pins adjusted coverage at 7,494,582 of the 7,509,555 traded "
@@ -537,6 +547,17 @@ def test_taiwan_vendor_event_audit_is_current():
         f"README pins 22,370 filed 除權息 of which 22,336 are graded against "
         f"the exchange; this tree gives {len(committed):,} / {len(ck):,}"
     )
+    # The two counts are one file and a column, not a filter that moved between
+    # runs. Pin what the 34-row difference is made of so it stays that way.
+    nc = committed[~committed["checkable"]]
+    served = {p.stem for p in (REPO / "finmind_data/price_adj").glob("*.parquet")
+              if len(pd.read_parquet(p))}
+    unserved = int((~nc["stock_id"].astype(str).isin(served)).sum())
+    assert (len(nc), unserved) == (34, 12), (
+        f"the 34 ungradable events should be 12 in stocks the vendor serves "
+        f"nothing for and 22 with no adjacent bracketing session; this tree "
+        f"gives {len(nc)} ungradable of which {unserved} are unserved"
+    )
     w6, w3 = float((ck["rel"] < 1e-6).mean()), float((ck["rel"] < 1e-3).mean())
     assert abs(w6 - 0.8328) < 5e-4 and abs(w3 - 0.9946) < 5e-4, (
         f"README claims the vendor step matches the exchange's published "
@@ -551,8 +572,37 @@ def test_taiwan_vendor_event_audit_is_current():
         f"shrank the vendor has fixed them and the patch is now a no-op; if it "
         f"grew the patched set in adjusted_loader is short"
     )
+
+    # The defect is an era, not a rate. Every flip is 2005-2008 and every upward
+    # reprice after the last of them is exact, which is what makes the next
+    # search of this kind cheap — and what makes a rate measured on the
+    # 2005-2007 delisting sample the wrong thing to extrapolate.
+    up = ck[ck["exchange_step"] < 1.0]
+    flipped = up[up["defect"] == "sign_flip"]["date"]
+    clean = up[up["defect"] != "sign_flip"]["date"]
+    assert len(up) == 24 and len(flipped) == 6, (
+        f"the sign-flip class is defined against the {len(up)} upward reprices "
+        f"in the graded set, of which {len(flipped)} are flipped; the module "
+        f"docstring says 24 and 6"
+    )
+    assert flipped.max() == pd.Timestamp("2008-09-16"), (
+        f"the docstring localises every flip to 2005-2008, last on 2008-09-16; "
+        f"this tree flips one on {flipped.max().date()}"
+    )
+    assert (clean > flipped.max()).sum() == 16, (
+        f"the docstring counts 16 exact upward reprices after the last flip, "
+        f"and 2 more inside the defective window; this tree has "
+        f"{int((clean > flipped.max()).sum())} after it"
+    )
+    assert not ((up["date"] > flipped.max()) & (up["defect"] != "")).any(), (
+        f"the docstring claims every upward reprice after 2008-09-16 is exact, "
+        f"so a defect past it means the vendor's pipeline was not fixed and the "
+        f"search window has to reopen"
+    )
     return (f"{len(ck):,}/{len(committed):,} events graded; vendor == exchange "
-            f"{100 * w6:.2f} % at 1e-6, {100 * w3:.2f} % at 1e-3; defects {defects}")
+            f"{100 * w6:.2f} % at 1e-6, {100 * w3:.2f} % at 1e-3; defects "
+            f"{defects}, every flip in {flipped.min().date()}.."
+            f"{flipped.max().date()}")
 
 
 def test_taiwan_vendor_defects_are_patched():
@@ -574,31 +624,164 @@ def test_taiwan_vendor_defects_are_patched():
         f"README claims 7 vendor events are replaced with the exchange's step; "
         f"the audit now marks {len(d)}"
     )
-    moved = []
-    for _, e in d.iterrows():
-        df = load_adjusted(e["stock_id"])
-        assert df.attrs["events_patched"] >= 1, (
-            f"{e['stock_id']} carries a {e['defect']} on "
-            f"{pd.Timestamp(e['date']).date()} that load_adjusted did not patch"
+    moved, spans = [], []
+    for sid, g in d.groupby(d["stock_id"].astype(str)):
+        df = load_adjusted(sid)
+        assert df.attrs["events_patched"] == len(g), (
+            f"{sid} carries {len(g)} defective event(s) that load_adjusted "
+            f"patched {df.attrs['events_patched']} of"
         )
         dates = df["date"].to_numpy()
-        i = int(np.searchsorted(dates, np.datetime64(e["date"]), "left"))
-        while i < len(df) and not df["adj_covered"].iloc[i]:
-            i += 1
+        cov = df["adj_covered"].to_numpy()
         f = df["tr_factor"].to_numpy()
-        got = f[i] / f[i - 1]
-        assert abs(got / e["exchange_step"] - 1.0) < 1e-9, (
-            f"{e['stock_id']} {pd.Timestamp(e['date']).date()}: the patched "
-            f"factor steps by {got:.6f} where the exchange published "
-            f"{e['exchange_step']:.6f} ({e['before']} → {e['after']})"
+        last = 0
+        for _, e in g.iterrows():
+            i = int(np.searchsorted(dates, np.datetime64(e["date"]), "left"))
+            while i < len(df) and not cov[i]:
+                i += 1
+            got = f[i] / f[i - 1]
+            assert abs(got / e["exchange_step"] - 1.0) < 1e-9, (
+                f"{sid} {pd.Timestamp(e['date']).date()}: the patched factor "
+                f"steps by {got:.6f} where the exchange published "
+                f"{e['exchange_step']:.6f} ({e['before']} → {e['after']})"
+            )
+            moved.append(abs(e["rel"]))
+            last = max(last, i)
+
+        # The patch is not a one-day event. A factor anchored at the present
+        # carries every step in the rows *behind* it, so replacing one rescales
+        # the stock's history from the ex date back to its first session — the
+        # ex-date return moves, and so does every level before it. A flag on the
+        # ex row alone would tell a reader that one session differs from the
+        # vendor's series when in fact the whole span does.
+        lab = (df["adj_source"] == "vendor_patched").to_numpy()
+        vend = df["adj_source"].isin(("vendor", "vendor_patched")).to_numpy()
+        assert (lab[:last] == vend[:last]).all() and not lab[last:].any(), (
+            f"{sid}: vendor_patched covers {int(lab.sum())} rows, but the patch "
+            f"rescaled the {int(vend[:last].sum())} vendor rows before "
+            f"{pd.Timestamp(dates[last]).date()} and nothing from it on"
         )
-        assert (df.loc[:i - 1, "adj_source"] == "vendor_patched").any(), (
-            f"{e['stock_id']}: rows behind the patched event are not labelled "
-            f"vendor_patched, so the panel cannot be split on it"
-        )
-        moved.append(abs(e["rel"]))
+        spans.append(int(lab.sum()))
+
+    assert sum(spans) == 3641, (
+        f"README claims the seven patches rescale 3,641 rows between them; "
+        f"this tree labels {sum(spans):,}"
+    )
     return (f"7 events patched to the exchange's step; the patch moves the "
-            f"ex-date factor by {100 * min(moved):.2f}-{100 * max(moved):.2f} %")
+            f"ex-date factor by {100 * min(moved):.2f}-{100 * max(moved):.2f} % "
+            f"and rescales {sum(spans):,} rows behind them")
+
+
+def test_taiwan_vendor_edges_are_carried():
+    """README, "The two edges of the vendor series": 902 first sessions and
+    3,089 post-delisting ones carry the adjacent factor, and one is refused.
+
+    A back-adjustment factor moves only on an ex date, so carrying it across a
+    gap with no filing in it is exact rather than an interpolation — which is
+    what makes these two fills safe where a splice would not be. The guard is
+    the part worth asserting: it is checked per row against every filed 除權息
+    and 減資 plus the cancellations no filing explains, and it refuses 4141,
+    whose first print sits 376 days before the vendor's first session with a
+    cancellation on that session. A guard that never fires is indistinguishable
+    from no guard.
+    """
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+
+    from finmind_data import adjust
+    from finmind_data.adjusted_loader import _unpriced_dates, load_adjusted
+
+    head = tail = 0
+    refused = []
+    for sid in ("1580", "3271", "3454", "1107", "2381", "2396", "2341",
+                "3142", "2479", "3053", "4141", "2330"):
+        df = load_adjusted(sid)
+        s = df["adj_source"].to_numpy()
+        carried = np.nonzero(s == "vendor_carried")[0]
+        # The anchor is a session the vendor priced and the stock traded — not
+        # merely one adj_covered, which is also True on the no-trade rows the
+        # vendor filled with a carried close and which carry no factor.
+        served = np.nonzero(np.isin(s, ("vendor", "vendor_patched")))[0]
+        blocking = np.concatenate([adjust.filed_event_dates(sid),
+                                   _unpriced_dates(sid)])
+        dates = df["date"].to_numpy()
+        f = df["tr_factor"].to_numpy()
+        for i in carried:
+            a = served[0] if i < served[0] else served[-1]
+            lo, hi = sorted((dates[i], dates[a]))
+            assert not ((blocking > lo) & (blocking <= hi)).any(), (
+                f"{sid} {pd.Timestamp(dates[i]).date()}: the factor was carried "
+                f"across a gap that holds a filing, so the level is spliced "
+                f"rather than continuous"
+            )
+            assert abs(f[i] / f[a] - 1.0) < 1e-12, (
+                f"{sid} {pd.Timestamp(dates[i]).date()}: carried factor "
+                f"{f[i]:.10f} against its anchor's {f[a]:.10f}"
+            )
+            head += i < served[0]
+            tail += i > served[-1]
+        # A traded session the vendor does not serve and the guard would not
+        # carry stays NaN rather than being filled from further away.
+        for i in np.nonzero((df["close"].to_numpy() > 0) & (s == ""))[0]:
+            refused.append((sid, str(pd.Timestamp(dates[i]).date())))
+
+    assert refused == [("4141", "2011-04-14")], (
+        f"the carry guard should refuse exactly 4141's 2011-04-14 stub print "
+        f"among these stocks; it refused {refused}"
+    )
+    assert (head, tail) == (3, 3089), (
+        f"these stocks hold 3 of the 902 carried first sessions and all 3,089 "
+        f"post-delisting ones; this tree carries {head} / {tail}"
+    )
+    return (f"{head} first sessions and {tail} post-delisting sessions carried "
+            f"from the adjacent factor with no filing in the gap; "
+            f"4141 2011-04-14 refused")
+
+
+def test_taiwan_post_delisting_sessions_are_marked():
+    """README, "Which rows to trust": the 3,089 興櫃 sessions are not tradable.
+
+    Carrying the factor past a delisting makes the level continuous, which is
+    what the price is wanted for. It does not make the sessions tradable — 興櫃
+    is a negotiated market, `open` is the previous session's average rather than
+    a trade, and volume runs far under the exchange-listed years. `is_valid`
+    False with `invalid_reason` `post_delisting_emerging` is what keeps a
+    backtest out while leaving the rows readable as terminal-value evidence,
+    which is the one use they are good for.
+    """
+    sys.path.insert(0, str(REPO))
+    from finmind_data.adjusted_loader import load_adjusted
+
+    tails = ("1107", "2381", "2396", "2341", "3142", "2479", "3053")
+    n = 0
+    ratios = []
+    for sid in tails:
+        df = load_adjusted(sid)
+        post = df["invalid_reason"] == "post_delisting_emerging"
+        assert post.any(), f"{sid} carries no post-delisting sessions"
+        assert not df.loc[post, "is_valid"].any(), (
+            f"{sid}: {int(df.loc[post, 'is_valid'].sum())} post-delisting rows "
+            f"are still is_valid, so a backtest would trade them"
+        )
+        assert df.loc[post, "adj_close_tr"].notna().all(), (
+            f"{sid}: the post-delisting rows carry no adjusted price, so the "
+            f"terminal-value evidence they exist for is not there"
+        )
+        n += int(post.sum())
+        pre = df.loc[~post & (df["close"] > 0), "Trading_Volume"]
+        ratios.append(float(df.loc[post, "Trading_Volume"].median()
+                            / max(pre.tail(250).median(), 1.0)))
+    assert n == 3089, (
+        f"README claims 3,089 post-delisting sessions; this tree marks {n:,}"
+    )
+    assert max(ratios) < 0.5, (
+        f"the post-delisting sessions are quoted at a fraction of the listed "
+        f"years' volume, which is why they are not tradable; the thickest here "
+        f"runs at {100 * max(ratios):.0f} % of its own prior median"
+    )
+    return (f"{n:,} post-delisting sessions priced and marked invalid across "
+            f"{len(tails)} names, quoted at {100 * min(ratios):.1f}-"
+            f"{100 * max(ratios):.0f} % of their listed-era volume")
 
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
@@ -746,9 +929,9 @@ def test_taiwan_adj_source_partitions_the_panel():
             f"{sid}: adj_method does not follow adj_source"
         )
         seen |= set(df.loc[has_src, "adj_source"].unique())
-    assert seen == {"vendor", "vendor_patched", "rebuilt_factored",
-                    "rebuilt_noevent"}, (
-        f"README documents four adj_source values; these stocks exercise {seen}"
+    assert seen == {"vendor", "vendor_patched", "vendor_carried",
+                    "rebuilt_factored", "rebuilt_noevent"}, (
+        f"README documents five adj_source values; these stocks exercise {seen}"
     )
     return f"adj_source present exactly where a price is; exercises {sorted(seen)}"
 
@@ -852,6 +1035,8 @@ CHECKS = [
     test_taiwan_adjusted_coverage_decomposition,
     test_taiwan_vendor_event_audit_is_current,
     test_taiwan_vendor_defects_are_patched,
+    test_taiwan_vendor_edges_are_carried,
+    test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,

@@ -293,7 +293,12 @@ merely the same returns.
 should contribute the exchange's own `before_price / after_price`, and
 `vendor_event_audit.py` grades all 22,370 filed events against it —
 22,336 of them sit between two adjacent covered sessions and can be
-read. The step matches to 1e-6 on 83.3 % and to 1e-3 on 99.5 % (p99
+read. Both numbers come out of the same file and neither is a filter
+that moved: `checkable` is the column that separates them, and the 34 it
+excludes are 12 events in the stocks the vendor serves nothing for and
+22 whose bracketing sessions sit more than ten days apart. Every *rate*
+below is over the 22,336; every count of what was filed is over the
+22,370. The step matches to 1e-6 on 83.3 % and to 1e-3 on 99.5 % (p99
 7.9e-4, max 4.1e-2). The residual is FinMind reaching the same number a
 different way: it subtracts the *declared* distribution from the prior
 close instead of reading the reference price, and the two land a whole
@@ -307,7 +312,7 @@ replaces the vendor's step with the exchange's on them:
 
 | defect | n | what it is |
 |---|---|---|
-| `sign_flip` | 6 | a 現金增資 subscribed **above** the market raises the reference price (25 events in the panel do); on these six the vendor scaled the history the other way |
+| `sign_flip` | 6 | a 現金增資 subscribed **above** the market raises the reference price (25 filed, 24 gradable); on these six the vendor scaled the history the other way |
 | `malformed_twin` | 1 | 3454 on 2011-07-27 is filed twice — the real 84.20 → 79.07 and a row reading before 0.00 / after −2.30. The vendor removed 7.42 = 5.12 + 2.30 |
 
 The patch moves the ex-date factor by 0.39 % to 4.11 %, and six of the
@@ -315,6 +320,17 @@ seven reverse the sign of that session's return (1442 goes from −3.74 %
 to +0.22 %). Both defects are found by *shape* — a step on the wrong
 side of 1.0, a date carrying a non-positive reference leg — so a
 re-download is graded rather than matched against a list of stock ids.
+
+**The sign flips are an era, not a rate**, which is worth knowing before
+the next search of this kind. All six fall between 2005-04-21 and
+2008-09-16; the 16 upward reprices after the last of them, through
+2024-12-12, are exact. The cut is not clean — 2008-08-06 and 2008-08-28
+are already right while 2008-09-16 is still wrong — so the picture is a
+transition over the autumn of 2008 rather than a switch thrown on one
+day, but the defect does stop. Two consequences: a search for more of
+these can be confined to pre-2009, and a defect rate measured on the
+2005-2007 delisting sample cannot be extrapolated to the panel, because
+that sample sits entirely inside the defective window.
 
 `vendor_event_audit.parquet` is the fixed record of all of this, one row
 per filed event. A step found later at a `vendor`/`rebuilt` boundary is
@@ -330,16 +346,19 @@ df = load_adjusted("2330")
 df = df[df["is_valid"] & df["adj_close_tr"].notna()]   # then take returns
 ```
 
-`is_valid` is False for history behind a series break — a share
+`is_valid` is "this row is a position a study could have held", and it
+fails at either end of the series. Behind the last break — a share
 cancellation no filing priced, or a multi-year trading gap after which
 the ticker came back as a different listing (309 breaks in 231 stocks,
-3.00 % of rows). `invalid_reason` says which of the two, because the
-flag is one column and the two are not the same problem:
-`unpriced_cancellation` means a step is missing from the chain,
-`series_break` means the rows behind belong to another company. The
-vendor marks neither: 2357's 85 % reduction on 2010-06-24 comes through
-at a factor step of exactly 1, leaving the raw 53.2 → 240.5 jump in the
-adjusted series as a +351 % return (caveat 5).
+3.00 % of rows). Past the last exchange session — the 3,089 興櫃 quotes
+below. `invalid_reason` says which, because the flag is one column and
+the three are not the same problem: `unpriced_cancellation` means a step
+is missing from the chain, `series_break` means the rows behind belong
+to another company, `post_delisting_emerging` means the price is right
+and the market was not one you could trade in. None of them means "this
+price is wrong". The vendor marks none of them: 2357's 85 % reduction on
+2010-06-24 comes through at a factor step of exactly 1, leaving the raw
+53.2 → 240.5 jump in the adjusted series as a +351 % return (caveat 5).
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -348,10 +367,18 @@ before comparing anything across the boundary:
 | `adj_source` | `adj_method` | rows |
 |---|---|---|
 | `vendor` | `declared_dividend` | FinMind's series as served |
-| `vendor_patched` | `declared_dividend` | behind one of the seven replaced events |
+| `vendor_patched` | `declared_dividend` | behind one of the seven replaced events (3,641 rows) |
+| `vendor_carried` | `declared_dividend` | an edge of the vendor series, factor carried from the adjacent session (3,991) |
 | `rebuilt_factored` | `exchange_reference` | 11 of the 38 holes, with a factor chain |
 | `rebuilt_noevent` | `none` | 27 of the 38, no corporate action in window — factor is 1.0 |
 | `""` | `""` | no price: the stock did not trade, or nothing covers the session |
+
+`vendor_patched` is a **span, not a session**. A factor anchored at the
+present carries every step in the rows behind it, so replacing one
+rescales that stock's history from the ex date back to its first
+session: 3,641 rows across the six names, from 70 rows on 2834 to 1,174
+on 3454. Flagging only the ex date would say one session differs from
+FinMind's series when the whole span does.
 
 The two rebuilt values are kept apart on purpose: the cumulative-product
 path is the one with somewhere to go wrong, and separating it lets a
@@ -418,21 +445,43 @@ would have thrown them away along with the disconnected history — while
 also being unable to say whether a NaN meant "not recoverable" or "not
 attempted".
 
-**What is not rebuilt**, and stays NaN: the 3,992 sessions the vendor
-misses inside stocks it otherwise serves. 903 stocks are short exactly
-one session — their first — because the vendor series begins one session
-after the raw one. The remaining 3,089 sit past the end of a vendor
-series that stopped at a delisting while `ohlcv/` kept printing, five
-names holding 3,001 of them. 1107 is the largest: the adjusted series
-ends 2007-10-19 against a 2007-10-20 delisting while the raw file runs
-on to 2012-06-06 at 249 sessions/yr, on half the prior median volume
-(the other four fall by 81-97 %). Those are 興櫃 quotes for a name that
-left the exchange — the raw panel over-reaching the listing, not the
-adjusted panel falling short of it — and research filtering to listed
-common stock drops them anyway. Filling either class would mean splicing
-a rebuilt segment onto a vendor series at a level the two do not share;
-the whole-stock holes above have no such seam, which is what makes them
-safe to rebuild and these not.
+### The two edges of the vendor series
+
+The other 3,992 missing sessions are not whole stocks but the two ends
+of a series the vendor serves. 903 stocks are short exactly one — their
+first traded session, one per stock, verified as that and nothing else.
+The remaining 3,089 sit past the end of a vendor series that stopped at
+a delisting while `ohlcv/` kept printing, in seven names. 1107 is the
+largest at 1,151: the adjusted series ends 2007-10-19 against a
+2007-10-20 delisting while the raw file runs on to 2012-06-06 at 249
+sessions/yr.
+
+Both are filled, and neither is a splice. A back-adjustment factor moves
+only on an ex date, so across a gap with no filing in it the adjacent
+covered session's factor *is* the missing one — the same number, not an
+interpolation, and the level is continuous by construction. The
+condition is checked per row against every filed 除權息 and 減資 plus
+the share cancellations no filing explains, and a row whose gap holds
+one is left NaN. It refuses exactly one: 4141's first print sits 376
+days before the vendor's first session, with a cancellation on that
+session. Those rows are `adj_source == "vendor_carried"`.
+
+What the head fill recovers is **902 first returns**, not 902 prices.
+The price was never the loss — the session-1-to-session-2 return was,
+and in a listing study that is the observation.
+
+What the tail fill recovers is evidence, not tradable history, and the
+two must not be confused. 興櫃 is a negotiated market: `open` is the
+previous session's average rather than a trade, a quote depends on a
+recommending broker standing behind it, and median volume across the
+seven runs at 3.6-48 % of each name's own listed-era median. So those
+rows carry `is_valid=False` under `invalid_reason ==
+"post_delisting_emerging"`, which keeps a backtest out of them
+automatically. What they are good for is the **terminal value**: where a
+delisted name converges over the months after it leaves the exchange is
+a market observation, and the last exchange close is not one. A name
+that left by merger does not go to 興櫃 at all, so the presence of a
+tail is itself a weak signal on the delisting reason (caveat 6).
 
 Two smaller edges: the vendor prices 600 sessions in 159 stocks that
 `ohlcv/` has no row for — a 補行交易日 or a stray 興櫃 print — and the
@@ -495,9 +544,10 @@ ohlcv_all = pd.concat(
    nothing, not splits and not capital reductions. `price_adj/` carries the
    adjusted series, in the total-return convention only; there is no
    price-return variant to buy. It also serves nothing for 38 of the 173
-   in-window delistings and is wrong in direction on seven events;
-   `load_adjusted` fills the first and patches the second, marking both in
-   `adj_source`. Read `price_adj/` directly and you get neither. See
+   in-window delistings, is wrong in direction on seven events, and stops one
+   session short at each end of the series; `load_adjusted` rebuilds the first,
+   patches the second and carries the third, marking all of them in
+   `adj_source`. Read `price_adj/` directly and you get none of it. See
    **Adjusted prices**.
 5. **減資 events start on 2011-01-25**, six years after the prices do. This is
    the *exchange's* limit, not FinMind's and not the download's: TWSE's own
@@ -540,6 +590,14 @@ ohlcv_all = pd.concat(
    reasons live in 公開資訊觀測站 (`mops.twse.com.tw`) filings, which no FinMind
    endpoint mirrors. Until those are pulled, any delisting return computed from
    this package is an assumption wearing a number.
+
+    The 3,089 post-delisting 興櫃 sessions are the one piece of direct evidence
+    the package does hold against this. Seven names go on being quoted for 15
+    to 1,151 sessions after leaving the exchange, and where each converges over
+    that stretch is a market observation of what the shell was worth — which
+    the last exchange close is not. It is also a weak signal on the reason,
+    since a name that left by merger does not go to 興櫃 at all. Seven names is
+    a sample, not a fix; the fix is still MOPS.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry
