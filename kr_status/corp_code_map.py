@@ -67,6 +67,12 @@ def get_corp_code(dart, ticker: str, name: str | None = None) -> str | None:
 
     `dart` is an OpenDartReader instance.  `name` (optional) is used for the
     fuzzy fallback for delisted tickers.
+
+    Both DART lookups swallow their exceptions and fall through to None, so a
+    request that failed is indistinguishable here from a ticker DART genuinely
+    has no corp_code for. Every unresolved ticker lands in `_misses`, which is
+    what makes the difference recoverable — read it after a run rather than
+    treating a None as settled.
     """
     ticker = str(ticker).zfill(6)
     cache = _load_cache()

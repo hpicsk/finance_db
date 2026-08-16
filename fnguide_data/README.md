@@ -342,9 +342,8 @@ inline parsing using the documented 14-row layout.**
   bank/은행, government/국가) from `raw/data0204/0205/0206/0207/0208.xlsx`.
   `SUBINVESTOR_SOURCES` is the canonical 8-type → (file, sheet) map; sibling
   `to_wide_net_sub(flow)` pivots to one net column per sub-type. A missing/
-  renamed sheet raises (fail loud); consumers requiring all 8 (e.g. qf_paper's
-  Capacity-Bound = pension + insurance) should error on an absent type rather
-  than zero-fill.
+  renamed sheet raises (fail loud); consumers requiring all 8 should error on
+  an absent type rather than zero-fill.
 
 For OHLCV / market cap / listed shares, see `kr_marcap` in this repo —
 `kr_marcap.market_loader.load_market_data` (`date, ticker, open, high,

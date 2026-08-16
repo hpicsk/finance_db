@@ -157,8 +157,9 @@ ex-dates (0.665) and scattered interim ones (0.643). The holder receives 100 %
 of the cash, so a total-return series must add 100 %, and the difference is the
 real ex-day tax/clientele effect. It is marked, not erased.
 
-That row and that 0.663 are one measurement, taken on the qf_paper panel as a
-same-date payer-versus-non-payer contrast. Nothing in this repo rebuilds them.
+That row and that 0.663 are one measurement, taken on a downstream research
+panel as a same-date payer-versus-non-payer contrast. Nothing in this repo
+rebuilds them.
 The Taiwanese rows in [`finmind_data/VERIFICATION.md`](../finmind_data/VERIFICATION.md)
 §5 are a different estimator that happens to answer the same question — see
 [Open](#open) before comparing the two.
@@ -220,9 +221,9 @@ python -m kr_marcap.dividend_events             # Samsung quarterly ex-date demo
 
 - **The §5 row has no generator in this repo.** The −160 bp / +82 bp pair is
   same-date payer versus non-payer across the 23 ex-dates in the window,
-  measured once on the *qf_paper* panel rather than on `marcap/`, which is why
-  nothing here rebuilds it. It is the only number in this document a re-run
-  would not catch drifting.
+  measured once on a downstream research panel rather than on `marcap/`, which
+  is why nothing here rebuilds it. It is the only number in this document a
+  re-run would not catch drifting.
 
   Three estimators of the same ex-day drop-off are in play and none of them is a
   reading of another. The published 0.663 is that same-date contrast over all 23

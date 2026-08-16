@@ -16,17 +16,17 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-# The manuscript's study window (fn_percolation). Duplicated in each package's
+# The study window every package's figures are quoted on. Duplicated in each
 # assertion file because the container holds no shared module to import it from;
 # `run_assertions.sh` fails if the copies ever disagree.
 WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
 
 
-# ---- KOSPI200 index panel: in-window membership stays complete (App. B.3) ---
+# ---- KOSPI200 index panel: in-window membership stays complete --------------
 def test_kospi200_panel_inwindow_complete():
-    """fn_percolation's index-exclusion robustness (App. B.3) relies on the
-    KOSPI200 panel carrying a complete ~200 members on every in-window date.
+    """Any index-exclusion filter built on this panel relies on it carrying a
+    complete ~200 members on every in-window date.
     Pre-2005 the panel ramps 1->200 (event-log-only reconstruction); that is
     out of scope. This tripwire fires if a panel regeneration ever collapses
     in-window membership.

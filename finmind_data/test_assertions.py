@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-# The manuscript's study window (fn_percolation). Duplicated in each package's
+# The study window every package's figures are quoted on. Duplicated in each
 # assertion file because the container holds no shared module to import it from;
 # `run_assertions.sh` fails if the copies ever disagree.
 WIN_START = pd.Timestamp("2005-01-01")

@@ -18,14 +18,16 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-# The manuscript's study window (fn_percolation). Duplicated in each package's
+# The study window every package's figures are quoted on. Duplicated in each
 # assertion file because the container holds no shared module to import it from;
 # `run_assertions.sh` fails if the copies ever disagree.
 WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
 
 
-# ---- Korea: trading days (fn_percolation \nDaysKoreaTotal = 4,940) ----------
+# ---- Korea: trading days in the study window --------------------------------
+# The session calendar every per-date panel in this repo is built on, so a
+# marcap re-clone that shifts it shifts every downstream count silently.
 def test_kr_trading_days_2005_2024():
     dates = set()
     for fp in sorted(glob.glob(str(REPO / "marcap/data/marcap-*.parquet"))):
@@ -34,13 +36,16 @@ def test_kr_trading_days_2005_2024():
             d = pd.to_datetime(pd.read_parquet(fp, columns=["Date"])["Date"]).dt.normalize()
             dates |= set(d.unique())
     n = sum(1 for x in dates if WIN_START <= x <= WIN_END)
-    assert n == 4940, f"KR trading days 2005-2024 = {n}, manuscript pins 4,940"
+    assert n == 4940, (
+        f"KR trading days 2005-2024 = {n}; the marcap clone this repo is built "
+        f"on carries 4,940 sessions in the window"
+    )
     return f"KR trading days = {n}"
 
 
-# ---- Korea: KOSPI-only common count (fn_percolation \nKospiTickers) ----------
-# All-time count. Manuscript reported 1,272; corrected to 1,274 on 2026-06-23
-# when classify.py stopped routing names ending in 우 to 'preferred' — 003810 대우
+# ---- Korea: KOSPI-only common count -----------------------------------------
+# All-time count. Was 1,272 until 2026-06-23, when classify.py stopped routing
+# names ending in 우 to 'preferred' — 003810 대우
 # and 009990 미우 are genuine KOSPI commons (code ends '0'), not preferred shares.
 # Both delisted pre-2005, so the 2005-2024 study window (1,027 in-window) is
 # unaffected; this is a descriptive all-time tally only.
@@ -52,7 +57,7 @@ def test_kr_kospi_common_count():
     n_common = int(com["code"].nunique())
     assert n_kospi == 1274, (
         f"KOSPI common = {n_kospi}, expected 1,274 "
-        f"(manuscript's 1,272 predates the 우-suffix classifier fix)"
+        f"(1,272 predates the 우-suffix classifier fix)"
     )
     return f"KOSPI common = {n_kospi}; total panel common = {n_common}"
 

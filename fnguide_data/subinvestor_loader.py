@@ -6,9 +6,8 @@ The KRX discloses daily trading by 8 sub-types under the 기관계 aggregate:
 은행 (banks), 국가 (government). The standard ``investor_loader.load_investor_flow``
 only exposes the aggregate. This module loads each sub-type as a separately-
 identifiable series. It is the canonical home of the 8-type → (file, sheet)
-mapping (companion to ``investor_loader``); downstream consumers (e.g. qf_paper's
-``capacity_bound`` = pension + insurance, and its Appendix-K 8-way decomposition)
-should import it from here rather than re-deriving the sheet map.
+mapping (companion to ``investor_loader``); downstream consumers should import
+it from here rather than re-deriving the sheet map.
 
 Source files (verified by openpyxl scan, FnGuide raw_dir):
 
@@ -21,7 +20,7 @@ Source files (verified by openpyxl scan, FnGuide raw_dir):
 A renamed or missing sheet raises inside ``load_fnguide_sheet`` (fail loud);
 a sub-type that loads but has no nonzero flows in the window is simply absent
 from the returned panel — consumers that require all 8 should check for missing
-types and error rather than zero-fill (see qf_paper pipelines).
+types and error rather than zero-fill.
 
 All values are KRW (원). Returned ``net_buy_value = buy_value - sell_value``.
 """

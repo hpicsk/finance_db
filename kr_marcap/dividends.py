@@ -71,6 +71,12 @@ def yields_for(dart, corp, sleep_s=0.03):
 
     A year seen in the report whose own fiscal year == that year (the `thstrm`
     column) is preferred over the same year read as a prior-year column.
+
+    A DART request that fails is swallowed and that report window is skipped,
+    so a network failure and a company that filed nothing look identical here.
+    Tolerable only because this module is a cross-check on
+    ``dividend_events.py`` rather than a total-return input: a swallowed year
+    weakens the reconciliation rate, it does not enter a price series.
     """
     out = {}  # year -> (yield_pct, dps, is_thstrm)
     for ry in REPORT_WINDOWS:
