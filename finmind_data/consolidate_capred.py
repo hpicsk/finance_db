@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path("/home/st/finance_db/finmind_data")
+ROOT = Path("/home/st/research/finance_db/finmind_data")
 SRC = ROOT / "cap_red"
 OUT = ROOT / "capital_reduction.parquet"
 

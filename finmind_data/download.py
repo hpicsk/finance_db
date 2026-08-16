@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-ROOT = Path("/home/st/finance_db/finmind_data")
+ROOT = Path("/home/st/research/finance_db/finmind_data")
 LOG_FILE = ROOT / "download.log"
 API = "https://api.finmindtrade.com/api/v4/data"
 TOKEN_FILE = ROOT / ".token"

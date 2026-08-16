@@ -8,7 +8,7 @@
 # Log:    kr_status/runtime/_log_audit.txt
 set -uo pipefail   # no -e: we want to log non-zero exits, not abort
 
-PROJECT_DIR="${PROJECT_DIR:-/home/st/finance_db}"
+PROJECT_DIR="${PROJECT_DIR:-/home/st/research/finance_db}"
 PYTHON="${PYTHON:-/home/st/miniconda3/bin/python}"
 LOG="$PROJECT_DIR/kr_status/runtime/_log_audit.txt"
 

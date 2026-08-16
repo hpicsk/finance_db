@@ -10,7 +10,7 @@ from FinMind.data import DataLoader
 import pandas as pd
 from pathlib import Path
 
-OUT = Path("/home/st/finance_db/finmind_data")
+OUT = Path("/home/st/research/finance_db/finmind_data")
 
 dl = DataLoader()
 info = dl.taiwan_stock_info()

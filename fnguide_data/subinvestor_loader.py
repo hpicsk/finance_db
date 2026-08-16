@@ -81,7 +81,7 @@ def load_subinvestor_flow(
     start_date, end_date : str
         Inclusive ``YYYY-MM-DD`` bounds.
     raw_dir : path-like
-        Path to ``~/finance_db/fnguide_data/raw/``.
+        Path to ``~/research/finance_db/fnguide_data/raw/``.
     subinvestor_types : tuple of str
         Subset of :data:`SUBINVESTOR_SOURCES` keys. Default: all 8.
     cache_dir, cache_filename : path-like, optional

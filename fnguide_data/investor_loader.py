@@ -96,7 +96,7 @@ def load_investor_flow(
     start_date, end_date : str
         Inclusive ``YYYY-MM-DD`` window bounds.
     raw_dir : path-like
-        Path to ``~/finance_db/fnguide_data/raw/``.
+        Path to ``~/research/finance_db/fnguide_data/raw/``.
     investor_types : tuple
         Subset of ``('기관', '개인', '외국인')``.
     foreign_definition : ``'등록외국인'`` or ``'외국인계'``
