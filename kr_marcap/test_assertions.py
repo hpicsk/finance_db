@@ -6,7 +6,10 @@ from anywhere:
     python kr_marcap/test_assertions.py
 
 or run every package's assertions at once with `./run_assertions.sh` from the
-repo root. Each check prints PASS/FAIL; the script exits non-zero if any fail.
+repo root. Each check prints PASS, FAIL, or SKIP where a prerequisite
+artifact is absent, along with `n`, the size of the population it examined;
+the script exits non-zero if any fail, and a check that examined nothing
+fails rather than passing empty.
 """
 from __future__ import annotations
 
@@ -25,6 +28,14 @@ WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
 
 
+class Skipped(Exception):
+    """A prerequisite artifact is absent, so this check verified nothing.
+
+    Distinct from a pass because it is: it used to print as one, which is the
+    same confusion the population guard below exists to remove.
+    """
+
+
 # ---- Korea: trading days in the study window --------------------------------
 # The session calendar every per-date panel in this repo is built on, so a
 # marcap re-clone that shifts it shifts every downstream count silently.
@@ -40,7 +51,7 @@ def test_kr_trading_days_2005_2024():
         f"KR trading days 2005-2024 = {n}; the marcap clone this repo is built "
         f"on carries 4,940 sessions in the window"
     )
-    return f"KR trading days = {n}"
+    return f"KR trading days = {n}", n
 
 
 # ---- Korea: KOSPI-only common count -----------------------------------------
@@ -59,7 +70,7 @@ def test_kr_kospi_common_count():
         f"KOSPI common = {n_kospi}, expected 1,274 "
         f"(1,272 predates the 우-suffix classifier fix)"
     )
-    return f"KOSPI common = {n_kospi}; total panel common = {n_common}"
+    return f"KOSPI common = {n_kospi}; total panel common = {n_common}", n_common
 
 
 # ---- Korea: the calibrated adjustment heuristics stay REMOVED (official only) --
@@ -76,18 +87,21 @@ def test_adjust_heuristics_removed():
     assert not present, f"removed adjustment heuristics reintroduced: {present}"
     assert hasattr(A, "corp_actions") and hasattr(A, "load_oracle"), \
         "adjust.py must consume corp_actions (official breaks) + krx_adj_oracle (reset)"
-    return "adjustment heuristics removed; official sources wired"
+    return "adjustment heuristics removed; official sources wired", len(forbidden)
 
 
 # ---- Korea: adjusted series matches KRX official 수정주가 on the canonical cases -
 def test_adjust_canonical_cases():
     sys.path.insert(0, str(REPO))
     if not (REPO / "kr_marcap/cache/adj_factors.parquet").exists():
-        return "SKIP (adj_factors.parquet not built)"
+        raise Skipped("adj_factors.parquet not built")
     from kr_marcap.adjust import load_adjusted
+
+    read = []
 
     def adj_ret(code, day):
         d = load_adjusted(code).sort_values("date")
+        read.append(len(d))
         d["r"] = d["adj_close"].pct_change()
         row = d[d["date"] == pd.Timestamp(day)]
         return float(row["r"].iloc[0]) if len(row) else float("nan")
@@ -99,7 +113,8 @@ def test_adjust_canonical_cases():
     # 232830 거래재개 reset: official KRX move (+21%), not the +205% admin-ref CR.
     r = adj_ret("232830", "2023-06-29")
     assert 0.15 < r < 0.30, f"232830 reset not at the traded move: adj_ret={r} (want ~0.21)"
-    return f"canonical: Samsung split adj_ret={s:+.3f}, 232830 reset adj_ret={r:+.3f}"
+    return (f"canonical: Samsung split adj_ret={s:+.3f}, "
+            f"232830 reset adj_ret={r:+.3f}"), sum(read)
 
 
 # ---- a SEIBro ₩0 dividend means non-payment, not a lost amount --------------
@@ -115,7 +130,7 @@ def test_seibro_zero_is_non_payment():
     ev_fp = REPO / "kr_marcap/cache/dividend_events.parquet"
     dart_fp = REPO / "kr_marcap/cache/dividends.parquet"
     if not (ev_fp.exists() and dart_fp.exists()):
-        return "SKIP (dividend caches not built)"
+        raise Skipped("dividend caches not built")
     from kr_marcap.dividend_events import _CASH_KINDS
 
     ev = pd.read_parquet(ev_fp)
@@ -147,7 +162,7 @@ def test_seibro_zero_is_non_payment():
         f"as a non-payment, so `dps > 0` is dropping real dividends"
     )
     return (f"SEIBro ₩0 → DART confirms {zero:.1%} vs {priced:.1%} priced "
-            f"(FY{fy0}-{fy1}), {dup} shared 기준일")
+            f"(FY{fy0}-{fy1}), {dup} shared 기준일"), len(ev)
 
 
 # ---- adj_factors carries the marcap vintage stamp (reproducibility provenance) -
@@ -156,12 +171,13 @@ def test_adjust_provenance_stamp():
     (commit + data span), so a later rebuild that drifts is attributable."""
     sys.path.insert(0, str(REPO))
     if not (REPO / "kr_marcap/cache/adj_factors.parquet").exists():
-        return "SKIP (adj_factors.parquet not built)"
+        raise Skipped("adj_factors.parquet not built")
     from kr_marcap.adjust import provenance
     p = provenance()
     assert p.get("marcap_commit"), f"no marcap_commit stamp in adj_factors: {p}"
     assert p.get("marcap_data_max_date"), f"no marcap_data_max_date stamp: {p}"
-    return f"provenance: marcap @{p['marcap_commit'][:7]} through {p['marcap_data_max_date']}"
+    return (f"provenance: marcap @{p['marcap_commit'][:7]} through "
+            f"{p['marcap_data_max_date']}"), len(p)
 
 
 # ---- the open-data reconstruction reaches the paid series it reproduces ------
@@ -173,7 +189,7 @@ def test_fnguide_benchmark_agreement():
     """
     fp = REPO / "kr_marcap/cache/fnguide_validation.csv"
     if not fp.exists():
-        return "SKIP (run kr_marcap.validate_against_fnguide first)"
+        raise Skipped("run kr_marcap.validate_against_fnguide first")
     per = pd.read_csv(fp, dtype={"code": str})
     out = []
     for conv, claim in (("pr", 0.99977), ("tr", 0.99969)):
@@ -197,7 +213,7 @@ def test_fnguide_benchmark_agreement():
             f"{rate:.5%} ({bad:,} disagreeing of {days:,})"
         )
         out.append(f"{conv.upper()} {rate:.4%} ({bad:,}/{days:,})")
-    return "; ".join(out)
+    return "; ".join(out), len(per)
 
 
 def test_fnguide_disagreement_is_the_stuck_oracle():
@@ -211,7 +227,7 @@ def test_fnguide_disagreement_is_the_stuck_oracle():
     """
     fp = REPO / "kr_marcap/cache/fnguide_validation_days.csv"
     if not fp.exists():
-        return "SKIP (run kr_marcap.validate_against_fnguide first)"
+        raise Skipped("run kr_marcap.validate_against_fnguide first")
     days = pd.read_csv(fp, dtype={"code": str})
     # Both bounds below are shares or ceilings, and a residue that collapsed
     # would satisfy them without the defect being there to describe: an empty
@@ -236,7 +252,8 @@ def test_fnguide_disagreement_is_the_stuck_oracle():
         f"CONSTRUCTION.md calls the stuck-oracle defect narrow across names but "
         f"present (9 tickers); the gate's output shows {n_tickers}"
     )
-    return f"stuck oracle = {share:.1%} of {len(days):,} disagreeing days, {n_tickers} tickers"
+    return (f"stuck oracle = {share:.1%} of {len(days):,} disagreeing days, "
+            f"{n_tickers} tickers"), len(days)
 
 
 CHECKS = [
@@ -252,16 +269,27 @@ CHECKS = [
 
 
 if __name__ == "__main__":
-    failures = 0
+    failures = skipped = 0
     for fn in CHECKS:
         try:
-            msg = fn()
-            print(f"PASS  {fn.__name__}: {msg}")
+            # Every check returns the size of the population it examined. One that
+            # examined none of it cannot have found anything wrong, and prints the
+            # same PASS as one that examined all of it — so the empty case fails
+            # here, once, rather than in each check that remembers to guard it.
+            msg, n = fn()
+            assert n, ("examined an empty population, so nothing it asserts was "
+                       "tested — the inputs it reads are missing, filtered away, "
+                       "or no longer shaped the way it expects")
+            print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
+        except Skipped as e:
+            skipped += 1
+            print(f"SKIP  {fn.__name__}: {e}")
         except AssertionError as e:
             failures += 1
             print(f"FAIL  {fn.__name__}: {e}")
         except Exception as e:  # missing data tree, etc. — report, don't hide
             failures += 1
             print(f"ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"\n{len(CHECKS) - failures}/{len(CHECKS)} checks passed")
+    print(f"\n{len(CHECKS) - failures - skipped}/{len(CHECKS)} checks passed"
+          + (f", {skipped} skipped" if skipped else ""))
     sys.exit(1 if failures else 0)

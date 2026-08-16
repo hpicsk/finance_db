@@ -6,7 +6,10 @@ from anywhere:
     python finmind_data/test_assertions.py
 
 or run every package's assertions at once with `./run_assertions.sh` from the
-repo root. Each check prints PASS/FAIL; the script exits non-zero if any fail.
+repo root. Each check prints PASS, FAIL, or SKIP where a prerequisite
+artifact is absent, along with `n`, the size of the population it examined;
+the script exits non-zero if any fail, and a check that examined nothing
+fails rather than passing empty.
 """
 from __future__ import annotations
 
@@ -25,6 +28,14 @@ WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
 
 
+class Skipped(Exception):
+    """A prerequisite artifact is absent, so this check verified nothing.
+
+    Distinct from a pass because it is: it used to print as one, which is the
+    same confusion the population guard below exists to remove.
+    """
+
+
 # ---- Taiwan: one OHLCV file per universe id --------------------------------
 def _tw_ids():
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
@@ -40,7 +51,7 @@ def test_taiwan_ohlcv_one_per_universe():
     missing = uid - files
     assert len(u) == 2154, f"Taiwan universe = {len(u)}, README pins 2,154"
     assert not missing, f"{len(missing)} universe ids have no OHLCV file"
-    return f"Taiwan universe = {len(u)}; all have OHLCV"
+    return f"Taiwan universe = {len(u)}; all have OHLCV", len(u)
 
 
 def test_taiwan_price_adj_one_per_universe():
@@ -66,7 +77,8 @@ def test_taiwan_price_adj_one_per_universe():
         f"delistings, 13 post-window listings); the tree now has {empty}. "
         f"A change here moves the survivorship hole the README quantifies"
     )
-    return f"all {len(uid)} ids fetched; {empty} empty, {len(uid) - empty} with data"
+    return (f"all {len(uid)} ids fetched; {empty} empty, {len(uid) - empty} "
+            f"with data"), len(uid)
 
 
 def test_taiwan_adjusted_survivorship_hole():
@@ -110,7 +122,8 @@ def test_taiwan_adjusted_survivorship_hole():
         f"makes the hole an edge rather than a scatter; the latest is {yrs.max()}"
     )
     return (f"{len(hole)} of 173 in-window delistings have raw prices and no "
-            f"adjusted series, all delisted {yrs.min()}-{yrs.max()}")
+            f"adjusted series, all delisted {yrs.min()}-{yrs.max()}"
+            ), len(inwin["sid"].unique())
 
 
 def test_taiwan_adjusted_coverage_decomposition():
@@ -212,7 +225,8 @@ def test_taiwan_adjusted_coverage_decomposition():
     return (f"{covered:,}/{traded:,} = {100 * covered / traded:.2f} % "
             f"(vs {100 * covered / (traded - hole):.2f} % on the bias-removed "
             f"denominator); missing = {hole:,} hole + {tail:,} tail + {first:,} "
-            f"first; {len(vo)} the other way, all interior make-up Saturdays")
+            f"first; {len(vo)} the other way, all interior make-up Saturdays"
+            ), traded
 
 
 def test_taiwan_overlay_covers_2005_2014():
@@ -237,7 +251,8 @@ def test_taiwan_overlay_covers_2005_2014():
     )
     n_overlay = int(u[u["type"].isna()]["stock_id"].astype(str).str.fullmatch(r"\d{4}").sum())
     assert n_overlay == 42, f"4-digit type=NaN overlay ids = {n_overlay}, expected 42"
-    return "2005-2014 commons fully covered; 42-name overlay present"
+    return ("2005-2014 commons fully covered; 42-name overlay present",
+            len(in_2005_2014))
 
 
 # ---- Taiwan: the coverage flag has to survive a panel build -----------------
@@ -252,7 +267,7 @@ def test_taiwan_adj_covered_survives_concat():
     """
     sys.path.insert(0, str(REPO))
     if not (REPO / "finmind_data/unpriced_actions.parquet").exists():
-        return "SKIP (unpriced_actions.parquet not built)"
+        raise Skipped("unpriced_actions.parquet not built")
     from finmind_data.adjusted_loader import load_adjusted
 
     full = load_adjusted("2330")       # vendor covers every session
@@ -285,7 +300,8 @@ def test_taiwan_adj_covered_survives_concat():
             f"a column rather than frame metadata"
         )
     return (f"adj_covered survives concat/merge/groupby; panel coverage "
-            f"{frac:.4f} where attrs carries {dict(panel.attrs) or 'nothing'}")
+            f"{frac:.4f} where attrs carries {dict(panel.attrs) or 'nothing'}"
+            ), len(panel)
 
 
 # ---- Taiwan: the open field disagrees with its own session bar -------------
@@ -322,7 +338,7 @@ def test_taiwan_open_outside_session_range():
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
-            f"({100 * bad / tot:.2f} %) in {stocks} stocks; close on 0")
+            f"({100 * bad / tot:.2f} %) in {stocks} stocks; close on 0"), tot
 
 
 # ---- Taiwan: the biases the delisting table does *not* fix -----------------
@@ -343,7 +359,8 @@ def test_taiwan_delisting_table_has_no_reason():
         f"{sorted(cols)}. If a reason or terminal-value column has appeared, "
         f"delisting returns are measurable and the caveat is obsolete"
     )
-    return f"delisting table = {sorted(cols)}; no reason, no terminal value"
+    return (f"delisting table = {sorted(cols)}; no reason, no terminal value",
+            len(d))
 
 
 def test_taiwan_fundamentals_are_fiscal_dated():
@@ -388,14 +405,19 @@ def test_taiwan_fundamentals_are_fiscal_dated():
         "AnnouncementDate; it no longer does"
     )
     return (f"fin_* dated on quarter ends with no announcement column; "
-            f"month_rev create_time blank {blank:,}/{tot:,}; dividend has it")
+            f"month_rev create_time blank {blank:,}/{tot:,}; dividend has it"
+            ), tot
 
 
 # ---- consolidate_capred delivered artifact ---------------------------------
 def test_capital_reduction_artifact_exists():
     fp = REPO / "finmind_data/capital_reduction.parquet"
     assert fp.exists(), "capital_reduction.parquet documented as delivered but missing"
-    return "capital_reduction.parquet present"
+    # Read it rather than stat it: a consolidation that wrote an empty frame
+    # delivers the path and nothing else, and the runner's population guard is
+    # what turns that into a failure.
+    n = len(pd.read_parquet(fp))
+    return f"capital_reduction.parquet present, {n:,} rows", n
 
 
 # ---- Taiwan: ohlcv/ is raw, which is why price_adj/ is bought --------------
@@ -451,7 +473,8 @@ def test_taiwan_ohlcv_is_raw():
         f"means the raw series is no longer raw, and price_adj/ would "
         f"double-count against it"
     )
-    return f"ohlcv/ is raw: {hit:,}/{tot:,} = {100 * frac:.2f} % vs before_price"
+    return (f"ohlcv/ is raw: {hit:,}/{tot:,} = {100 * frac:.2f} % vs "
+            f"before_price"), tot
 
 
 # ---- Taiwan: what the bought adjusted series is, and what it does not mark --
@@ -465,7 +488,7 @@ def test_taiwan_adjusted_series():
     """
     sys.path.insert(0, str(REPO))
     if not (REPO / "finmind_data/unpriced_actions.parquet").exists():
-        return "SKIP (unpriced_actions.parquet not built)"
+        raise Skipped("unpriced_actions.parquet not built")
     import numpy as np
 
     from finmind_data.adjusted_loader import load_adjusted
@@ -570,7 +593,7 @@ def test_taiwan_adjusted_series():
     return (f"factor == exchange ratio on {100 * within:.1f} % of events "
             f"(<1e-3); 8934 {int(z.sum())} no-trade rows → NaN against "
             f"{n_filled} the vendor filled; 2357 step 1.0000 marked; "
-            f"anchor exact")
+            f"anchor exact"), len(rel)
 
 
 # ---- Taiwan: the vendor's own events, graded against the exchange ----------
@@ -656,7 +679,7 @@ def test_taiwan_vendor_event_audit_is_current():
     return (f"{len(ck):,}/{len(committed):,} events graded; vendor == exchange "
             f"{100 * w6:.2f} % at 1e-6, {100 * w3:.2f} % at 1e-3; defects "
             f"{defects}, every flip in {flipped.min().date()}.."
-            f"{flipped.max().date()}")
+            f"{flipped.max().date()}"), len(committed)
 
 
 def test_taiwan_vendor_defects_are_patched():
@@ -723,7 +746,7 @@ def test_taiwan_vendor_defects_are_patched():
     )
     return (f"7 events patched to the exchange's step; the patch moves the "
             f"ex-date factor by {100 * min(moved):.2f}-{100 * max(moved):.2f} % "
-            f"and rescales {sum(spans):,} rows behind them")
+            f"and rescales {sum(spans):,} rows behind them"), sum(spans)
 
 
 def test_taiwan_vendor_edges_are_carried():
@@ -789,7 +812,7 @@ def test_taiwan_vendor_edges_are_carried():
     )
     return (f"{head} first sessions and {tail} post-delisting sessions carried "
             f"from the adjacent factor with no filing in the gap; "
-            f"4141 2011-04-14 refused")
+            f"4141 2011-04-14 refused"), head + tail
 
 
 def test_taiwan_post_delisting_sessions_are_marked():
@@ -835,7 +858,7 @@ def test_taiwan_post_delisting_sessions_are_marked():
     )
     return (f"{n:,} post-delisting sessions priced and marked invalid across "
             f"{len(tails)} names, quoted at {100 * min(ratios):.1f}-"
-            f"{100 * max(ratios):.0f} % of their listed-era volume")
+            f"{100 * max(ratios):.0f} % of their listed-era volume"), n
 
 
 # ---- Taiwan: no-trade sessions, and the closure of is_valid ----------------
@@ -926,7 +949,8 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
             f"{len(no_trade_stocks):,} stocks marked invalid, "
             f"{zero - by_reason['no_trade']:,} more kept by a segment reason; "
-            f"is_valid accounts for all {invalid:,} invalid rows of {rows:,}")
+            f"is_valid accounts for all {invalid:,} invalid rows of {rows:,}"
+            ), rows
 
 
 # ---- Taiwan: the make-up sessions ohlcv/ dropped ---------------------------
@@ -1030,7 +1054,7 @@ def test_taiwan_make_up_sessions_are_recovered():
     return (f"{n_traded + n_flat} make-up sessions recovered in {len(want)} "
             f"stocks ({n_traded} traded, {n_flat} written as no-trade rows); "
             f"no return spans two sessions; the two anchors agree to "
-            f"{dev.max():.1e}")
+            f"{dev.max():.1e}"), n_traded + n_flat
 
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
@@ -1095,7 +1119,7 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         f"{sorted(reasons)}"
     )
     return (f"{len(holes)} holes rebuilt over {priced:,} traded sessions "
-            f"({kinds}); {invalid:,} behind an unpriced cancellation")
+            f"({kinds}); {invalid:,} behind an unpriced cancellation"), traded
 
 
 def test_taiwan_rebuild_matches_vendor():
@@ -1153,7 +1177,7 @@ def test_taiwan_rebuild_matches_vendor():
         f"rebuilt names are no longer validated by anything"
     )
     return (f"{stocks} stocks, {n:,} returns: {100 * ok6 / n:.3f} % match to "
-            f"1e-6, {100 * ok3 / n:.3f} % to 1e-3")
+            f"1e-6, {100 * ok3 / n:.3f} % to 1e-3"), n
 
 
 def test_taiwan_adj_source_partitions_the_panel():
@@ -1169,8 +1193,10 @@ def test_taiwan_adj_source_partitions_the_panel():
     from finmind_data.adjusted_loader import _METHOD, load_adjusted
 
     seen = set()
+    rows = 0
     for sid in ("2330", "8934", "2396", "2822", "1207", "2357"):
         df = load_adjusted(sid)
+        rows += len(df)
         has_px = df["adj_close_tr"].notna()
         has_src = df["adj_source"] != ""
         assert (has_px == has_src).all(), (
@@ -1185,7 +1211,8 @@ def test_taiwan_adj_source_partitions_the_panel():
                     "rebuilt_factored", "rebuilt_noevent"}, (
         f"README documents five adj_source values; these stocks exercise {seen}"
     )
-    return f"adj_source present exactly where a price is; exercises {sorted(seen)}"
+    return (f"adj_source present exactly where a price is; exercises "
+            f"{sorted(seen)}"), rows
 
 
 # ---- Taiwan: when a fundamental could first have been read ------------------
@@ -1203,6 +1230,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
 
     from finmind_data.available_date import available_date, with_available_date
 
+    resolved = 0
     for sub, kind, n_ends in (("fin_is", "financial_statement", 80),
                               ("fin_bs", "financial_statement", 53),
                               ("fin_cf", "financial_statement", 65),
@@ -1221,6 +1249,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
             f"narrowed the tree owes filing_deadlines.csv a re-check"
         )
         got = available_date(sorted(ends), kind=kind)          # raises if unruled
+        resolved += len(got)
         assert (got.to_numpy() > pd.Series(sorted(ends)).to_numpy()).all(), (
             f"{sub}: some rows are available on or before the period they "
             f"describe, which is look-ahead rather than a bound on it"
@@ -1250,8 +1279,8 @@ def test_taiwan_filing_deadline_table_covers_the_data():
     )
     assert ((b["available_date"] - a["available_date"])
             == pd.Timedelta(days=15)).all(), "extra_days is not additive"
-    return (f"every period end in fin_is/fin_bs/fin_cf/month_rev resolves; "
-            f"2012 regime boundary holds; extra_days additive")
+    return (f"all {resolved} period ends in fin_is/fin_bs/fin_cf/month_rev "
+            f"resolve; 2012 regime boundary holds; extra_days additive"), resolved
 
 
 def test_taiwan_month_rev_date_is_the_following_month():
@@ -1283,7 +1312,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
         f"different offset and {rows - first:,} are not the first of a month"
     )
     return (f"month_rev.date is the 1st of the month after revenue_month on "
-            f"all {rows:,} rows")
+            f"all {rows:,} rows"), rows
 
 
 CHECKS = [
@@ -1314,16 +1343,27 @@ CHECKS = [
 
 
 if __name__ == "__main__":
-    failures = 0
+    failures = skipped = 0
     for fn in CHECKS:
         try:
-            msg = fn()
-            print(f"PASS  {fn.__name__}: {msg}")
+            # Every check returns the size of the population it examined. One that
+            # examined none of it cannot have found anything wrong, and prints the
+            # same PASS as one that examined all of it — so the empty case fails
+            # here, once, rather than in each check that remembers to guard it.
+            msg, n = fn()
+            assert n, ("examined an empty population, so nothing it asserts was "
+                       "tested — the inputs it reads are missing, filtered away, "
+                       "or no longer shaped the way it expects")
+            print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
+        except Skipped as e:
+            skipped += 1
+            print(f"SKIP  {fn.__name__}: {e}")
         except AssertionError as e:
             failures += 1
             print(f"FAIL  {fn.__name__}: {e}")
         except Exception as e:  # missing data tree, etc. — report, don't hide
             failures += 1
             print(f"ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"\n{len(CHECKS) - failures}/{len(CHECKS)} checks passed")
+    print(f"\n{len(CHECKS) - failures - skipped}/{len(CHECKS)} checks passed"
+          + (f", {skipped} skipped" if skipped else ""))
     sys.exit(1 if failures else 0)

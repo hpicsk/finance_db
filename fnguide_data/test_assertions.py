@@ -6,7 +6,10 @@ from anywhere:
     python fnguide_data/test_assertions.py
 
 or run every package's assertions at once with `./run_assertions.sh` from the
-repo root. Each check prints PASS/FAIL; the script exits non-zero if any fail.
+repo root. Each check prints PASS, FAIL, or SKIP where a prerequisite
+artifact is absent, along with `n`, the size of the population it examined;
+the script exits non-zero if any fail, and a check that examined nothing
+fails rather than passing empty.
 """
 from __future__ import annotations
 
@@ -24,6 +27,14 @@ WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
 
 
+class Skipped(Exception):
+    """A prerequisite artifact is absent, so this check verified nothing.
+
+    Distinct from a pass because it is: it used to print as one, which is the
+    same confusion the population guard below exists to remove.
+    """
+
+
 def test_fnguide_price_delisted_coverage():
     """README.md and kr_marcap/CONSTRUCTION.md both rest on the benchmark being
     survivorship-bias-free: '616 / 620 (99.4 %)' of genuine common delistings
@@ -37,7 +48,7 @@ def test_fnguide_price_delisted_coverage():
     """
     fp = REPO / "fnguide_data/cache/fnguide_price.parquet"
     if not fp.exists():
-        return "SKIP (run fnguide_data.price_loader first)"
+        raise Skipped("run fnguide_data.price_loader first")
     sys.path.insert(0, str(REPO))
     from kr_marcap.classify import classify_ticker
     have = set(pd.read_parquet(fp, columns=["ticker"])["ticker"].unique())
@@ -54,7 +65,7 @@ def test_fnguide_price_delisted_coverage():
         f"covers {hit}/{len(gc)} ({hit/len(gc):.1%}) — check the export's "
         f"universe filter was 'all codes' (전체 / 상폐 포함)"
     )
-    return f"delisted coverage {hit}/{len(gc)} = {hit/len(gc):.1%}"
+    return f"delisted coverage {hit}/{len(gc)} = {hit/len(gc):.1%}", len(gc)
 
 
 def test_fnguide_price_segments_break_reissued_codes():
@@ -70,7 +81,7 @@ def test_fnguide_price_segments_break_reissued_codes():
     """
     fp = REPO / "fnguide_data/cache/fnguide_price.parquet"
     if not fp.exists():
-        return "SKIP (run fnguide_data.price_loader first)"
+        raise Skipped("run fnguide_data.price_loader first")
     px = pd.read_parquet(fp, columns=["date", "ticker", "segment"])
     px = px.sort_values(["ticker", "date"])
     marked = set(zip(*px.loc[px.groupby("ticker")["segment"].diff() > 0,
@@ -105,7 +116,7 @@ def test_fnguide_price_segments_break_reissued_codes():
         f"{len(marked)} — re-measure the sentence"
     )
     return (f"{len(marked)} reissued-code handovers, all on a genuine "
-            f"delisting inside a price gap")
+            f"delisting inside a price gap"), len(px)
 
 
 def test_fnguide_price_impossible_returns_are_all_inspected():
@@ -122,7 +133,7 @@ def test_fnguide_price_impossible_returns_are_all_inspected():
     """
     fp = REPO / "fnguide_data/cache/fnguide_price.parquet"
     if not fp.exists():
-        return "SKIP (run fnguide_data.price_loader first)"
+        raise Skipped("run fnguide_data.price_loader first")
     px = pd.read_parquet(fp).sort_values(["ticker", "segment", "date"])
     ret = px.groupby(["ticker", "segment"])["adj_close_pr"].pct_change(fill_method=None)
     impossible = int(((ret > 1.0) | ~np.isfinite(ret.fillna(0))).sum())
@@ -133,7 +144,8 @@ def test_fnguide_price_impossible_returns_are_all_inspected():
         f"ChangeCode) before trusting them — a flat run on zero volume is the "
         f"exchange holding a halted name, not a price"
     )
-    return f"{impossible} above-limit returns, all attributed to halts or 정리매매"
+    return (f"{impossible} above-limit returns, all attributed to halts or "
+            f"정리매매"), int(ret.notna().sum())
 
 
 def test_fnguide_vintage_manifest_matches_disk():
@@ -149,7 +161,7 @@ def test_fnguide_vintage_manifest_matches_disk():
     sys.path.insert(0, str(REPO))
     from fnguide_data.vintages import MANIFEST_PATH, RAW_DIR, check, load
     if not RAW_DIR.exists() or not any(RAW_DIR.glob("*.xlsx")):
-        return "SKIP (raw/ exports not present)"
+        raise Skipped("raw/ exports not present")
     assert MANIFEST_PATH.exists(), (
         f"{MANIFEST_PATH} is missing — regenerate it with "
         f"`python -m fnguide_data.vintages`"
@@ -163,7 +175,8 @@ def test_fnguide_vintage_manifest_matches_disk():
     )
     man = load()
     return (f"{len(man)} sheets across {man.file.nunique()} files, "
-            f"end dates {man.term_end.min():%Y-%m-%d}..{man.term_end.max():%Y-%m-%d}")
+            f"end dates {man.term_end.min():%Y-%m-%d}.."
+            f"{man.term_end.max():%Y-%m-%d}"), len(man)
 
 
 CHECKS = [
@@ -175,16 +188,27 @@ CHECKS = [
 
 
 if __name__ == "__main__":
-    failures = 0
+    failures = skipped = 0
     for fn in CHECKS:
         try:
-            msg = fn()
-            print(f"PASS  {fn.__name__}: {msg}")
+            # Every check returns the size of the population it examined. One that
+            # examined none of it cannot have found anything wrong, and prints the
+            # same PASS as one that examined all of it — so the empty case fails
+            # here, once, rather than in each check that remembers to guard it.
+            msg, n = fn()
+            assert n, ("examined an empty population, so nothing it asserts was "
+                       "tested — the inputs it reads are missing, filtered away, "
+                       "or no longer shaped the way it expects")
+            print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
+        except Skipped as e:
+            skipped += 1
+            print(f"SKIP  {fn.__name__}: {e}")
         except AssertionError as e:
             failures += 1
             print(f"FAIL  {fn.__name__}: {e}")
         except Exception as e:  # missing data tree, etc. — report, don't hide
             failures += 1
             print(f"ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"\n{len(CHECKS) - failures}/{len(CHECKS)} checks passed")
+    print(f"\n{len(CHECKS) - failures - skipped}/{len(CHECKS)} checks passed"
+          + (f", {skipped} skipped" if skipped else ""))
     sys.exit(1 if failures else 0)

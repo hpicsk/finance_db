@@ -6,7 +6,9 @@ from anywhere:
     python krx_supplement/test_assertions.py
 
 or run every package's assertions at once with `./run_assertions.sh` from the
-repo root. Each check prints PASS/FAIL; the script exits non-zero if any fail.
+repo root. Each check prints PASS or FAIL along with `n`, the size of the
+population it examined; the script exits non-zero if any fail, and a check
+that examined nothing fails rather than passing empty.
 """
 from __future__ import annotations
 
@@ -42,7 +44,8 @@ def test_kospi200_panel_inwindow_complete():
         f"KOSPI200 in-window membership degraded: min={inwin.min()} "
         f"median={med} max={inwin.max()}"
     )
-    return f"KOSPI200 in-window membership median={med}, range [{inwin.min()},{inwin.max()}]"
+    return (f"KOSPI200 in-window membership median={med}, "
+            f"range [{inwin.min()},{inwin.max()}]"), len(inwin)
 
 
 CHECKS = [
@@ -54,8 +57,15 @@ if __name__ == "__main__":
     failures = 0
     for fn in CHECKS:
         try:
-            msg = fn()
-            print(f"PASS  {fn.__name__}: {msg}")
+            # Every check returns the size of the population it examined. One that
+            # examined none of it cannot have found anything wrong, and prints the
+            # same PASS as one that examined all of it — so the empty case fails
+            # here, once, rather than in each check that remembers to guard it.
+            msg, n = fn()
+            assert n, ("examined an empty population, so nothing it asserts was "
+                       "tested — the inputs it reads are missing, filtered away, "
+                       "or no longer shaped the way it expects")
+            print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
         except AssertionError as e:
             failures += 1
             print(f"FAIL  {fn.__name__}: {e}")
