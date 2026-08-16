@@ -850,7 +850,7 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     delisted. A backtest filtering on the flag alone would have assumed a fill.
 
     Two things are asserted, and they fail on different mistakes. The counts pin
-    *this* reason: dropping the mask leaves the 167,011 rows valid with no reason
+    *this* reason: dropping the mask leaves the 167,181 rows valid with no reason
     at all, which the reason split below catches and the closure below does not,
     because a row that is valid and unnamed is consistent. The closure pins the
     *next* one: every False row carries a reason and every True row carries none,
@@ -906,27 +906,131 @@ def test_taiwan_no_trade_rows_are_not_holdable():
         f"README says 13 stocks have a zero-row OHLCV file and load_adjusted "
         f"raises on them; {len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
-    assert (rows, zero, zero_stocks) == (7_689_304, 179_749, 1_325), (
-        f"README quotes 179,749 no-trade sessions in 1,325 stocks over a "
-        f"7,689,304-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+    assert (rows, zero, zero_stocks) == (7_689_904, 179_930, 1_325), (
+        f"README quotes 179,930 no-trade sessions in 1,325 stocks over a "
+        f"7,689,904-row panel; this tree has {zero:,} in {zero_stocks:,} over "
         f"{rows:,}. Every count below is a share of that population")
     assert mismatched == 0, (
         f"README claims is_valid alone is now enough — every False row carries "
         f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
         f"rows break that, so invalid_reason no longer accounts for is_valid")
-    assert by_reason == {"no_trade": 167_011,
-                         "series_break": 3_240,
-                         "unpriced_cancellation": 9_498}, (
-        f"README claims 167,011 no-trade sessions take the new reason and the "
-        f"12,738 behind a break keep the break's; the split here is {by_reason}")
+    assert by_reason == {"no_trade": 167_181,
+                         "series_break": 3_244,
+                         "unpriced_cancellation": 9_505}, (
+        f"README claims 167,181 no-trade sessions take the new reason and the "
+        f"12,749 behind a break keep the break's; the split here is {by_reason}")
     assert len(no_trade_stocks) == 1_309, (
-        f"README claims the 167,011 no_trade rows fall in 1,309 stocks — the "
+        f"README claims the 167,181 no_trade rows fall in 1,309 stocks — the "
         f"1,325 with a zero close, less the 16 whose zero closes all sit behind "
         f"a break; {len(no_trade_stocks):,} carry one here")
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
             f"{len(no_trade_stocks):,} stocks marked invalid, "
             f"{zero - by_reason['no_trade']:,} more kept by a segment reason; "
             f"is_valid accounts for all {invalid:,} invalid rows of {rows:,}")
+
+
+# ---- Taiwan: the make-up sessions ohlcv/ dropped ---------------------------
+def test_taiwan_make_up_sessions_are_recovered():
+    """README, "The gap that runs the other way": 600 sessions, and 600 returns.
+
+    The cost of a dropped session is not the row. It is that the *next* session's
+    return spans two sessions instead of one, so the 600 sessions `ohlcv/` has no
+    row for were 600 overstated returns — and not scattered, but clustered on 22
+    holiday-adjacent Saturdays, which is the shape a study would read as an
+    effect. That contamination is invisible to the coverage decomposition, which
+    counts rows and not the gaps between them, so it is asserted here.
+
+    The assertion is on the return path rather than on the count: after the
+    recovery no session `price_adj/` carries is absent from the panel, which is
+    what makes every return a one-session return.
+
+    The reconstruction is then checked against a source it did not use. The
+    loader takes the nearer earlier anchor; this recomputes from the following
+    one, a different session in the opposite direction, and the two must give the
+    same price. That is a real check because it would fail on exactly what the
+    method assumes away — a factor that moved inside the interval.
+    """
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+
+    from finmind_data.adjusted_loader import load_adjusted
+
+    # Which stocks could be short a session at all — a set difference over the
+    # files, so the expensive pass runs on the 159 that can fail rather than the
+    # 2,103 that cannot.
+    want = {}
+    for p in sorted(glob.glob(str(REPO / "finmind_data/ohlcv/*.parquet"))):
+        sid = Path(p).stem
+        raw = pd.read_parquet(p)
+        adj = pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet")
+        if not len(raw) or not len(adj):
+            continue
+        only = set(pd.to_datetime(adj["date"])) - set(pd.to_datetime(raw["date"]))
+        if only:
+            want[sid] = (only, adj)
+
+    n_traded = n_flat = n_both = 0
+    dev = []
+    for sid, (only, adj) in want.items():
+        df = load_adjusted(sid)
+        assert df.attrs["vendor_only_sessions"] == len(only), (
+            f"{sid}: attrs reports {df.attrs['vendor_only_sessions']} vendor-only "
+            f"sessions against {len(only)} in the files")
+        panel = set(df["date"])
+        assert not (only - panel), (
+            f"{sid}: {len(only - panel)} sessions price_adj/ carries are still "
+            f"absent from the panel, so the return after each of them spans two "
+            f"sessions rather than one")
+        rec = df[~df["raw_covered"]]
+        assert set(rec["date"]) == only, (
+            f"{sid}: raw_covered is False on {len(rec)} rows against {len(only)} "
+            f"sessions ohlcv/ has no row for, so the flag no longer marks what "
+            f"was reconstructed")
+
+        a = adj.assign(date=pd.to_datetime(adj["date"])).sort_values("date")
+        priced = a.set_index("date")["close"].astype(float).to_dict()
+        vol = a.set_index("date")["Trading_Volume"].to_dict()
+        d8 = list(df["date"])
+        seat = np.nonzero((df["raw_covered"].to_numpy())
+                          & (df["close"].to_numpy(dtype=float) > 0)
+                          & np.array([priced.get(x, 0.0) > 0 for x in d8]))[0]
+        for _, r in rec.iterrows():
+            if vol[r["date"]] == 0:
+                # ohlcv/ writes a session with no volume as a zero row and never
+                # with a close, so that is what a reconstruction of one holds.
+                n_flat += 1
+                assert r["close"] == 0 and not r["is_valid"], (
+                    f"{sid} {r['date'].date()}: the vendor reports no volume, so "
+                    f"the row should read as the no-trade row ohlcv/ would have "
+                    f"written and be unholdable; it carries close {r['close']} "
+                    f"and is_valid {r['is_valid']}")
+                continue
+            n_traded += 1
+            # Reconstruct from the anchor on each side and hold the loader's
+            # price to both. Checking only the side it did not take would leave
+            # the check trivial whenever it fell back to the other one.
+            k = int(np.searchsorted([d8[j] for j in seat], r["date"], "left"))
+            js = [j for j in (k - 1, k) if 0 <= j < len(seat)]
+            n_both += len(js) == 2
+            for i in (seat[j] for j in js):
+                f = priced[d8[i]] / float(df["close"].to_numpy()[i])
+                dev.append(abs(priced[r["date"]] / f / r["close"] - 1.0))
+
+    assert (len(want), n_traded + n_flat, n_traded) == (159, 600, 419), (
+        f"README claims 600 make-up sessions in 159 stocks, 419 of them traded; "
+        f"this tree recovers {n_traded + n_flat} in {len(want)}, {n_traded} traded")
+    dev = np.array(dev)
+    assert (len(dev), n_both) == (837, 418) and dev.max() < 1e-5, (
+        f"418 of the 419 traded make-up sessions have a usable anchor on both "
+        f"sides, and the price the loader wrote has to be reproducible from "
+        f"either — a disagreement is a factor that moved inside the interval the "
+        f"carry assumes it did not. {len(dev)} reconstructions were run over "
+        f"{n_both} two-sided sessions, and the worst differs from the loader's "
+        f"price by {dev.max():.2e}")
+    return (f"{n_traded + n_flat} make-up sessions recovered in {len(want)} "
+            f"stocks ({n_traded} traded, {n_flat} written as no-trade rows); "
+            f"no return spans two sessions; the two anchors agree to "
+            f"{dev.max():.1e}")
 
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
@@ -1038,9 +1142,9 @@ def test_taiwan_rebuild_matches_vendor():
         ok6 += int((diff < 1e-6).sum())
         ok3 += int((diff < 1e-3).sum())
 
-    assert (stocks, n) == (134, 268485), (
+    assert (stocks, n) == (134, 268503), (
         f"README quotes the gate on 134 covered in-window delistings and "
-        f"268,485 daily adjusted returns; this tree gives {stocks} / {n:,}"
+        f"268,503 daily adjusted returns; this tree gives {stocks} / {n:,}"
     )
     assert ok6 / n >= 0.9993 and ok3 / n >= 0.9999, (
         f"README claims the rebuild reproduces the vendor on 99.93 % of daily "
@@ -1193,6 +1297,7 @@ CHECKS = [
     test_taiwan_vendor_edges_are_carried,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
+    test_taiwan_make_up_sessions_are_recovered,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,

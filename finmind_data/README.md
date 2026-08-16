@@ -352,7 +352,7 @@ fails three ways. Two are the ends of the series: behind the last break
 after which the ticker came back as a different listing (309 breaks in
 231 stocks, 3.00 % of rows) — and past the last exchange session, the
 3,089 興櫃 quotes below. The third is one session anywhere between them:
-the stock did not trade (167,011 rows in 1,309 stocks), so no level the
+the stock did not trade (167,181 rows in 1,309 stocks), so no level the
 panel carries was a price anyone could transact at.
 
 `invalid_reason` says which, because the flag is one column and the four
@@ -365,13 +365,13 @@ marks none of them: 2357's 85 % reduction on 2010-06-24 comes through at
 a factor step of exactly 1, leaving the raw 53.2 → 240.5 jump in the
 adjusted series as a +351 % return (caveat 5).
 
-The two segment reasons win where they overlap the third, so the 12,738
+The two segment reasons win where they overlap the third, so the 12,749
 no-trade sessions that sit behind a break keep the break's name — a row
 in a history this series does not continue would not have been holdable
-had it traded either. `adj_close_tr` was already NaN on all 179,749, so
+had it traded either. `adj_close_tr` was already NaN on all 179,930, so
 the two-column filter above dropped them before this reason existed;
 what changed is that `is_valid` alone now drops them too, and that every
-False row in the panel's 7,689,304 carries a reason for being one.
+False row in the panel's 7,689,904 carries a reason for being one.
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -397,13 +397,20 @@ The two rebuilt values are kept apart on purpose: the cumulative-product
 path is the one with somewhere to go wrong, and separating it lets a
 later check isolate it without re-deriving which stocks had events.
 
+**`raw_covered` says whether `ohlcv/` served the date.** It is False on
+600 rows and True on everything else: the make-up sessions the raw
+endpoint has no row for, reconstructed from the vendor's below. Their
+prices and volumes are derived rather than read, so a study that will
+not take a derived field drops `~raw_covered` and loses 600 rows of
+7,689,904.
+
 `adj_close_tr` is NaN where the raw `close` is 0 — FinMind's encoding
-for a session the stock did not trade (179,749 rows, 2.34 %, in 1,325
-stocks). The vendor prices 179,622 of those sessions anyway, at the last
-traded price, so the zero that identifies them survives only in
-`ohlcv/`; filtering on `adj_close_tr > 0` alone would keep every one of
-them, and so would filtering on `is_valid` alone before `no_trade`
-existed.
+for a session the stock did not trade (179,749 rows in `ohlcv/` and
+179,930 in the panel, 2.34 %, in 1,325 stocks). The vendor prices
+179,622 of the ones `ohlcv/` holds anyway, at the last traded price, so
+the zero that identifies them survives only in `ohlcv/`; filtering on
+`adj_close_tr > 0` alone would keep every one of them, and so would
+filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
@@ -437,7 +444,7 @@ against three further sources: none of the 27 has a declaration in
 **The rebuild is validated where the vendor exists.** The gate set is
 the 134 in-window delistings `price_adj/` *does* cover — same era, same
 delisting situation — run through the identical code path. Across
-268,485 daily adjusted returns the rebuild reproduces the vendor on
+268,503 daily adjusted returns the rebuild reproduces the vendor on
 99.93 % to 1e-6 and 99.998 % to 1e-3; what is left is the declared-vs-
 published cent above, on the ex-date session only.
 
@@ -500,22 +507,67 @@ tail is itself a weak signal on the delisting reason (caveat 6).
 And `ohlcv/` itself is a zero-row file for 13 stocks, on which
 `load_adjusted` raises.
 
-### The gap that runs the other way
+### The gap that runs the other way, and the 600 returns it cost
 
 Every figure above counts sessions `ohlcv/` has and `price_adj/` does
-not. The reverse set difference is **600 sessions in 159 stocks**, and
-it is the worse kind: a missing adjusted session is rebuilt from the raw
-one, while a missing raw session has nothing behind it to rebuild from.
+not. The reverse set difference is **600 sessions in 159 stocks**, all
+of them on **22 dates, every one a Saturday** — a 補行交易日, worked to
+make up a holiday. `ohlcv/` serves those Saturdays for 1,068 to 1,620
+stocks each, so the endpoint knows the date and drops the row for 16 to
+46 names on it; the skew is mild (11 % of TPEx names against 5 % of
+TWSE). Per stock the median is 4 sessions and the worst is 15, against
+~4,850 in a full series.
 
-It is bounded, and the bound is what makes it liveable. All 600 fall on
-**22 dates, every one a Saturday** — a 補行交易日, worked to make up a
-holiday. `ohlcv/` serves those Saturdays for 1,068 to 1,620 stocks each,
-so the endpoint knows the date and drops the row for 16 to 46 names on
-it; the skew is mild (11 % of TPEx names against 5 % of TWSE). On 342 of
-the 600 the vendor's adjusted close differs from the session before it,
-so at least that many are trades `ohlcv/` does not carry. Per stock the
-median is 4 sessions and the worst is 15, against ~4,850 in a full
-series.
+**The cost is not the missing rows.** A gap in the calendar makes the
+*next* session's return span two sessions rather than one, so 600 absent
+rows were 600 overstated returns — and they were not scattered but
+clustered on 22 holiday-adjacent dates, which is the shape a study reads
+as an effect. Nothing in the coverage decomposition above sees this: it
+counts rows, and the damage is in the gaps between them.
+
+**They are recovered, and the arithmetic is exact.** `price_adj/`
+carries the whole row and not just the close — `open`, `max` and `min`
+sit on the same factor as the close (worst departure 4.1e-5 over
+7,674,204 shared ticker-days, which is the vendor's rounding) and the
+three volume columns come across unadjusted. So the raw row is the
+vendor's row divided by the factor at an adjacent session:
+
+```
+close(sat) = adj_close(sat) × close(anchor) / adj_close(anchor)
+```
+
+A vendor factor divided by a vendor factor, so the declared-vs-published
+cent that separates the two conventions cancels rather than propagating
+— cleaner than reconstructing the factor. It is exact as long as no
+filing sits between the two sessions, which is checked per row against
+every 除權息 and 減資 and the cancellations no filing explains. Unlike
+the same guard on the edge carry, it does not fire here: no make-up
+session in the panel has an event in its interval.
+
+The check is that 418 of the 419 traded sessions have a usable anchor on
+**both** sides, and the price the loader wrote is reproducible from
+either — two different sessions, opposite directions, agreeing to
+1.9e-7. The nearer earlier anchor is the one used; 4167's 2012-12-22 is
+the single session with nothing usable behind it. Prices are rounded
+onto the cent grid `ohlcv/` quotes on, which the two-sided agreement
+says is the tick and not a tolerance.
+
+The remaining 181 are sessions the vendor reports **no volume** on, and
+they are written the way `ohlcv/` writes one: as a zero row. Across
+151,304 zero-volume rows in that tree not one carries a close, so a zero
+is what the raw file would have held, and those rows land on
+`invalid_reason = "no_trade"` with everything else that did not trade.
+The return across them stays the one-session return it already was.
+
+All 600 carry `raw_covered = False`, per stock in
+`df.attrs["sessions_recovered"]`. Two things they do not get. `spread`
+is FinMind's own close-minus-prior-close taken on FinMind's own
+calendar, so it is NaN on the recovered rows and stale on the row after
+each of them — it was already blind to these sessions and the recovery
+does not make it less so. And on 12 of the 22 Saturdays the two
+endpoints report *different* volume for the stocks they both carry
+(1,944 rows, by up to 0.5 %), so the volume on a recovered row is the
+vendor's answer to a question `ohlcv/` answers differently.
 
 None of the 600 falls outside the raw series' own range — no stock's
 vendor file opens before its raw file does, or runs past it. That is
@@ -524,10 +576,8 @@ stocks whose vendor file opens on an earlier *date* than their first
 traded session are not this problem: their raw file opens on the same
 date, on a no-trade row the vendor priced anyway.
 
-The left join on the raw calendar drops all 600, per stock in
-`df.attrs["vendor_only_sessions"]` and panel-wide in
-`test_taiwan_adjusted_coverage_decomposition`. Why the raw endpoint
-sheds make-up Saturdays for a minority of names is not answered here.
+Why the raw endpoint sheds make-up Saturdays for a minority of names is
+not answered here.
 
 ## Load the full panel
 
