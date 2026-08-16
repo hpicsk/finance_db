@@ -12,7 +12,7 @@ specific gap in the others:
 | Source | What it provides | Coverage |
 |---|---|---|
 | **KIND** `kind.krx.co.kr/investwarn/delcompany.do` | Delisting events: 6-digit ticker, name, market, date, reason | Main shares, 2005-01-02 → present (1,241 events as of 2026-05-11) |
-| **marcap** `~/finance_db/marcap/data/marcap-YYYY.parquet` | Last-trade dates and OHLCV history for preferred shares not in KIND | Preferred / 신주 / 전환 tickers (codes not ending in '0'), 2005+ |
+| **marcap** `~/research/finance_db/marcap/data/marcap-YYYY.parquet` | Last-trade dates and OHLCV history for preferred shares not in KIND | Preferred / 신주 / 전환 tickers (codes not ending in '0'), 2005+ |
 | **DART** `opendart.fss.or.kr` (via `OpenDartReader`) | Corporate-action filings that disambiguate dissolutions | Post-2001 main-share filings + entity-type names |
 
 Daily OHLCV / volume / marcap / shares for every ticker in the calendar
@@ -122,6 +122,16 @@ docstring for the rationale of each layer.
 
 After steps 1-3, the regenerated calendar has `Y=1,004, N=355` (out of 1,359).
 
+What each side holds, and why the split matters for return-based work:
+
+- *Genuine* `Y` (1,004): bankruptcy, audit refusal, voluntary delisting,
+  REIT/SPC ends — what survivorship analysis wants. Includes 118
+  preferred-share proxy rows recovered from marcap.
+- *Continuation* `N` (355): 107 exchange transfers (KOSPI↔KOSDAQ migration,
+  the stock still trades) + 248 mergers / 주식교환 / SPC dissolutions (shares
+  swapped into the acquirer — exclude these, since merger premia contaminate
+  return-based analyses).
+
 ## Regenerating the calendar
 
 ```bash
@@ -167,22 +177,22 @@ for D in pd.date_range('2020-01-01', '2025-10-23'):
 
 ## Cross-source joins (for analyses needing more than OHLCV/marcap)
 
-The tickers in this calendar can be joined to `~/finance_db/fnguide_data/`
+The tickers in this calendar can be joined to `~/research/finance_db/fnguide_data/`
 on `"A" + ticker` (fnguide uses the A-prefix convention in row 9 of its
 headers):
 
-- **Investor-category daily flow** — `~/finance_db/fnguide_data/data0203`–`data0208.xlsx`.
+- **Investor-category daily flow** — `~/research/finance_db/fnguide_data/data0203`–`data0208.xlsx`.
   563/619 (91 %) of KOSPI/KOSDAQ common-kind delistings, rising to
   112/114 (98 %) for delistings in 2021 onward — and to 112/113 (99 %)
   once `kr_marcap.universe(..., strict=True)` drops the resource trust
   `152550` from the denominator. Each column ends on the delisting date.
 - **Annual consolidated financials (IFRS-C) + monthly market cap** —
-  `~/finance_db/fnguide_data/data2_0203.xlsx`. Same coverage.
+  `~/research/finance_db/fnguide_data/data2_0203.xlsx`. Same coverage.
   **Truncate at `delisting_date.year - 1`** before merging — the 6-digit
   KRX code may have been reassigned to a later listing whose financials
   will otherwise bleed in.
 - **Main-entity financials (IFRS-M), adjusted prices, daily market cap,
-  short-selling** — `~/finance_db/fnguide_data/currently_listed/` covers
+  short-selling** — `~/research/finance_db/fnguide_data/currently_listed/` covers
   **0%** of delisted names. Use marcap for prices/marcap on delisted
   names; fall back to DART (`corp_code`) for IFRS-M. No fnguide source
   exists for delisted short-selling / lending history.
@@ -190,7 +200,7 @@ headers):
   specialty funds (선박투자/리츠/호, ~2.9%) — usually excluded on
   methodological grounds anyway.
 
-Full breakdown with measured numbers: `~/finance_db/fnguide_data/DELISTED_COVERAGE.md`.
+Full breakdown with measured numbers: `~/research/finance_db/fnguide_data/DELISTED_COVERAGE.md`.
 
 ## marcap coverage verification
 
@@ -221,8 +231,8 @@ upstream `.csv.gz` files.
 
 ```python
 import pandas as pd
-cal = pd.read_csv('~/finance_db/kr_delisted/delisting_calendar.csv', dtype={'ticker': str})
-df  = pd.read_parquet('~/finance_db/marcap/data/marcap-2025.parquet')
+cal = pd.read_csv('~/research/finance_db/kr_delisted/delisting_calendar.csv', dtype={'ticker': str})
+df  = pd.read_parquet('~/research/finance_db/marcap/data/marcap-2025.parquet')
 # For any KIND-sourced row r in cal whose delisting_date is in 2025:
 #   df[(df.Code.str.zfill(6) == r.ticker) & (df.Date < r.delisting_date)].Date.max()
 # should equal r.delisting_date − 1 trading day.

@@ -61,6 +61,11 @@ fi
 # ── 5b. Re-pulled any DataGuide export? Re-stamp the vintage manifest ─────
 #    Cadence: after replacing ANY file in fnguide_data/raw/. Each sheet has its
 #    own pull date and its own universe; vintages.csv is what makes those
-#    readable without parsing 6.5 GB. ~30s — it streams headers, it does not
-#    read data.
+#    readable without parsing 6.5 GB, and run_assertions.sh fails until it
+#    matches what is on disk. ~30s — it streams headers, it does not read data.
 # python -m fnguide_data.vintages
+
+# ── 6. Re-run every package's claim assertions ────────────────────────────
+#    Cadence: after ANY step above. Regenerated data invalidates the claims
+#    the package documentation makes about it; this is the only gate (no CI).
+# ./run_assertions.sh

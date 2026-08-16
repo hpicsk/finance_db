@@ -10,7 +10,7 @@ FnGuide DataGuide 접근 불가 상황에서 KRX 공식 API를 통해
 | 전 종목 일별 업종 맵핑 | KRX 업종분류현황 API | 상장폐지 종목 자연 포함 |
 | KOSPI200/KOSDAQ150 일별 구성종목 | KRX 지수구성종목 API | 리밸런싱 이력 포함 |
 
-> **상장폐지 유니버스는 `~/finance_db/kr_delisted/` 파이프라인을 사용** (KIND 기반,
+> **상장폐지 유니버스는 `~/research/finance_db/kr_delisted/` 파이프라인을 사용** (KIND 기반,
 > 무인증, marcap 비수정 OHLCV 포함). KRX `data.krx.co.kr` 기반 상폐 마스터 수집기는
 > IP 차단 이력 및 ISIN 보강 외 용도 부재로 제거됨.
 
@@ -224,7 +224,7 @@ print(f"{ticker} KOSPI200 편입 기간: {history.iloc[0]} ~ {history.iloc[-1]}"
 # ─────────────────────────────────────────────────────────────────
 # 3. Survivorship-bias-free 유니버스 구성
 # ─────────────────────────────────────────────────────────────────
-# 상폐 종목은 ~/finance_db/kr_delisted/ 의 KIND 기반 파이프라인을 사용.
+# 상폐 종목은 ~/research/finance_db/kr_delisted/ 의 KIND 기반 파이프라인을 사용.
 # from kr_delisted.delisted_loader import universe
 # delisted_tickers = set(universe()["ticker"])
 
@@ -288,7 +288,7 @@ def join_sector(price_df: pd.DataFrame, sector_df: pd.DataFrame,
 
 ### FnGuide 데이터셋과 통합
 
-기존 FnGuide 데이터셋의 생존자 편향 보완은 `~/finance_db/kr_delisted/` 의
+기존 FnGuide 데이터셋의 생존자 편향 보완은 `~/research/finance_db/kr_delisted/` 의
 KIND 기반 파이프라인(`delisted_calendar.csv`, `delisted_loader.py`)을 활용.
 marcap 비수정 OHLCV가 함께 제공되므로 별도 시세 보완 불필요.
 
