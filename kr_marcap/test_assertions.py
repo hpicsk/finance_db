@@ -179,6 +179,16 @@ def test_fnguide_benchmark_agreement():
     for conv, claim in (("pr", 0.99977), ("tr", 0.99969)):
         days = int(per[f"n_days_{conv}"].sum())
         bad = int(per[f"n_disagree_{conv}"].sum())
+        # The rate is only a claim about the reconstruction while it is measured
+        # over the population CONSTRUCTION.md quotes it over. A gate re-run that
+        # covered a handful of tickers would push `rate` toward 1.0 and pass the
+        # bound below while the headline described nothing.
+        assert (len(per), days) == (3535, 10255070), (
+            f"CONSTRUCTION.md quotes {conv.upper()} agreement over 10,255,070 "
+            f"shared ticker-days across 3,535 tickers; this validation run "
+            f"covers {days:,} across {len(per):,}. A re-run against a newer "
+            f"marcap vintage owes the document a re-quote, not a passing test"
+        )
         rate = 1.0 - bad / days
         # 1e-5 absolute: the claim is quoted to 3 decimal places as a percentage.
         assert rate >= claim - 1e-5, (
@@ -203,6 +213,15 @@ def test_fnguide_disagreement_is_the_stuck_oracle():
     if not fp.exists():
         return "SKIP (run kr_marcap.validate_against_fnguide first)"
     days = pd.read_csv(fp, dtype={"code": str})
+    # Both bounds below are shares or ceilings, and a residue that collapsed
+    # would satisfy them without the defect being there to describe: an empty
+    # `days` makes `n_tickers` 0, and a one-row one makes `share` 1.0. Pin the
+    # population first so the two bounds are bounds on something.
+    assert len(days) == 5511, (
+        f"CONSTRUCTION.md puts the residue at 5,511 disagreeing ticker-days and "
+        f"apportions it in a table; the gate's output now holds {len(days):,}, "
+        f"so the apportionment is measured over a different denominator"
+    )
     stuck = days["cause"] == "ours frozen — stuck KRX oracle"
     share = stuck.mean()
     n_tickers = days.loc[stuck, "code"].nunique()
@@ -210,9 +229,12 @@ def test_fnguide_disagreement_is_the_stuck_oracle():
         f"CONSTRUCTION.md attributes 59.8 % of disagreeing ticker-days to the "
         f"stuck KRX oracle; the gate's output attributes {share:.1%}"
     )
-    assert n_tickers <= 20, (
-        f"CONSTRUCTION.md calls the stuck-oracle defect narrow across names "
-        f"(9 tickers); the gate's output shows {n_tickers}"
+    # Two-sided: the docstring's own case for this check is that a re-pull which
+    # *fixes* the oracle must fail it, and a one-sided ceiling is satisfied most
+    # comfortably by the defect disappearing.
+    assert 5 <= n_tickers <= 20, (
+        f"CONSTRUCTION.md calls the stuck-oracle defect narrow across names but "
+        f"present (9 tickers); the gate's output shows {n_tickers}"
     )
     return f"stuck oracle = {share:.1%} of {len(days):,} disagreeing days, {n_tickers} tickers"
 
@@ -222,6 +244,7 @@ CHECKS = [
     test_kr_kospi_common_count,
     test_adjust_heuristics_removed,
     test_adjust_canonical_cases,
+    test_adjust_provenance_stamp,
     test_fnguide_benchmark_agreement,
     test_fnguide_disagreement_is_the_stuck_oracle,
     test_seibro_zero_is_non_payment,

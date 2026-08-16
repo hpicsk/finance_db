@@ -209,10 +209,11 @@ def load_adjusted(stock_id: str,
     adj = pd.read_parquet(a)
     if len(adj):
         adj['date'] = pd.to_datetime(adj['date'])
-        # The two endpoints disagree about 600 sessions across the panel — a
-        # 補行交易日 or a stray 興櫃 print the adjusted side carries and the raw
-        # side does not. The raw calendar defines the panel, so the left join
-        # drops them; the count goes into attrs rather than nowhere.
+        # The two endpoints disagree about 600 sessions across the panel, every
+        # one of them a 補行交易日 — a Saturday worked to make up a holiday — that
+        # the adjusted side carries and the raw side has no row for. The raw
+        # calendar defines the panel, so the left join drops them; the count goes
+        # into attrs rather than nowhere, and the panel-wide total is asserted.
         vendor_only = int((~adj['date'].isin(out['date'])).sum())
         adj = adj[['date', 'close']].rename(columns={'close': 'adj_close_tr'})
         out = out.merge(adj, on='date', how='left')

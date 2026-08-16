@@ -122,9 +122,16 @@ def test_taiwan_adjusted_coverage_decomposition():
     taken out of, which is the one number a reader must not cite. This asserts
     the honest denominator and the split of what it misses, so the two cannot
     drift back into each other.
+
+    Coverage has two directions and only one of them is repairable. The
+    sessions `price_adj/` is short of are filled from `ohlcv/`; the sessions
+    `ohlcv/` is short of have no source behind them, so they are counted here
+    beside the ones that do rather than left to a per-stock `attrs` field
+    nobody sums.
     """
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
     traded = covered = hole = tail = first = 0
+    vendor_only = []
     for sid in sorted(set(u["stock_id"].astype(str))):
         fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         if not fp.exists():
@@ -142,15 +149,23 @@ def test_taiwan_adjusted_coverage_decomposition():
             hole += len(tr)
             continue
         adj_dates = pd.to_datetime(adj["date"])
+        # The other direction: dates the vendor prices that the raw file has no
+        # row for at all — not a no-trade row, no row. Taken against every raw
+        # date rather than the traded ones, so a no-trade session does not read
+        # as a missing one.
+        raw_dates = pd.to_datetime(raw["date"])
+        vendor_only += [(sid, d, d < raw_dates.min(), d > raw_dates.max())
+                        for d in set(adj_dates) - set(raw_dates)]
         miss = ~tr["date"].isin(set(adj_dates))
         covered += int((~miss).sum())
         # A session past the vendor's last is the series stopping at a delisting
         # the raw file kept printing through. Everything else is the raw series'
         # own first traded session, which the vendor series does not carry —
         # verified as exactly that, one per stock, in
-        # test_taiwan_vendor_edges_are_carried. It is not always *before* the
-        # vendor's first date: on 39 stocks the vendor starts earlier, on
-        # sessions the raw endpoint has no row for at all.
+        # test_taiwan_vendor_edges_are_carried. The vendor's own file may open on
+        # an earlier *date* than that session, because a raw series can open on a
+        # no-trade row the vendor still carries a price for; what it never does
+        # is open before the raw file does, which the `lead` count below pins.
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
         first += int((miss & (tr["date"] <= adj_dates.max())).sum())
         assert not (miss & (tr["date"] <= adj_dates.max())
@@ -172,9 +187,32 @@ def test_taiwan_adjusted_coverage_decomposition():
         f"this tree gives {hole:,} / {tail:,} / {first:,}. The first number is "
         f"the survivorship hole — if it moved, so did the bias"
     )
+
+    vo = pd.DataFrame(vendor_only, columns=["stock_id", "date", "lead", "trail"])
+    assert (len(vo), vo["stock_id"].nunique(), vo["date"].nunique()) == (600, 159, 22), (
+        f"README puts the reverse gap at 600 sessions in 159 stocks on 22 dates; "
+        f"this tree gives {len(vo):,} in {vo['stock_id'].nunique()} on "
+        f"{vo['date'].nunique()}. These are sessions `ohlcv/` has no row for, so "
+        f"unlike the missing adjusted ones they cannot be filled from the panel"
+    )
+    # Every one is a Saturday 補行交易日, which is the whole content of the
+    # finding: the raw endpoint serves those Saturdays for a thousand-odd stocks
+    # each and drops the row for a few dozen. An ordinary weekday appearing here
+    # would be a different defect wearing the same count.
+    assert set(vo["date"].dt.dayofweek) == {5}, (
+        f"README calls all 600 make-up Saturdays; this tree has vendor-only "
+        f"sessions on {sorted(set(vo['date'].dt.day_name()))}"
+    )
+    assert not vo["lead"].any() and not vo["trail"].any(), (
+        f"{int(vo['lead'].sum())} vendor-only sessions fall before the raw "
+        f"series opens and {int(vo['trail'].sum())} after it closes. Both are "
+        f"interior in this tree, which is what makes the head fill's anchor the "
+        f"raw first traded session rather than a date the raw file never reaches"
+    )
     return (f"{covered:,}/{traded:,} = {100 * covered / traded:.2f} % "
             f"(vs {100 * covered / (traded - hole):.2f} % on the bias-removed "
-            f"denominator); missing = {hole:,} hole + {tail:,} tail + {first:,} first")
+            f"denominator); missing = {hole:,} hole + {tail:,} tail + {first:,} "
+            f"first; {len(vo)} the other way, all interior make-up Saturdays")
 
 
 def test_taiwan_overlay_covers_2005_2014():
@@ -436,7 +474,7 @@ def test_taiwan_adjusted_series():
     # before_price/after_price; FinMind reaches the same number by subtracting
     # the declared distribution from the prior close instead, so the two agree
     # exactly on most events and closely on the rest.
-    rel = []
+    rel, cash = [], []
     for sid in ("2330", "2317", "1101", "2412", "1216", "2002"):
         ev = pd.read_parquet(REPO / f"finmind_data/div_result/{sid}.parquet")
         ev = ev[(ev["before_price"] > 0) & (ev["after_price"] > 0)]
@@ -450,7 +488,13 @@ def test_taiwan_adjusted_series():
                 / ev["after_price"].to_numpy(dtype=float))[ok]
         m = np.isfinite(got) & np.isfinite(want)
         rel.append(np.abs(got[m] / want[m] - 1.0))
+        # 息 is cash only; 權 and 權息 carry stock, which moves the factor under
+        # either convention and so says nothing about which one this is.
+        is_cash = (ev["stock_or_cache_dividend"].astype(str) == "息").to_numpy()[ok][m]
+        cash.append(np.abs(got[m][is_cash] - 1.0))
     rel = np.concatenate(rel)
+    cash_dev = np.concatenate(cash)
+    n_cash = len(cash_dev)
     within = float((rel < 1e-3).mean())
     assert within >= 0.98, (
         f"README claims price_adj/ carries the exchange's own total-return "
@@ -459,9 +503,15 @@ def test_taiwan_adjusted_series():
         f"Below that the series is adjusting for something else"
     )
     # A cash-only 除權息 moves the factor at all — this is what says the series
-    # is total return and not price return, where a cash event has step 1.
-    assert rel.size and float(np.median(rel)) < 1e-3 and (rel < 1e-3).sum() > 0, (
-        "the factor does not track the cash-inclusive reference-price ratio"
+    # is total return and not price return, where a cash event has step 1. The
+    # test is the step's *distance* from 1 on those events, not its agreement
+    # with the exchange, which the bound above already covers: an agreement rate
+    # is silent about which convention both sides agree on.
+    assert (n_cash, float(cash_dev.min() > 1e-3)) == (89, 1.0), (
+        f"README calls price_adj/ a total-return series, which means every one "
+        f"of the 89 cash-only 除權息 across these six names steps the factor off "
+        f"1; {n_cash} were found and the smallest step is "
+        f"{cash_dev.min():.2e} from 1. Under price return every one would be 0"
     )
 
     # (2) A no-trade session is close == 0 in ohlcv/, and the vendor fills it
@@ -471,16 +521,20 @@ def test_taiwan_adjusted_series():
     z = d["close"] == 0
     vendor = pd.read_parquet(REPO / "finmind_data/price_adj/8934.parquet")
     n_filled = int((vendor["close"] > 0).sum() - (d["close"] > 0).sum())
-    assert z.sum() > 0 and d.loc[z, "adj_close_tr"].isna().all(), (
+    # 8934 is the example because it barely trades: its zero-close rows are the
+    # majority of its file. Both counts are pinned rather than tested for
+    # presence — a single surviving zero-close row would satisfy `> 0` while the
+    # encoding this check exists for had changed underneath it.
+    assert (int(z.sum()), n_filled) == (2441, 2441), (
+        f"8934 is chosen for having 2,441 zero-close sessions, every one of "
+        f"which the vendor prices anyway; this tree has {int(z.sum())} and the "
+        f"vendor fills {n_filled}. Either the raw zero encoding or the vendor's "
+        f"carry changed, and the NaN rule below is written against both"
+    )
+    assert d.loc[z, "adj_close_tr"].isna().all(), (
         f"README claims a session the stock did not trade holds no adjusted "
         f"price; 8934 has {int(z.sum())} zero-close rows and "
         f"{int(d.loc[z, 'adj_close_tr'].notna().sum())} of them carry a number"
-    )
-    assert n_filled > 0, (
-        "README claims the vendor fills no-trade sessions with a carried "
-        "price — the failure the NaN above prevents; 8934's vendor file now "
-        "prices no more sessions than actually traded, so either the vendor "
-        "changed or the raw zero encoding did"
     )
 
     # (3) 2357 華碩 2010-06-24: an 85 % share cancellation six months before the
@@ -951,16 +1005,23 @@ def test_taiwan_filing_deadline_table_covers_the_data():
 
     from finmind_data.available_date import available_date, with_available_date
 
-    for sub, kind in (("fin_is", "financial_statement"),
-                      ("fin_bs", "financial_statement"),
-                      ("fin_cf", "financial_statement"),
-                      ("month_rev", "monthly_revenue")):
+    for sub, kind, n_ends in (("fin_is", "financial_statement", 80),
+                              ("fin_bs", "financial_statement", 53),
+                              ("fin_cf", "financial_statement", 65),
+                              ("month_rev", "monthly_revenue", 240)):
         ends = set()
         for f in sorted(glob.glob(str(REPO / f"finmind_data/{sub}/*.parquet"))):
             if not pq.ParquetFile(f).metadata.num_rows:
                 continue
             ends |= set(pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]))
-        assert ends, f"{sub}/ holds no dated rows"
+        # The count, not merely presence: this test's whole subject is that the
+        # deadline table spans the tree, and a tree that had shrunk to one
+        # period end would be spanned by any table at all.
+        assert len(ends) == n_ends, (
+            f"{sub}/ holds {len(ends)} distinct period ends against the {n_ends} "
+            f"the deadline table was checked to span. A download that widened or "
+            f"narrowed the tree owes filing_deadlines.csv a re-check"
+        )
         got = available_date(sorted(ends), kind=kind)          # raises if unruled
         assert (got.to_numpy() > pd.Series(sorted(ends)).to_numpy()).all(), (
             f"{sub}: some rows are available on or before the period they "

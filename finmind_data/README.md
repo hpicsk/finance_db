@@ -483,11 +483,37 @@ a market observation, and the last exchange close is not one. A name
 that left by merger does not go to 興櫃 at all, so the presence of a
 tail is itself a weak signal on the delisting reason (caveat 6).
 
-Two smaller edges: the vendor prices 600 sessions in 159 stocks that
-`ohlcv/` has no row for — a 補行交易日 or a stray 興櫃 print — and the
-left join on the raw calendar drops them, counted in
-`df.attrs["vendor_only_sessions"]`. And `ohlcv/` itself is a zero-row
-file for 13 stocks, on which `load_adjusted` raises.
+And `ohlcv/` itself is a zero-row file for 13 stocks, on which
+`load_adjusted` raises.
+
+### The gap that runs the other way
+
+Every figure above counts sessions `ohlcv/` has and `price_adj/` does
+not. The reverse set difference is **600 sessions in 159 stocks**, and
+it is the worse kind: a missing adjusted session is rebuilt from the raw
+one, while a missing raw session has nothing behind it to rebuild from.
+
+It is bounded, and the bound is what makes it liveable. All 600 fall on
+**22 dates, every one a Saturday** — a 補行交易日, worked to make up a
+holiday. `ohlcv/` serves those Saturdays for 1,068 to 1,620 stocks each,
+so the endpoint knows the date and drops the row for 16 to 46 names on
+it; the skew is mild (11 % of TPEx names against 5 % of TWSE). On 342 of
+the 600 the vendor's adjusted close differs from the session before it,
+so at least that many are trades `ohlcv/` does not carry. Per stock the
+median is 4 sessions and the worst is 15, against ~4,850 in a full
+series.
+
+None of the 600 falls outside the raw series' own range — no stock's
+vendor file opens before its raw file does, or runs past it. That is
+what keeps the head fill's anchor well defined, and it is why the 39
+stocks whose vendor file opens on an earlier *date* than their first
+traded session are not this problem: their raw file opens on the same
+date, on a no-trade row the vendor priced anyway.
+
+The left join on the raw calendar drops all 600, per stock in
+`df.attrs["vendor_only_sessions"]` and panel-wide in
+`test_taiwan_adjusted_coverage_decomposition`. Why the raw endpoint
+sheds make-up Saturdays for a minority of names is not answered here.
 
 ## Load the full panel
 

@@ -312,6 +312,11 @@ kr_marcap.dividend_events build`).
 labelled by cause — to `cache/fnguide_validation_days.csv`. The headline rates,
 the stuck-oracle attribution and the benchmark's delisted coverage are pinned in
 `test_assertions.py`, so a rebuild that degrades any of them fails the suite.
+Each is pinned together with the population it is quoted over — 3,535 tickers,
+10,255,070 shared ticker-days, 5,511 disagreeing ones. A rate is only a claim
+about the reconstruction while the denominator is the one the table above used;
+a validation run that reached a handful of names would carry a rate near
+1.000 and no information, and the suite has to fail on it rather than print it.
 
 ## Open
 

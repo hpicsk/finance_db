@@ -30,6 +30,30 @@ if [ "$(echo "$windows" | wc -l)" -ne 2 ]; then
   exit 1
 fi
 
+# A check the runner never calls reports nothing and fails nothing, which reads
+# from the outside exactly like a check that passes. Every `def test_*` in a
+# package must therefore appear in that package's CHECKS list; the omission is
+# invisible in the per-package output, which is why it is caught here.
+unregistered=$(python - "${files[@]}" <<'EOF'
+import ast, sys
+bad = []
+for path in sys.argv[1:]:
+    tree = ast.parse(open(path).read())
+    defined = [n.name for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
+    registered = {e.id for n in tree.body if isinstance(n, ast.Assign)
+                  and any(getattr(t, 'id', '') == 'CHECKS' for t in n.targets)
+                  for e in n.value.elts if isinstance(e, ast.Name)}
+    bad += [f'{path}: {d}' for d in defined if d not in registered]
+print('\n'.join(bad))
+EOF
+)
+if [ -n "$unregistered" ]; then
+  echo "FAIL  assertions defined but absent from CHECKS, so they never run:" >&2
+  echo "$unregistered" >&2
+  exit 1
+fi
+
 failed=()
 for f in "${files[@]}"; do
   pkg=$(dirname "$f")
