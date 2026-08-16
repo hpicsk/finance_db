@@ -81,6 +81,7 @@ seconds after any kr_status run. Dependency-ordered runbook at
 | KOSPI 200 membership history | `krx_supplement/output/index_panel_daily.parquet` |
 | Taiwan OHLCV / institutional flow | `finmind_data/ohlcv/`, `finmind_data/instflow/` |
 | Taiwan adjusted close (total return — the only convention sold) | `finmind_data/adjusted_loader.py::load_adjusted(ticker)` |
+| Taiwan fundamentals dated when they became readable, not when the quarter closed | `finmind_data/available_date.py::with_available_date(df)` |
 
 **Before joining two FnGuide sheets, read
 [`fnguide_data/README.md`](fnguide_data/README.md#️-every-sheet-has-its-own-pull-date).**

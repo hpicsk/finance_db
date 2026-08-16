@@ -753,6 +753,97 @@ def test_taiwan_adj_source_partitions_the_panel():
     return f"adj_source present exactly where a price is; exercises {sorted(seen)}"
 
 
+# ---- Taiwan: when a fundamental could first have been read ------------------
+def test_taiwan_filing_deadline_table_covers_the_data():
+    """README caveat 9: every period end in the tree resolves to a deadline.
+
+    `available_date` raises rather than returning NaT for a period end no rule
+    covers, which is only a safeguard if something exercises it against the
+    whole tree — a NaT would otherwise surface as rows quietly dropped from a
+    join. This also pins the 2012 regime boundary, which is the reason the
+    deadlines are a versioned table instead of two constants.
+    """
+    sys.path.insert(0, str(REPO))
+    import pyarrow.parquet as pq
+
+    from finmind_data.available_date import available_date, with_available_date
+
+    for sub, kind in (("fin_is", "financial_statement"),
+                      ("fin_bs", "financial_statement"),
+                      ("fin_cf", "financial_statement"),
+                      ("month_rev", "monthly_revenue")):
+        ends = set()
+        for f in sorted(glob.glob(str(REPO / f"finmind_data/{sub}/*.parquet"))):
+            if not pq.ParquetFile(f).metadata.num_rows:
+                continue
+            ends |= set(pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]))
+        assert ends, f"{sub}/ holds no dated rows"
+        got = available_date(sorted(ends), kind=kind)          # raises if unruled
+        assert (got.to_numpy() > pd.Series(sorted(ends)).to_numpy()).all(), (
+            f"{sub}: some rows are available on or before the period they "
+            f"describe, which is look-ahead rather than a bound on it"
+        )
+
+    # 證交法 §36 as amended 2010-06-02, in force 2012-01-01: the annual report
+    # goes from four months to three and the half-year from a 75-day
+    # consolidated back-stop to 45 days. A constant fitted to either side is
+    # wrong for a third of the window.
+    want = {"2010-12-31": "2011-04-30", "2011-06-30": "2011-09-13",
+            "2011-12-31": "2012-03-31", "2012-06-30": "2012-08-14",
+            "2024-12-31": "2025-03-31"}
+    got = available_date(pd.to_datetime(list(want)))
+    for (pe, exp), g in zip(want.items(), got):
+        assert g == pd.Timestamp(exp), (
+            f"README dates the {pe} period as available {exp}; "
+            f"filing_deadlines.csv now gives {g.date()}"
+        )
+
+    # The lag is a research parameter, and `date` is never overwritten.
+    d = pd.read_parquet(REPO / "finmind_data/fin_is/2330.parquet")
+    a = with_available_date(d)
+    b = with_available_date(d, extra_days=15)
+    assert (a["date"] == d["date"]).all() and (b["date"] == d["date"]).all(), (
+        "with_available_date overwrote `date`, destroying the key that says "
+        "which fiscal period a figure belongs to"
+    )
+    assert ((b["available_date"] - a["available_date"])
+            == pd.Timedelta(days=15)).all(), "extra_days is not additive"
+    return (f"every period end in fin_is/fin_bs/fin_cf/month_rev resolves; "
+            f"2012 regime boundary holds; extra_days additive")
+
+
+def test_taiwan_month_rev_date_is_the_following_month():
+    """The premise the monthly-revenue deadline rests on.
+
+    `month_rev.date` is the first of the month *after* the revenue month —
+    2005-01-01 carries `revenue_month` 12 of 2004 — so the 10th-of-the-month
+    deadline is nine days later, not a month and nine days. If FinMind ever
+    re-keys the table on the revenue month, the deadline silently becomes a
+    month too early and every monthly signal gains a month of look-ahead.
+    """
+    import pyarrow.parquet as pq
+
+    rows = off = first = 0
+    for f in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet"))):
+        if not pq.ParquetFile(f).metadata.num_rows:
+            continue
+        d = pd.read_parquet(f, columns=["date", "revenue_month", "revenue_year"])
+        dt = pd.to_datetime(d["date"])
+        per = pd.to_datetime(dict(year=d["revenue_year"], month=d["revenue_month"],
+                                  day=1))
+        rows += len(d)
+        first += int((dt.dt.day == 1).sum())
+        off += int((((dt.dt.year * 12 + dt.dt.month)
+                     - (per.dt.year * 12 + per.dt.month)) == 1).sum())
+    assert rows and off == rows and first == rows, (
+        f"README claims month_rev.date is the first of the month after the "
+        f"revenue month on every row; {rows - off:,} of {rows:,} are a "
+        f"different offset and {rows - first:,} are not the first of a month"
+    )
+    return (f"month_rev.date is the 1st of the month after revenue_month on "
+            f"all {rows:,} rows")
+
+
 CHECKS = [
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_price_adj_one_per_universe,
@@ -768,6 +859,8 @@ CHECKS = [
     test_taiwan_open_outside_session_range,
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_fundamentals_are_fiscal_dated,
+    test_taiwan_filing_deadline_table_covers_the_data,
+    test_taiwan_month_rev_date_is_the_following_month,
     test_capital_reduction_artifact_exists,
     test_taiwan_ohlcv_is_raw,
     test_taiwan_adjusted_series,

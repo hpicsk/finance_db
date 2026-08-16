@@ -127,6 +127,7 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
 ├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2005-2024)
+├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
 ├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
@@ -151,6 +152,7 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 38 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
+├── available_date.py                  fiscal period end + filing_deadlines.csv → available_date
 ├── download.log                       per-stock progress log
 ├── nohup.bg2005.out                   2005-2024 re-download runtime log (started 2026-04-27)
 └── .token                             FinMind API token (chmod 600)
@@ -543,13 +545,61 @@ ohlcv_all = pd.concat(
    — the quarter that closed, not the day the filing became public — and carry
    no column for the latter. Joining them to prices on `date` hands a trader
    figures weeks before they existed, which is look-ahead bias, not
-   survivorship, and it reaches every fundamental signal built here. A TW
-   filing-deadline lag is the only in-package correction, and it is a bound
-   rather than a date. `month_rev/` has a `create_time` field that would carry
-   the disclosure stamp, but it is empty on **every** row — 40,735 of 40,735
-   across the first 200 files, not merely on the old ones. `dividend/` is the
-   exception that shows what the others lack: it carries `AnnouncementDate` and
+   survivorship, and it reaches every fundamental signal built here.
+   `month_rev/` has a `create_time` field that would carry the disclosure
+   stamp, but it is empty on **every** row — 40,735 of 40,735 across the first
+   200 files, not merely on the old ones. `dividend/` is the exception that
+   shows what the others lack: it carries `AnnouncementDate` and
    `AnnouncementTime`, so its events align point-in-time as delivered.
+
+    `available_date.py` is the in-package correction, and it is a **bound**
+    rather than a date — the statutory filing deadline, i.e. the latest day by
+    which the figure had to be public:
+
+    ```python
+    from finmind_data.available_date import with_available_date
+
+    fin = with_available_date(pd.read_parquet(".../fin_is/2330.parquet"))
+    rev = with_available_date(pd.read_parquet(".../month_rev/2330.parquet"),
+                              kind="monthly_revenue")
+    ```
+
+    `date` is never overwritten — the fiscal period and the tradeable day are
+    two separate facts — and `extra_days` shifts the bound as a research
+    parameter, because whether a signal survives being read a fortnight later
+    is a property of the signal worth measuring.
+
+    The deadlines live in `filing_deadlines.csv`, one cited row per
+    (`rule_type`, era, `entity_class`), because **the window spans a regime
+    change**: the 2010-06-02 amendment to 證券交易法 §36 took effect
+    自一百零一年一月一日 (2012-01-01) and cut the annual report from four months
+    to three and the half-year report from a 75-day consolidated back-stop to
+    45 days. FY2010 resolves to 2011-04-30 and FY2011 to 2012-03-31; H1 2011 to
+    2011-09-13 and H1 2012 to 2012-08-14. A single constant is wrong for a
+    third of the window. Pre-2012 the quarterly deadlines used are the
+    *consolidated* back-stops (45 and 75 days) rather than the parent-only one
+    month and two months, because `fin_is/` carries consolidated line items and
+    the back-stop is both the binding and the later date.
+
+    `month_rev.date` is already the first of the month **after** the revenue
+    month — 2005-01-01 carries `revenue_month` 12 of 2004, on all 368,265 rows
+    — so its deadline is nine days on, not a month and nine.
+
+    Two ways the bound stays loose, both deliberate. Shortened deadlines are
+    not applied: a listed company with paid-in capital of NT$10bn or more files
+    its annual report within 75 days from the FY2022 accounts, and
+    financial-sector issuers file earlier still, but every such rule *shortens*
+    the deadline, so the general one stays a valid upper bound and using it
+    costs power rather than correctness (`entity_class` carries one value,
+    `all`, so a sourced row can be added as data). That every variant shortens
+    holds because `universe.parquet` is 上市/上櫃 only — the longer deadline an
+    unlisted public company gets and the pre-2012 quarterly exemption for 興櫃
+    companies reach nothing here, and a widened universe would need its own
+    rows first. And a **late filer is not covered** — the deadline is what the
+    law required, not what the company did, and a company that filed late, or
+    one granted a 不可抗力 extension, published after the date computed here.
+    Closing that needs the announcement dates in 公開資訊觀測站 filings, which
+    no FinMind endpoint mirrors (caveat 8).
 10. **`open` is not inside `[min, max]` on 2.2 % of rows.** 167,930 traded rows
     across 836 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
