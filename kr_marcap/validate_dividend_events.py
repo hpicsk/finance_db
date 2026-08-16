@@ -21,7 +21,10 @@ it is the one that would have caught a specific failure:
 5. DART reconciliation — SEIBro events summed over a December fiscal year against
    DART's annual 주당 현금배당금 from ``cache/dividends.parquet``. The two are
    collected independently (예탁원 권리배정 record vs 사업보고서 disclosure), so
-   agreement is a real check rather than a tautology.
+   agreement is a real check rather than a tautology. Second half: the events
+   SEIBro prices at ₩0, which ``dps > 0`` discards as non-payers. If that reading
+   were wrong they would be uncorrected ex-days inside ``adj_close_tr``, so the
+   confirmation rate is measured against the priced control rather than assumed.
 
 Sections 1-3 need ``marcap/`` populated, 4 needs ``cache/adj_factors.parquet``,
 5 needs ``cache/dividends.parquet``. Whole run ~1 min.
@@ -38,7 +41,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from kr_marcap.dividend_events import MARCAP_DIR, load_cash_events
+from kr_marcap.dividend_events import (EVENTS_PATH, MARCAP_DIR, _CASH_KINDS,
+                                       load_cash_events)
 
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -268,6 +272,36 @@ def check_dart_reconciliation() -> None:
               f'{(s["rel"] <= 0.05).mean() * 100:>6.1f}%')
     print('  → the delisted subset is the one that matters: it is the survivorship '
           'evidence')
+
+    # The premise under `dps > 0`: a zero means the company paid nothing, not
+    # that SEIBro lost the amount. Read the other way, every zero would be an
+    # uncorrected ex-day drop sitting in adj_close_tr, so the layer rests on
+    # this. None of the zeros shares a 기준일 with a priced row — they are
+    # standalone events, not the 대주주 half of a 차등배당 — which leaves DART as
+    # the only independent test. A missing amount would confirm at the priced
+    # rate; a real non-payment confirms near zero.
+    allev = pd.read_parquet(EVENTS_PATH)
+    allev = allev[allev['kind'].isin(_CASH_KINDS)].copy()
+    allev['fy'] = allev['record_date'].dt.year
+    fy0, fy1 = int(dart['fiscal_year'].min()), int(dart['fiscal_year'].max())
+    paid = set(zip(dart['code'], dart['fiscal_year']))
+    sib = set(map(tuple, allev.loc[allev['dps'] > 0,
+                                   ['code', 'record_date']].to_numpy()))
+    zero = allev[allev['dps'] == 0]
+    shared = np.fromiter(((c, d) in sib for c, d in
+                          zip(zero['code'], zero['record_date'])),
+                         dtype=bool, count=len(zero))
+
+    print(f'\n  ₩0 cash events: is a zero a non-payment or a lost amount?  '
+          f'(n={len(zero):,}, {int(shared.sum())} sharing a 기준일 with a priced row)')
+    print(f'  {"subset":26} {"n":>6} {"DART reports a payment":>24}')
+    for lab, s in (('dps == 0', zero), ('dps > 0  (control)', allev[allev['dps'] > 0])):
+        w = s[s['fy'].between(fy0, fy1)]
+        hit = np.fromiter(((c, y) in paid for c, y in zip(w['code'], w['fy'])),
+                          dtype=bool, count=len(w))
+        print(f'  {lab:26} {len(w):>6} {hit.sum():>15,} ({hit.mean() * 100:.1f}%)')
+    print(f'  → a zero reads as a real non-payment. The first row is the '
+          f'false-negative rate of `dps > 0`, bounded only over FY{fy0}-{fy1}')
 
 
 if __name__ == '__main__':
