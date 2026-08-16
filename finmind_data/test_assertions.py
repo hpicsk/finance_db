@@ -838,6 +838,97 @@ def test_taiwan_post_delisting_sessions_are_marked():
             f"{100 * max(ratios):.0f} % of their listed-era volume")
 
 
+# ---- Taiwan: no-trade sessions, and the closure of is_valid ----------------
+def test_taiwan_no_trade_rows_are_not_holdable():
+    """README, "Which rows to trust": the fourth `invalid_reason`, panel-wide.
+
+    `close == 0` encodes a session the stock did not trade, and the vendor fills
+    those rows with the last traded price — so the panel carries a level for a
+    day on which nothing changed hands. Under "a position a study could have
+    held" they are not positions, and they were the one class `is_valid` let
+    through: the chain is intact, no cancellation is missing, the name had not
+    delisted. A backtest filtering on the flag alone would have assumed a fill.
+
+    Two things are asserted, and they fail on different mistakes. The counts pin
+    *this* reason: dropping the mask leaves the 167,011 rows valid with no reason
+    at all, which the reason split below catches and the closure below does not,
+    because a row that is valid and unnamed is consistent. The closure pins the
+    *next* one: every False row carries a reason and every True row carries none,
+    across the whole panel, so a reason added later that marks `is_valid` without
+    naming itself — or names itself without marking — fails here. That failure is
+    invisible in any per-stock check, because each stock's own reasons look
+    complete.
+
+    The split between the segment reasons and this one is pinned too. It is a
+    precedence choice rather than a fact about the data: a no-trade session
+    behind a break keeps the break's name, because those rows would not have
+    been holdable had they traded either.
+    """
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+
+    from finmind_data.adjusted_loader import load_adjusted
+
+    rows = invalid = mismatched = zero = zero_stocks = 0
+    by_reason: dict[str, int] = {}
+    no_trade_stocks = set()
+    empty = []
+    for p in sorted(glob.glob(str(REPO / "finmind_data/ohlcv/*.parquet"))):
+        sid = Path(p).stem
+        try:
+            df = load_adjusted(sid)
+        except ValueError:
+            # The 13 stocks whose OHLCV file holds no rows at all; a 14th would
+            # push the count past the assertion below rather than pass quietly.
+            empty.append(sid)
+            continue
+        z = df["close"].to_numpy(dtype=float) == 0.0
+        reason = df["invalid_reason"].to_numpy()
+        valid = df["is_valid"].to_numpy()
+        rows += len(df)
+        invalid += int((~valid).sum())
+        mismatched += int((valid != (reason == "")).sum())
+        zero += int(z.sum())
+        zero_stocks += int(z.any())
+        for r in np.unique(reason[z]):
+            by_reason[r] = by_reason.get(r, 0) + int((reason[z] == r).sum())
+        nt = reason == "no_trade"
+        if nt.any():
+            no_trade_stocks.add(sid)
+            assert (z[nt].all() and df.loc[nt, "adj_close_tr"].isna().all()
+                    and not valid[nt].any()), (
+                f"{sid}: a no_trade row must be a zero close, carry no adjusted "
+                f"price and be is_valid False; "
+                f"{int((~z[nt]).sum())}/{int(df.loc[nt, 'adj_close_tr'].notna().sum())}"
+                f"/{int(valid[nt].sum())} of {int(nt.sum())} break one of those")
+
+    assert len(empty) == 13, (
+        f"README says 13 stocks have a zero-row OHLCV file and load_adjusted "
+        f"raises on them; {len(empty)} raised here, so this pass covered a "
+        f"different panel than the counts below were measured on")
+    assert (rows, zero, zero_stocks) == (7_689_304, 179_749, 1_325), (
+        f"README quotes 179,749 no-trade sessions in 1,325 stocks over a "
+        f"7,689,304-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+        f"{rows:,}. Every count below is a share of that population")
+    assert mismatched == 0, (
+        f"README claims is_valid alone is now enough — every False row carries "
+        f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
+        f"rows break that, so invalid_reason no longer accounts for is_valid")
+    assert by_reason == {"no_trade": 167_011,
+                         "series_break": 3_240,
+                         "unpriced_cancellation": 9_498}, (
+        f"README claims 167,011 no-trade sessions take the new reason and the "
+        f"12,738 behind a break keep the break's; the split here is {by_reason}")
+    assert len(no_trade_stocks) == 1_309, (
+        f"README claims the 167,011 no_trade rows fall in 1,309 stocks — the "
+        f"1,325 with a zero close, less the 16 whose zero closes all sit behind "
+        f"a break; {len(no_trade_stocks):,} carry one here")
+    return (f"{by_reason['no_trade']:,} no-trade sessions in "
+            f"{len(no_trade_stocks):,} stocks marked invalid, "
+            f"{zero - by_reason['no_trade']:,} more kept by a segment reason; "
+            f"is_valid accounts for all {invalid:,} invalid rows of {rows:,}")
+
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 38 stocks, 10,981 sessions.
@@ -878,7 +969,10 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         )
         for k in df.loc[df["adj_source"] != "", "adj_source"].unique():
             kinds[k] = kinds.get(k, 0) + 1
-        reasons |= set(df.loc[~df["is_valid"], "invalid_reason"].unique())
+        # Over the traded sessions only, which is the population `invalid`
+        # counts. Every stock also carries no-trade rows, and they are invalid
+        # for a reason that has nothing to do with the rebuild.
+        reasons |= set(df.loc[t & ~df["is_valid"], "invalid_reason"].unique())
 
     assert (len(holes), traded, priced) == (38, 10981, 10981), (
         f"README claims all 38 vendor holes come back priced across their "
@@ -1098,6 +1192,7 @@ CHECKS = [
     test_taiwan_vendor_defects_are_patched,
     test_taiwan_vendor_edges_are_carried,
     test_taiwan_post_delisting_sessions_are_marked,
+    test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,

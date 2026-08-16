@@ -347,18 +347,31 @@ df = df[df["is_valid"] & df["adj_close_tr"].notna()]   # then take returns
 ```
 
 `is_valid` is "this row is a position a study could have held", and it
-fails at either end of the series. Behind the last break — a share
-cancellation no filing priced, or a multi-year trading gap after which
-the ticker came back as a different listing (309 breaks in 231 stocks,
-3.00 % of rows). Past the last exchange session — the 3,089 興櫃 quotes
-below. `invalid_reason` says which, because the flag is one column and
-the three are not the same problem: `unpriced_cancellation` means a step
-is missing from the chain, `series_break` means the rows behind belong
-to another company, `post_delisting_emerging` means the price is right
-and the market was not one you could trade in. None of them means "this
-price is wrong". The vendor marks none of them: 2357's 85 % reduction on
-2010-06-24 comes through at a factor step of exactly 1, leaving the raw
-53.2 → 240.5 jump in the adjusted series as a +351 % return (caveat 5).
+fails three ways. Two are the ends of the series: behind the last break
+— a share cancellation no filing priced, or a multi-year trading gap
+after which the ticker came back as a different listing (309 breaks in
+231 stocks, 3.00 % of rows) — and past the last exchange session, the
+3,089 興櫃 quotes below. The third is one session anywhere between them:
+the stock did not trade (167,011 rows in 1,309 stocks), so no level the
+panel carries was a price anyone could transact at.
+
+`invalid_reason` says which, because the flag is one column and the four
+are not the same problem: `unpriced_cancellation` means a step is
+missing from the chain, `series_break` means the rows behind belong to
+another company, `post_delisting_emerging` means the price is right and
+the market was not one you could trade in, `no_trade` means there was
+nothing to buy. None of them means "this price is wrong". The vendor
+marks none of them: 2357's 85 % reduction on 2010-06-24 comes through at
+a factor step of exactly 1, leaving the raw 53.2 → 240.5 jump in the
+adjusted series as a +351 % return (caveat 5).
+
+The two segment reasons win where they overlap the third, so the 12,738
+no-trade sessions that sit behind a break keep the break's name — a row
+in a history this series does not continue would not have been holdable
+had it traded either. `adj_close_tr` was already NaN on all 179,749, so
+the two-column filter above dropped them before this reason existed;
+what changed is that `is_valid` alone now drops them too, and that every
+False row in the panel's 7,689,304 carries a reason for being one.
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -386,10 +399,11 @@ later check isolate it without re-deriving which stocks had events.
 
 `adj_close_tr` is NaN where the raw `close` is 0 — FinMind's encoding
 for a session the stock did not trade (179,749 rows, 2.34 %, in 1,325
-stocks). The vendor prices 176,230 of those sessions anyway, at the last
+stocks). The vendor prices 179,622 of those sessions anyway, at the last
 traded price, so the zero that identifies them survives only in
 `ohlcv/`; filtering on `adj_close_tr > 0` alone would keep every one of
-them.
+them, and so would filtering on `is_valid` alone before `no_trade`
+existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 

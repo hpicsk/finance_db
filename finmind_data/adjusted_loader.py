@@ -58,11 +58,14 @@ calculation should not believe, all measured against ``ohlcv/`` and
 
 **A no-trade session carries a price.** FinMind writes a session the stock did
 not trade as ``close == 0`` in ``ohlcv/`` — 179,749 rows, 2.34 % of the panel,
-in 1,325 stocks. The adjusted series fills those rows with the last traded price
-instead (8934 has 2,441 of them, every one carrying a number), so the zero that
-identifies them is gone and a caller filtering on ``adj_close_tr > 0`` keeps all
-of them. They are NaN here, and the raw ``close`` is kept alongside so the test
-stays available.
+in 1,325 stocks. The adjusted series fills 179,622 of those rows with the last
+traded price instead (8934 has 2,441 of them, every one carrying a number), so
+the zero that identifies them is gone and a caller filtering on
+``adj_close_tr > 0`` keeps all of them. They are NaN here, the raw ``close`` is
+kept alongside so the test stays available, and they are ``is_valid`` False
+under ``invalid_reason = 'no_trade'``: a price nobody could transact at is not a
+position, and a backtest that filtered on the flag alone would otherwise assume
+a fill on a day the stock did not trade.
 
 **A share cancellation no filing priced goes through unadjusted.**
 ``capital_reduction.parquet`` starts on 2011-01-25 while prices start in 2005,
@@ -72,7 +75,7 @@ on 2010-06-24 has a vendor factor step of 1.0000, which leaves the raw 53.2 →
 finds those cancellations in the share count, and ``is_valid`` is False for every
 row before the last of them. The same flag carries series splices, where a ticker
 stops trading for years and comes back as a different listing, so
-``invalid_reason`` names which of the three disqualified it.
+``invalid_reason`` names which of the four disqualified it.
 
 **A price is not a permission.** The 3,089 carried sessions are 興櫃 quotes for
 names that left the exchange — 1107 is the largest at 1,151: the vendor ends
@@ -88,10 +91,12 @@ market observation, and the last exchange close is not one. That is the use the
 fill is for, and the flag is what keeps it to that use.
 
 ``is_valid`` is therefore "this row is a position a study could have held", and
-the two ways it fails are opposite ends of the series: a row before the last
-break belongs to a history this one does not continue, and a row after the last
-exchange session belongs to a market it could not have traded in.
-``invalid_reason`` is what separates them, and neither is "this price is wrong".
+it fails three ways. Two are the ends of the series: a row before the last break
+belongs to a history this one does not continue, and a row after the last
+exchange session belongs to a market it could not have traded in. The third is
+one session anywhere between them — the stock did not trade, so there was no
+price to transact at whatever level the panel carries. ``invalid_reason`` is
+what separates the three, and none of them is "this price is wrong".
 
 What is left uncovered stays NaN rather than being dropped, so the gap stays
 visible beside the raw price that does cover it — the no-trade sessions, and the
@@ -170,7 +175,9 @@ def load_adjusted(stock_id: str,
       ``is_valid``       this row is a position a study could have held
       ``invalid_reason`` why not: ``unpriced_cancellation`` or ``series_break``
                          behind the last break, ``post_delisting_emerging``
-                         past the last exchange session, ``''`` where valid
+                         past the last exchange session, ``no_trade`` on a
+                         session inside both that the stock did not trade,
+                         ``''`` where valid
 
     Any other price column adjusts the same way — ``adj_open_tr = open *
     tr_factor`` — which is what makes the factor rather than the adjusted close
@@ -312,6 +319,19 @@ def load_adjusted(stock_id: str,
         if after.any():
             valid[after] = False
             out.loc[after, 'invalid_reason'] = 'post_delisting_emerging'
+
+    # And the middle. The two reasons above describe a *segment* — everything
+    # behind the last break, everything past the last exchange session — while a
+    # no-trade session is one row inside the segment they leave standing, and it
+    # is not a position either: there was nothing to buy at any price. The
+    # adjusted close is already NaN on these rows, so the documented two-column
+    # filter dropped them; what this reason adds is that ``is_valid`` alone now
+    # does, which is what the column claims to mean. It fills only rows the
+    # segment reasons did not claim, because a row behind a break would not have
+    # been holdable had it traded either.
+    no_trade = ~traded & (out['invalid_reason'].to_numpy() == '')
+    valid[no_trade] = False
+    out.loc[no_trade, 'invalid_reason'] = 'no_trade'
     out['is_valid'] = valid
 
     # Coverage is over traded sessions: the vendor also serves the no-trade rows
