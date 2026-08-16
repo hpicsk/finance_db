@@ -62,6 +62,9 @@ finmind_data/capital_reduction.parquet
 # detect_unpriced_actions.py
 finmind_data/unpriced_actions.parquet
 
+# TWSE 除權除息計算結果表, regenerable from twse.com.tw via download_exright.py
+finmind_data/exright_reference.parquet
+
 # Investor-aggregate generated CSV (regenerable via transform_investor_data.py)
 fnguide_data/investor_aggregate/investor_trading_data.csv
 

@@ -1,8 +1,9 @@
 """Read-only checks on the Taiwan adjusted series. `python -m finmind_data.validate_adjust`
 
 Counterpart to ``kr_marcap.validate_dividend_events``. Each check answers "what
-would have broken if this were wrong?" rather than restating the build; the six
-families and the per-market results are written up in ADJUSTED_PRICE_VERIFICATION.md.
+would have broken if this were wrong?" rather than restating the build; the
+results are written up in VERIFICATION.md, whose sections §1-§9 are these same
+nine checks in the same order.
 
   [1] the input is raw          before_price vs our own stored prior close
   [2] the factor is understood  before - 차감액 == after, from the exchange's own columns
@@ -12,6 +13,8 @@ families and the per-market results are written up in ADJUSTED_PRICE_VERIFICATIO
   [6] the pr split is right      D checked where 配股率 is zero by construction,
                                  and the 減資 split against the share count
   [7] nothing else is left       extreme adjusted moves no event accounts for
+  [8] the cash leg has a 2nd source  TWSE's own 權值/息值 vs the declaration
+  [9] a 2nd implementation agrees  the only other public one, run head to head
 """
 from __future__ import annotations
 
@@ -19,11 +22,13 @@ import numpy as np
 import pandas as pd
 
 from finmind_data.adjust import (CAP_RED_PATH, DIV_RESULT_DIR, DIVIDEND_DIR,
-                                 OHLCV_DIR, _PAR_VALUE, _RED_AFTER, _RED_BEFORE,
-                                 _RED_CASH_REASONS, _RED_REASON, _cash_dps,
+                                 EXRIGHT_PATH, OHLCV_DIR, _PAR_VALUE,
+                                 _RED_AFTER, _RED_BEFORE, _RED_CASH_REASONS,
+                                 _RED_REASON, _cash_dps, _read_events,
                                  _refund_per_share, available_stocks,
                                  load_adjusted)
-from finmind_data.detect_unpriced_actions import SHARES_DIR
+from finmind_data.detect_unpriced_actions import (_CAP_RED_COVERAGE_START,
+                                                  SHARES_DIR)
 
 # The research window the documented figures are quoted on (twn_* pipeline).
 Y0, Y1 = '2020-01-01', '2024-12-31'
@@ -270,8 +275,16 @@ def check_unexplained_moves(sample: list[str]) -> None:
     artefact rather than an adjustment error — a stale near-zero close, a
     pre-listing 興櫃 quote, a single corrupted row — and the value of the check is
     that the list stays short enough to read.
+
+    Split by the 減資 coverage boundary, the residual also answers whether the
+    uncovered window is contaminated by cancellations the detector missed. It is
+    the natural worry — recall is 92 %, so roughly one in twelve should still be
+    unmarked — and the sign settles it, because a cancellation nobody priced can
+    only jump *upward*: the history behind it is never scaled up. A population of
+    missed reductions therefore has to skew the excess positive.
     """
     hits, rows = [], 0
+    pre_rows = 0
     for sid in sample:
         df = load_adjusted(sid)
         # Exactly the filter load_adjusted's docstring tells a caller to apply.
@@ -282,6 +295,8 @@ def check_unexplained_moves(sample: list[str]) -> None:
         ev = (df['is_ex_date'] | df['is_cap_red']).to_numpy()
         ok = np.isfinite(a[:-1]) & np.isfinite(a[1:]) & (a[:-1] > 0)
         rows += int(ok.sum())
+        early = (df['date'].to_numpy()[1:] < _CAP_RED_COVERAGE_START.to_datetime64())
+        pre_rows += int((ok & early).sum())
         r = np.where(ok, a[1:] / np.where(ok, a[:-1], 1.0) - 1.0, np.nan)
         for i in np.nonzero(ok & (np.abs(r) > _EXTREME_MOVE) & ~ev[1:])[0]:
             hits.append(dict(stock_id=sid, date=df['date'].iloc[i + 1],
@@ -302,6 +317,31 @@ def check_unexplained_moves(sample: list[str]) -> None:
            .to_string(index=False))
     print('  → these are raw-price artefacts, not adjustment failures: the '
           'adjustment has no step to apply on any of them')
+
+    early = h['date'] < _CAP_RED_COVERAGE_START
+    print(f'\n  split at the 減資 coverage start ({_CAP_RED_COVERAGE_START.date()}) '
+          f'— is the uncovered window contaminated?')
+    print(f'  {"era":9} {"pairs":>11} {"hits":>6} {"per 10k":>8} {"up":>7} '
+          f'{"med prev close":>15} {"< NT$5":>7}')
+    up = {}
+    for lab, m, n in (('pre', early, pre_rows),
+                      ('2011-01-25+', ~early, rows - pre_rows)):
+        g = h[m]
+        up[lab] = (int((g['ret'] > 0).sum()), len(g))
+        print(f'  {lab:9} {n:>11,} {len(g):>6,} {1e4 * len(g) / max(n, 1):>8.2f} '
+              f'{up[lab][0] / max(len(g), 1):>7.1%} '
+              f'{g["prev_close"].median():>15.2f} '
+              f'{(g["prev_close"] < 5.0).mean():>7.1%}')
+    (u1, n1), (u2, n2) = up['pre'], up['2011-01-25+']
+    p = (u1 + u2) / (n1 + n2)
+    z = (u1 / n1 - u2 / n2) / np.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
+    print(f'  two-proportion z on the up share  {z:+.2f}')
+    print('  → a missed cancellation can only jump upward, so a population of them '
+          'would skew the early era positive. It does not separate from the later '
+          'era at this sample size, while the price level does, which puts the '
+          'heavier early residual on tick-size arithmetic in cheap stocks rather '
+          'than unadjusted capital reductions. Large misses only: a reduction '
+          f'smaller than {_EXTREME_MOVE:.0%} never enters this count.')
 
 
 def measure_pr_split() -> dict:
@@ -445,6 +485,146 @@ def check_cap_red_split() -> None:
           'label is load-bearing rather than assumed')
 
 
+def check_exchange_split() -> None:
+    """TWSE's own 除權除息計算結果表 against the two things the build reads.
+
+    ``div_result`` and TWT49U are both TWSE publications, so agreement on the
+    reference prices only proves the join found the same event — which is worth
+    proving, because everything after it depends on that. The two informative
+    comparisons are downstream: TWT49U's 權/息 label against the kind marker the
+    build classifies events by, and its 息值 against the declared dividend the
+    split subtracts. The second is what licenses filling a missing declaration
+    from the exchange instead: a source that disagreed here would be changing
+    values, not filling holes.
+    """
+    ex = pd.read_parquet(EXRIGHT_PATH)
+    ex['date'] = pd.to_datetime(ex['date'])
+    cash = ex['cash_value'].to_numpy(dtype=float)
+    kind = ex['kind'].to_numpy()
+    cash = np.where(np.isnan(cash) & (kind == '息'),
+                    ex['total_value'].to_numpy(dtype=float), cash)
+    cash = np.where(np.isnan(cash) & (kind == '權'), 0.0, cash)
+    ex['exch_cash'] = cash
+
+    rows = []
+    for sid in available_stocks():
+        p = pd.read_parquet(OHLCV_DIR / f'{sid}.parquet')[['date', 'close']]
+        p['date'] = pd.to_datetime(p['date'])
+        ev = _read_events(sid, p)
+        ev = ev[ev['kind'] == '除權息']
+        if not len(ev):
+            continue
+        rows.append(ev.assign(
+            stock_id=sid,
+            declared=ev['date'].map(_cash_dps(sid)).to_numpy(dtype=float)))
+    m = pd.concat(rows).merge(
+        ex[['stock_id', 'date', 'before_price', 'after_price',
+            'exch_cash', 'kind']].rename(columns={'kind': 'exch_kind'}),
+        on=['stock_id', 'date'], how='inner')
+
+    print(f'\n[8] TWSE 除權除息計算結果表 as a third source  '
+          f'({len(ex):,} events, 息值 published on {int(ex["cash_value"].notna().sum()):,})')
+    d = (m['before'] - m['before_price']).abs()
+    a = (m['before'] / m['step'] - m['after_price']).abs()
+    print(f'  joined {len(m):,} of our 除權息 events')
+    print(f'  same event   |before - 除權息前收盤價| < 1e-6  {(d < 1e-6).mean():7.4%}')
+    print(f'               |after  - 除權息參考價|   < 1e-6  {(a < 1e-6).mean():7.4%}')
+
+    ours = np.where(m['pr_step'].isna(), '權息',
+                    np.where(np.isclose(m['pr_step'], 1.0), '息',
+                             np.where(np.isclose(m['pr_step'], m['step']),
+                                      '權', '權息')))
+    agree = (ours == m['exch_kind'].to_numpy())
+    print(f'  our kind marker == TWSE 權/息 label     '
+          f'{agree.mean():7.4%}  ({int((~agree).sum())} disagree)')
+
+    b = m[m['declared'].notna() & m['exch_cash'].notna() & (m['declared'] > 0)]
+    rel = ((b['exch_cash'] - b['declared']).abs() / b['declared']).to_numpy()
+    print(f'  息值 vs the declared dividend (n={len(b):,})  '
+          f'<1e-6 {np.mean(rel < 1e-6):7.4%}   <1% {np.mean(rel < 0.01):7.4%}')
+    print('  → the exchange and the declaration name the same number, so reading '
+          '息值 where nothing was declared fills gaps without moving values')
+
+
+def check_independent_implementation(ev: pd.DataFrame) -> None:
+    """The only other public implementation of this adjustment, run head to head.
+
+    FinMind carried one inside ``taiwan_stock_daily_adj()`` until it deleted the
+    arithmetic in PR #269 (merged 2023-09-24) and moved the series behind its
+    sponsor tier. Nothing else public computes these factors, which makes it the
+    obvious objection to this build — why not just use that one — and the answer
+    owes a number rather than a preference.
+
+    It reads the same two tables and differs in exactly two places. On 除權息 it
+    subtracts ``stock_and_cache_dividend`` from the prior close instead of reading
+    the reference price sitting in the next column over, so that row measures what
+    the column choice is worth. On 減資 it inverts the par-value rule for every
+    reason alike, with no branch on ``ReasonforCapitalReduction`` — and because
+    that inversion undoes the exchange's own forward rule, the par-value
+    assumption cancels and its total-return step is right regardless. Printing the
+    second row is the point: it places the reason branch this build carries in the
+    price-return split of [6] and nowhere else, which check [6] on its own would
+    not tell a reader.
+
+    Only the total-return chain is comparable, because the reference
+    implementation has no price-return series, no placement for an ex-date the
+    exchange closed, and no validity marking. It also reads the prior close from
+    the price series where ``before`` is taken from the filing; [1] measures that
+    gap at under 1e-6 on 99.81 % of events, well inside what is reported here.
+    """
+    rows = []
+    for sid in available_stocks():
+        p = pd.read_parquet(OHLCV_DIR / f'{sid}.parquet')[['date', 'close']]
+        p['date'] = pd.to_datetime(p['date'])
+        e = _read_events(sid, p)
+        if len(e):
+            rows.append(e.assign(stock_id=sid))
+    m = pd.concat(rows, ignore_index=True).merge(
+        ev[['stock_id', 'date', 'stock_and_cache_dividend']]
+          .drop_duplicates(['stock_id', 'date']),
+        on=['stock_id', 'date'], how='left')
+    before = m['before'].to_numpy(dtype=float)
+    after = before / m['step'].to_numpy(dtype=float)
+    is_div = (m['kind'] == '除權息').to_numpy()
+
+    # Both branches are quoted from the removed implementation rather than
+    # re-derived, down to its missing guard on a reduction that reprices to par:
+    # a check that rewrites the code it is checking is not checking it.
+    fm = np.full(len(m), np.nan)
+    fm[is_div] = ((before - m['stock_and_cache_dividend'].to_numpy(dtype=float))
+                  / before)[is_div]
+    red = ~is_div
+    with np.errstate(divide='ignore', invalid='ignore'):
+        r = (after[red] - before[red]) / (after[red] - _PAR_VALUE)
+        fm[red] = ((before[red] - _PAR_VALUE * r) / (1.0 - r)) / before[red]
+    m['rel'] = fm / (after / before) - 1.0
+
+    print('\n[9] the only other public implementation, run head to head  '
+          '(FinMind pre-PR#269)')
+    print(f'  {"chain":8} {"n":>7} {"agrees <1e-6":>13} {"p99 |rel|":>11} '
+          f'{"max |rel|":>11}')
+    for lab, k in (('除權息', is_div), ('減資', red)):
+        x = np.abs(m['rel'].to_numpy()[k])
+        x = x[np.isfinite(x)]
+        print(f'  {lab:8} {len(x):>7,} {np.mean(x < _TOL_EXACT):>12.2%} '
+              f'{np.quantile(x, 0.99):>11.2e} {x.max():>11.2e}')
+    # Per event the disagreement is small; what a user of the series would feel is
+    # the whole chain of them compounded into the level of the oldest bar.
+    drift = m.groupby('stock_id')['rel'].apply(
+        lambda x: np.prod(1.0 + x.to_numpy()) - 1.0).abs()
+    print(f'  compounded into the oldest bar, per stock (n={len(drift):,})   '
+          f'median {drift.median():.2e}   p95 {drift.quantile(0.95):.2e}   '
+          f'max {drift.max():.4f} ({drift.idxmax()})')
+    print('  → 減資 agrees to machine precision because the inversion undoes the '
+          'exchange\'s forward rule, so the reason branch of [6] is load-bearing '
+          'for the pr split alone and not for the tr chain')
+    print('  → 除權息 is where reading stock_and_cache_dividend instead of the '
+          'reference price shows up, and the gap survives compounding on few enough '
+          'stocks that the tr series is not what justifies this build')
+    print('  → what is absent from the table is the rest of the answer: no pr '
+          'series, no ex-date the exchange closed, no validity marking')
+
+
 def _declared_ratio(stock_id: str, dates: pd.Series) -> np.ndarray:
     """Declared 配股率 on each date — the comparison target of [6], never an input."""
     p = DIVIDEND_DIR / f'{stock_id}.parquet'
@@ -473,6 +653,8 @@ def main() -> None:
     check_pr_split()
     check_cap_red_split()
     check_unexplained_moves(stocks)
+    check_exchange_split()
+    check_independent_implementation(ev)
 
 
 if __name__ == '__main__':

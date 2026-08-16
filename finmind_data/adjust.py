@@ -33,8 +33,15 @@ are mixed need arithmetic, and there
 strips the cash leg out of the exact published ratio using the declared cash
 dividend ``D`` alone. ``D`` is verified independently on the 15,449 cash-only
 events, where 配股率 is zero by construction and the identity reduces to
-``after == before - D`` — it holds for 99.99 % of them. See
-ADJUSTED_PRICE_VERIFICATION.md.
+``after == before - D`` — it holds for 99.99 % of them.
+
+Where nothing was ever declared, ``D`` comes from TWSE's own 息值 in
+``exright_reference.parquet`` instead. That report is the exchange's arithmetic
+behind the very same reference prices, and the two name the same number: they
+agree to 1e-6 on 97.1 % of the 10,495 events where both speak, and to 1 % on all
+of them. So the declaration stays primary and the exchange only fills holes,
+which is what takes the unsplittable events from 250 in 113 stocks to 107 in 61.
+See VERIFICATION.md.
 
 Chain composition. 除權息 (``div_result/``) and 減資 (``capital_reduction.parquet``)
 never share a ``(stock_id, date)`` pair across the whole 2005-2024 history — 0
@@ -98,6 +105,7 @@ DIV_RESULT_DIR = ROOT / 'div_result'
 DIVIDEND_DIR = ROOT / 'dividend'
 CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
 UNPRICED_PATH = ROOT / 'unpriced_actions.parquet'
+EXRIGHT_PATH = ROOT / 'exright_reference.parquet'
 
 # Cash legs of a distribution, TWD per share. Their sum is the `D` that the
 # price-return split subtracts; validated at 99.99 % on cash-only events.
@@ -158,6 +166,42 @@ def _cash_dps(stock_id: str) -> pd.Series:
              .groupby(pd.to_datetime(d[_DECLARED_EX]))['D'].sum())
 
 
+def _exchange_cash_dps(stock_id: str) -> pd.Series:
+    """TWSE's own cash leg per ex-date, as a second source for a mixed 權息.
+
+    ``_cash_dps`` reads the declaration, which some stocks and years never filed.
+    TWT49U is the exchange's own arithmetic behind the very same two reference
+    prices, so where it publishes 息值 the leg is named outright rather than
+    inferred. Through 2008 it publishes it; from 2009 only the sum 權值+息值
+    survives, and the 權/息 label still settles the two pure cases — a 息 event
+    is all cash, a 權 event none of it — leaving a 權息 undetermined, which is
+    returned as absent rather than guessed.
+
+    Where both sources speak they are the same number: 97.1% of the 10,495
+    events agree to 1e-6 and all of them to 1%, so this fills gaps without
+    moving any leg the declaration already named. ``download_exright`` builds
+    the file; a missing one raises, since the events it resolves would otherwise
+    stay NaN with no sign that a source for them exists.
+    """
+    if not EXRIGHT_PATH.exists():
+        raise FileNotFoundError(
+            f'{EXRIGHT_PATH} is missing — run '
+            f'`python -m finmind_data.download_exright` first. Without it the '
+            f'mixed 權息 events whose cash dividend was never declared stay '
+            f'unresolved and their price-return steps stay NaN.')
+    d = pd.read_parquet(EXRIGHT_PATH)
+    d = d[d['stock_id'].astype(str) == str(stock_id)]
+    if not len(d):
+        return pd.Series(dtype=float)
+    cash = d['cash_value'].to_numpy(dtype=float)
+    kind = d['kind'].to_numpy()
+    # 息 and 權 are the same kind markers the div_result chain reads above.
+    cash = np.where(np.isnan(cash) & (kind == '息'),
+                    d['total_value'].to_numpy(dtype=float), cash)
+    cash = np.where(np.isnan(cash) & (kind == '權'), 0.0, cash)
+    return pd.Series(cash, index=pd.DatetimeIndex(d['date'])).dropna()
+
+
 def _refund_per_share(before: np.ndarray, after: np.ndarray) -> np.ndarray:
     """Cash a 現金減資 refunds per share, implied by its two reference prices.
 
@@ -192,7 +236,8 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
     除權 and a 彌補虧損 減資 carry no cash and pass through unchanged; a cash-only
     除息 is entirely cash, so its ``pr_step`` is 1. Two kinds fuse cash with a
     share-count change and need the cash leg named: a mixed 權息 takes it from the
-    declaration, a 現金減資 from ``_refund_per_share``. Either way ``pr_step`` is
+    declaration, falling back to TWSE's own published 息值 where nothing was ever
+    declared, and a 現金減資 from ``_refund_per_share``. Either way ``pr_step`` is
     NaN when the leg cannot be recovered, rather than silently 1.
 
     ``px`` is this stock's own (date, close) series, sorted. Both filters below
@@ -286,6 +331,10 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
     mixed = (fused & (ev['kind'] == '除權息')).to_numpy()
     if mixed.any():
         cash_leg[mixed] = ev['date'].map(_cash_dps(stock_id)).to_numpy()[mixed]
+        gap = mixed & np.isnan(cash_leg)
+        if gap.any():
+            cash_leg[gap] = (ev['date'].map(_exchange_cash_dps(stock_id))
+                             .to_numpy()[gap])
     refund = (fused & (ev['kind'] == '減資')).to_numpy()
     if refund.any():
         cash_leg[refund] = _refund_per_share(ev['before'].to_numpy(),

@@ -111,10 +111,10 @@ python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEI
 | `validate_dividend_events.py` | Re-runs the five checks behind the total-return claims: ex-date localisation, drop-off robustness, the December artifact, event placement, and the DART reconciliation. Read-only, ~1 min. |
 | `seibro_probe.py` | Raw SEIBro endpoint inspection — `raw` (every field of a window, incl. the ones the loader drops), `count` (LIST_CNT vs rows served, per quarter), `hole` (bisect for the first row offset the server refuses). For diagnosing a build, not for building. |
 
-Why any of these checks establish anything — and the two measurement traps that
-produced confident wrong numbers — is in
-[`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md), which
-covers the Taiwanese series on the same terms.
+Why any of these checks establish anything — and the date-demeaning trap that
+produced a confident wrong number — is in [`VERIFICATION.md`](VERIFICATION.md).
+[`finmind_data/VERIFICATION.md`](../finmind_data/VERIFICATION.md) covers the
+Taiwanese series on the same terms.
 
 ## What "common stock" means here
 

@@ -125,6 +125,7 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── delisted_missing.parquet           9 delistings excluded from universe (ETFs/DRs)
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
+├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
 ├── ohlcv/<stock_id>.parquet           daily prices & volume                              (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
 ├── shares/<stock_id>.parquet          shares outstanding + foreign ownership             (2005-2024)
@@ -143,6 +144,7 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── download.py                        resumable downloader (--datasets to filter)
 ├── consolidate_capred.py              merges cap_red/*.parquet → capital_reduction.parquet
 ├── detect_unpriced_actions.py         share drops no filing explains → unpriced_actions.parquet
+├── download_exright.py                TWSE TWT49U (free, keyless) → exright_reference.parquet
 ├── adjust.py                          back-adjusted close, price-return and total-return
 ├── validate_adjust.py                 read-only checks on what `adjust.py` builds
 ├── download.log                       per-stock progress log
@@ -166,7 +168,7 @@ in the 10-year backup).
 |---|---|---|
 | `date`             | str    | YYYY-MM-DD |
 | `stock_id`         | str    | 4-digit ticker |
-| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — verified 99.87 % exact against the exchange's own pre-event `before_price` (see [`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md)) |
+| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — verified 99.87 % exact against the exchange's own pre-event `before_price` (see [`VERIFICATION.md`](VERIFICATION.md)) |
 | `spread`           | float64 | close − prior close (TWD) |
 | `Trading_Volume`   | int64  | shares traded |
 | `Trading_money`    | int64  | **trading value in TWD** (used for FFI normalization) |
@@ -275,8 +277,12 @@ mechanical negative return (−311 bp mean on 除權息 sessions, against
 +29 bp under `tr`) on a seasonally clustered set of dates, which a
 flow-return study has to handle rather than ignore. `pr` is also NaN
 before the last fused cash-and-share event whose cash leg could not be
-recovered — 250 events in 113 stocks — rather than silently guessing a
-split.
+recovered — 107 events in 61 stocks — rather than silently guessing a
+split. Two sources are tried for that leg: the declaration in `dividend/`,
+then TWSE's own 息值 in `exright_reference.parquet`, which resolves 143
+events the declaration never covered. What remains is the 上櫃 side, which
+publishes no reachable archive, and the 權息 events from 2009 on, the year
+TWSE stopped printing the split (see caveat 7).
 
 Two columns say which rows to trust, and both need filtering, not
 reading past:
@@ -295,7 +301,7 @@ stock did not trade, not a price, so both adjusted closes are NaN there
 
 Verification results, the free parameters and the residual ex-day
 effect are in
-[`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md);
+[`VERIFICATION.md`](VERIFICATION.md);
 `python -m finmind_data.validate_adjust` reproduces them.
 
 ## Load the full panel
@@ -350,11 +356,13 @@ ohlcv_all = pd.concat(
    chaining the exchange's own reference prices: `div_result/` (除權息,
    `after_price/before_price`, covers cash *and* rights) and `cap_red/` (減資).
    The two event sets are disjoint, so the chains compose without double
-   counting. See [`ADJUSTED_PRICE_VERIFICATION.md`](../ADJUSTED_PRICE_VERIFICATION.md).
+   counting. See [`VERIFICATION.md`](VERIFICATION.md).
 5. **減資 events start on 2011-01-25**, six years after the prices do. This is
-   FinMind's endpoint, not the download — the reference prices for an earlier
-   reduction were never published to this account, so nothing reconstructs the
-   step. `detect_unpriced_actions.py` finds the cancellations from
+   the *exchange's* limit, not FinMind's and not the download's: TWSE's own
+   TWTAUU report refuses any start date before ROC 100/1/1 and its first row is
+   the same 2011-01-25, so no tier and no mirror reaches further back and
+   nothing reconstructs the step. `detect_unpriced_actions.py` finds the
+   cancellations from
    `shares/NumberOfSharesIssued` instead (92.6 % precision, 92.0 % recall where
    the filed events can score it) and `adjust.py` marks the history behind each
    one `is_valid=False`. 250 such cancellations in 193 stocks fall in the
@@ -368,6 +376,14 @@ ohlcv_all = pd.concat(
    and at least one corrupted row — 8454 on 2014-09-09 reports `open` 241.04
    and `max` 242.49 against `min` = `close` = 3.43, which reads as −98.6 %
    followed by +6,853 %.
+7. **TWSE stopped publishing the 除權息 split in 2009.** `exright_reference.parquet`
+   carries 權值 and 息值 as separate columns for 2005-2008 and only their sum
+   `權值+息值` from 2009 on, alongside a `權/息` label. The label still settles a
+   pure 息 or 權 event, so only a fused 權息 after 2008 is left without a cash
+   leg. There is no OTC counterpart at all: TPEX's `exDailyQ_result.php` has the
+   identical field list but serves a rolling few-day window and ignores every
+   date parameter, and its `preAnnounce` table likewise returns only current
+   forward announcements. Both limits are the publisher's, not the download's.
 
 ## Cross-market notes (Korea ↔ Taiwan)
 
@@ -450,6 +466,13 @@ Follow-up — delivered (top-level files, not in per-stock DATASETS):
 | `delisted_universe.parquet` | `TaiwanStockDelisting` | Already in repo — the existing file *is* the `TaiwanStockDelisting` market-wide one-shot output (315 rows, 2001-2026). Verified 2026-04-26. Columns: `date`, `stock_id`, `stock_name`, `year` (year derived from date). No re-download needed. |
 | `capital_reduction.parquet` | `TaiwanStockCapitalReductionReferencePrice` | Concatenated event log (sparse: most stocks have 0 events). 9 columns including `PostReductionReferencePrice`, `ExrightReferencePrice`, `ReasonforCapitalReduction`. Per-stock raw files in `cap_red/`; `consolidate_capred.py` merges them. **The endpoint's earliest row is 2011-01-25**, six years after the price series starts — see caveat 5. |
 
+Not a FinMind endpoint at all — the exchange serves it free and without a key:
+
+| File | Source | Notes |
+|---|---|---|
+| `exright_reference.parquet` | TWSE **TWT49U** 除權除息計算結果表, `www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=&endDate=&response=json` | 15,314 events / 1,269 stocks, 2005-01-11 → 2024-12-31. Whole-year queries are not truncated (2007 returns 538 rows either way), so `download_exright.py` needs 20 requests. Carries the same two reference prices as `div_result/` — they agree to 1e-6 on **100.00 %** of the 13,891 joined events — plus the **權值 / 息值 split** `div_result` lacks, which resolves 143 fused events whose cash dividend was never declared. Schema narrows in 2009; see caveat 7. Probed 2026-08-01. |
+| — | TWSE **TWTAUU** 股票減資恢復買賣參考價格, `…/rwd/zh/reducation/TWTAUU` | **Not downloaded, and it settles caveat 5.** The exchange refuses any start date before ROC 100/1/1 (`查詢開始日期小於100年1月1日，請重新查詢!`) and its first row is 100/01/25 = **2011-01-25**, byte-identical to where FinMind's `cap_red/` begins. The pre-2011 gap is therefore TWSE's own publication limit, not a vendor tier — no paid plan and no other mirror can close it. Probed 2026-08-01. |
+
 Other follow-up not pursued:
 
 - `TaiwanStockNews` — event-study material; size and dedup overhead not
@@ -519,8 +542,9 @@ python consolidate_capred.py    # → capital_reduction.parquet
 # (Delisting events are already in delisted_universe.parquet — no
 # separate fetch needed; `TaiwanStockDelisting` produced this file.)
 
-# Adjustment — needs div_result/, capital_reduction.parquet and shares/, no network
+# Adjustment — needs div_result/, capital_reduction.parquet and shares/
 python -m finmind_data.detect_unpriced_actions --calibrate   # → unpriced_actions.parquet
+python -m finmind_data.download_exright   # TWSE TWT49U, ~20 requests, no key
 python -m finmind_data.validate_adjust    # checks what adjust.py builds
 ```
 
