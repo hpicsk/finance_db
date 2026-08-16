@@ -10,14 +10,17 @@ refresh runbook), `run_assertions.sh` (runs every package's assertions), and
 No CI; verification is ad-hoc via `./run_assertions.sh` or direct shell /
 notebook runs.
 
-## Keep the root a container
+## Keep the root a container, and each package self-contained
 
-New documentation goes in the package it describes, not here. A document that
-genuinely spans packages — the Korea-vs-Taiwan adjusted-price comparison is the
-only one — lives as a short section in `README.md` pointing at both sides,
-never as a root-level file that duplicates either. Likewise a new claim
-assertion goes in the `test_assertions.py` of the package whose documentation
-makes the claim.
+New documentation goes in the package it describes, not here, and it describes
+*that* package only. A package's docs do not name another package's files,
+methods or findings — not as a pointer, not as a contrast, not as "the same
+question answered elsewhere". Those references read as free context and are
+not: they turn one package's rewrite into an edit in every package that
+mentioned it, and they go stale silently because nothing checks a prose
+cross-reference. `README.md` here is the map between packages and is the only
+place a reader is told both exist. Likewise a new claim assertion goes in the
+`test_assertions.py` of the package whose documentation makes the claim.
 
 ## Don't propose merging the three top-level KR packages
 

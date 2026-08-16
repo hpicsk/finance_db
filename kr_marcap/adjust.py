@@ -361,10 +361,11 @@ def _apply_total_return(out: pd.DataFrame, ticker: str,
     Events whose ex-date is not a row of this ticker's series (delisted before it,
     or inside pre-series-break history dropped as ``valid=False``) are skipped
     rather than shifted onto a neighbouring session, and counted in the returned
-    frame's ``attrs['tr_events_unplaced']``. Shifting them is not the Taiwanese
-    remedy in disguise: every one that falls inside a listed window falls inside
-    a multi-year gap, so the next session is years away and would receive a
-    decade of dividends at once. ``attrs['tr_events_unpriced']`` counts the
+    frame's ``attrs['tr_events_unplaced']``. Placing them on the next session
+    instead would be wrong here, not merely conservative: every one that falls
+    inside a listed window falls inside a multi-year gap, so the next session is
+    years away and would receive a decade of dividends at once.
+    ``attrs['tr_events_unpriced']`` counts the
     separate case of an ex row whose close is a stale zero.
 
     ``is_ex_date`` marks the rows carrying an add-back. Korean prices fall only

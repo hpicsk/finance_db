@@ -13,11 +13,6 @@ Method and failure modes for the Korean price layer are in
 [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md). This file is about
 **verification**, not construction.
 
-The Taiwanese series answers the same questions against different authorities,
-and the asymmetry between the two is worth reading as a pair —
-[`finmind_data/VERIFICATION.md`](../finmind_data/VERIFICATION.md), with the
-side-by-side summary in the [repo README](../README.md#adjusted-price-series--korea-vs-taiwan).
-
 ## How Korea is put together
 
 | | |
@@ -30,15 +25,13 @@ side-by-side summary in the [repo README](../README.md#adjusted-price-series--ko
 | **Builder** | `kr_marcap.adjust.load_adjusted(…, total_return=True)` |
 
 KRX splits the problem for you, publishing a structural-only factor and nothing
-for cash. So Korea's `adj_close` is free and `adj_close_tr` is the derived one —
-the opposite of Taiwan, where the exchange publishes one fused reference price
-and the price-return series is the one that has to be recovered.
+for cash. So Korea's `adj_close` is free and `adj_close_tr` is the derived one.
 
 The series does not end at zero, and should not. Affected sessions are marked
 with `is_ex_date` instead.
 
-**Korea has a seventh check the Taiwanese side does not: the paid series
-itself.** FnGuide DataGuide publishes both Korean conventions, so
+**There is a seventh check, and it is the strongest: the paid series itself.**
+FnGuide DataGuide publishes both Korean conventions, so
 `kr_marcap.validate_against_fnguide` scores the reconstruction directly against
 the vendor it reproduces — 99.977 % (price return) and 99.969 % (total return) of
 daily returns on 10.26 M shared ticker-days, delisted names included. It belongs
@@ -160,9 +153,6 @@ real ex-day tax/clientele effect. It is marked, not erased.
 That row and that 0.663 are one measurement, taken on a downstream research
 panel as a same-date payer-versus-non-payer contrast. Nothing in this repo
 rebuilds them.
-The Taiwanese rows in [`finmind_data/VERIFICATION.md`](../finmind_data/VERIFICATION.md)
-§5 are a different estimator that happens to answer the same question — see
-[Open](#open) before comparing the two.
 
 ---
 
@@ -228,9 +218,9 @@ python -m kr_marcap.dividend_events             # Samsung quarterly ex-date demo
   Three estimators of the same ex-day drop-off are in play and none of them is a
   reading of another. The published 0.663 is that same-date contrast over all 23
   ex-dates. Check [3] runs the identical contrast restricted to the December
-  session alone and reads −155 bp / +71 bp. A port of Taiwan's check [5] — mean
-  raw against mean `ChangesRatio + dps/close_cum` over affected rows, no
-  payer/non-payer differencing at all — reads −73 bp / +145 bp on 0.209 % of
+  session alone and reads −155 bp / +71 bp. A third — mean raw against mean
+  `ChangesRatio + dps/close_cum` over affected rows, no payer/non-payer
+  differencing at all — reads −73 bp / +145 bp on 0.209 % of
   rows, a ratio of 0.33, while check [1]'s cross-sectional slope reads 0.81
   trimmed and 0.31 untrimmed. The affected-row share is the one quantity all of
   them agree on. Quote the estimator with the number, always.
@@ -241,7 +231,7 @@ python -m kr_marcap.dividend_events             # Samsung quarterly ex-date demo
 - **2004 dividend coverage is partial** — SEIBro refuses 1,303 rows of
   the 2004-12-31 window. Reported by the build rather than silently dropped;
   see the defect table in [`README.md`](README.md).
-- **Korea has no `is_cap_red` analogue.** `ChangesRatio` folds capital
-  reductions in with everything else structural, so the Taiwanese finding that
-  減資 is the larger per-event distortion cannot be checked on the Korean side
-  with what is built.
+- **Capital reductions are not separable.** `ChangesRatio` folds them in with
+  everything else structural, so whether they carry a larger per-event
+  distortion than ordinary structural events cannot be checked with what is
+  built.

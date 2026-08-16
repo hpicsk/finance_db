@@ -42,6 +42,7 @@ marcap/
 
 # FinMind per-stock parquets (~1.6 GB total)
 finmind_data/ohlcv/
+finmind_data/price_adj/
 finmind_data/instflow/
 finmind_data/shares/
 finmind_data/per_pbr/
@@ -68,6 +69,13 @@ finmind_data/unpriced_actions.parquet
 
 # TWSE 除權除息計算結果表, regenerable from twse.com.tw via download_exright.py
 finmind_data/exright_reference.parquet
+
+# NOT ignored, deliberately: finmind_data/vendor_event_audit.parquet. It grades
+# the vendor's adjusted series against the exchange event by event, so it is a
+# snapshot of something that can change under a re-download rather than a
+# derivation of something stable — the same reason krx_adj_oracle.parquet is
+# kept below. adjusted_loader patches seven events off it, and
+# test_assertions.py regenerates it and fails if the committed copy has drifted.
 
 # Investor-aggregate generated CSV (regenerable via transform_investor_data.py)
 fnguide_data/investor_aggregate/investor_trading_data.csv

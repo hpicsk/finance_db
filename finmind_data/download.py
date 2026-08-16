@@ -1,4 +1,4 @@
-"""Resumable Taiwan market data downloader (FinMind free tier).
+"""Resumable Taiwan market data downloader (FinMind API).
 
 Per-stock parquet files for three datasets:
   - ohlcv/{stock_id}.parquet          (TaiwanStockPrice)
@@ -28,12 +28,12 @@ DATASETS = {
     "ohlcv":             "TaiwanStockPrice",
     "instflow":          "TaiwanStockInstitutionalInvestorsBuySell",
     "shares":            "TaiwanStockShareholding",
+    # back-adjusted price (還原股價), sponsor tier only. Total-return
+    # convention: cash dividends are removed along with the share events, so
+    # `close` here is the counterpart of a KRX-style dividend-inclusive series
+    # and there is no price-return variant (README "Adjusted prices").
+    "price_adj":         "TaiwanStockPriceAdj",
     # priority extension (informed-trading / reversal research).
-    # TaiwanStockPriceAdj is gated above our `register` level for every calling
-    # convention, so its "Free (with data_id)" doc line is wrong (re-probed
-    # 2026-07-29; see README "Excluded"). Build the adjusted series from
-    # TaiwanStockPrice plus the per-event exchange reference prices in
-    # div_result / cap_red below.
     "per_pbr":           "TaiwanStockPER",
     "margin_short":      "TaiwanStockMarginPurchaseShortSale",
     "month_rev":         "TaiwanStockMonthRevenue",
@@ -49,9 +49,8 @@ DATASETS = {
     # Most stocks have 0 rows; consolidate post-download with
     # consolidate_capred.py into a single capital_reduction.parquet.
     "cap_red":           "TaiwanStockCapitalReductionReferencePrice",
-    # exchange-published 除權息 reference prices (before_price/after_price),
-    # the per-event adjustment factor for a 還原股價 series. Verified reachable
-    # at register level 2026-07-29, unlike TaiwanStockPriceAdj above.
+    # exchange-published 除權息 reference prices (before_price/after_price).
+    # Their ratio is the per-event factor price_adj above is checked against.
     "div_result":        "TaiwanStockDividendResult",
 }
 
@@ -153,7 +152,10 @@ def main() -> int:
     ap.add_argument("--start", default="2005-01-01")
     ap.add_argument("--end", default="2024-12-31")
     ap.add_argument("--sleep", type=float, default=6.5,
-                    help="seconds between requests (free tier ~600/hr → 6s)")
+                    help="seconds between requests; pace to the token's hourly "
+                         "quota (register 600/hr → 6s, sponsor 6000/hr → 0.7s), "
+                         "which api.web.finmindtrade.com/v2/user_info reports "
+                         "as api_request_limit_hour")
     ap.add_argument("--limit", type=int, default=0, help="0 = all")
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--stocks", nargs="*", default=None,

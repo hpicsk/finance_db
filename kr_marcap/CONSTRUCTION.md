@@ -25,8 +25,7 @@ benchmark. *Method* is in [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) (the
 compounding rule and its failure modes) and
 [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) (how a share-count
 change is classified). *Verification against sources other than FnGuide* is in
-[`VERIFICATION.md`](VERIFICATION.md), and the Taiwanese series on the same terms
-in [`finmind_data/VERIFICATION.md`](../finmind_data/VERIFICATION.md).
+[`VERIFICATION.md`](VERIFICATION.md).
 
 ---
 

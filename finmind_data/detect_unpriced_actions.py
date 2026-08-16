@@ -6,13 +6,17 @@ download, and nothing in the reference-price chain can see past it — a 減資 
 before 2011 leaves its full mechanical price jump inside the adjusted series with
 ``is_cap_red`` reading False.
 
+FinMind's own ``TaiwanStockPriceAdj`` inherits the same limit — 2357's 85 %
+reduction on 2010-06-24 has a vendor factor step of 1.0000 — so buying the
+adjusted series does not retire this detector.
+
 ``shares/NumberOfSharesIssued`` is a third source, from a different endpoint, and it
 covers 2005 onward. A share cancellation shows up there as a one-step drop, so it
 can say *that* an action happened in the window where the event file cannot. It
 cannot say by how much the exchange repriced: the reference prices simply are not
 published anywhere this account can reach. So this script detects and reports; it
-never synthesises a factor. ``adjust.py`` marks the history behind each detection
-``is_valid = False`` rather than guessing a step for it.
+never synthesises a factor. ``adjusted_loader.py`` marks the history behind each
+detection ``is_valid = False`` rather than guessing a step for it.
 
 Parameters (see CLAUDE.md §6.1):
   MEASURED  none — no parameter here is fitted to a target.
@@ -39,11 +43,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from finmind_data.adjust import (CAP_RED_PATH, DIV_RESULT_DIR, OHLCV_DIR,
-                                 UNPRICED_PATH)
+from finmind_data.adjusted_loader import OHLCV_DIR, UNPRICED_PATH
 
 ROOT = Path(__file__).resolve().parent
 SHARES_DIR = ROOT / 'shares'
+# The two filed-event chains, read here only as the explainer set: a detected
+# share drop within _EXPLAINED_WINDOW_DAYS of a filing is one the exchange priced.
+DIV_RESULT_DIR = ROOT / 'div_result'
+CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
 
 _MIN_SHARE_DROP = 0.05
 _MIN_SUSPENSION_DAYS = 5

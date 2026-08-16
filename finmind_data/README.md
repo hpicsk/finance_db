@@ -2,11 +2,12 @@
 
 Per-stock daily / monthly / quarterly market data for common equities
 listed on the Taiwan Stock Exchange (TWSE) and Taipei Exchange (TPEx),
-covering **2005-01-01 to 2024-12-31**: OHLCV, institutional order flow,
-shareholding, valuation multiples (PER/PBR), margin + short balances,
-monthly revenue, fundamentals (IS/BS/CF), dividends, securities lending,
-and capital-reduction events. Plus market-wide reference files for
-delistings. Intended for informed-trading / return-reversal research as
+covering **2005-01-01 to 2024-12-31**: OHLCV raw and back-adjusted,
+institutional order flow, shareholding, valuation multiples (PER/PBR),
+margin + short balances, monthly revenue, fundamentals (IS/BS/CF),
+dividends, securities lending, and capital-reduction events. Plus
+market-wide reference files for delistings.
+Intended for informed-trading / return-reversal research as
 a cross-market validation of Korean-market findings (paired with
 `~/research/finance_db/fnguide_data`, which starts ~2000).
 
@@ -125,8 +126,10 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── delisted_missing.parquet           9 delistings excluded from universe (ETFs/DRs)
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
+├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
-├── ohlcv/<stock_id>.parquet           daily prices & volume                              (2005-2024)
+├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
+├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
 ├── shares/<stock_id>.parquet          shares outstanding + foreign ownership             (2005-2024)
 ├── per_pbr/<stock_id>.parquet         daily PER / PBR / dividend yield                   (2005-2024)
@@ -145,8 +148,9 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── consolidate_capred.py              merges cap_red/*.parquet → capital_reduction.parquet
 ├── detect_unpriced_actions.py         share drops no filing explains → unpriced_actions.parquet
 ├── download_exright.py                TWSE TWT49U (free, keyless) → exright_reference.parquet
-├── adjust.py                          back-adjusted close, price-return and total-return
-├── validate_adjust.py                 read-only checks on what `adjust.py` builds
+├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
+├── adjust.py                          rebuilds a factor from exchange reference prices (the 38 holes)
+├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
 ├── download.log                       per-stock progress log
 ├── nohup.bg2005.out                   2005-2024 re-download runtime log (started 2026-04-27)
 └── .token                             FinMind API token (chmod 600)
@@ -168,7 +172,7 @@ in the 10-year backup).
 |---|---|---|
 | `date`             | str    | YYYY-MM-DD |
 | `stock_id`         | str    | 4-digit ticker |
-| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — verified 99.87 % exact against the exchange's own pre-event `before_price` (see [`VERIFICATION.md`](VERIFICATION.md)) |
+| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — the cum-session close matches the exchange's own pre-event `before_price` on 99.82 % of the 22,369 除權息 events since 2005 (99.87 % of the 7,543 since 2020), at the two decimals the exchange publishes. This is what says `ohlcv/` reflects nothing, which is why `price_adj/` exists; `test_assertions.py` re-derives it |
 | `spread`           | float64 | close − prior close (TWD) |
 | `Trading_Volume`   | int64  | shares traded |
 | `Trading_money`    | int64  | **trading value in TWD** (used for FFI normalization) |
@@ -253,56 +257,186 @@ df["mktcap_twd"] = df["close"] * df["NumberOfSharesIssued"]
 ## Adjusted prices
 
 `ohlcv/close` is raw, so any return spanning a 除權息 or 減資 session
-carries the full reference-price step. `adjust.py` rebuilds the
-back-adjusted series from the exchange's own published reference
-prices, in both conventions:
+carries the full reference-price step. The back-adjusted series is
+`price_adj/` — FinMind's `TaiwanStockPriceAdj`, bought at the sponsor
+tier — and `adjusted_loader.py` joins it onto the raw series, fills the
+38 stocks it does not serve, and replaces its step on seven events where
+it disagrees with the exchange in direction rather than in a cent:
 
 ```python
-from finmind_data.adjust import load_adjusted
+from finmind_data.adjusted_loader import load_adjusted
 
-df = load_adjusted("2330")   # + pr_factor / adj_close_pr, tr_factor / adj_close_tr
+df = load_adjusted("2330")   # raw OHLCV + tr_factor / adj_close_tr
+                             #   + adj_source / adj_method / is_valid
 ```
 
-| | removes | leaves | use when |
-|---|---|---|---|
-| `adj_close_pr` | 無償配股, 現增, and the share-cancellation half of 減資 | every cash drop as a real return — dividends *and* 現金減資 refunds | you want a price series — the usual vendor "adjusted close", and the symmetric counterpart to KRX `ChangesRatio` |
-| `adj_close_tr` | all of it, cash included | +29 bp ex-day residual | you want what a holder earned |
+**One convention, and it is total return.** Cash dividends come out
+along with 無償配股, 現增 and 減資, so `adj_close_tr` measures what a
+holder earned, not what the price did. There is no price-return variant
+of the endpoint at any tier, and the exchange makes one hard to build:
+TWSE/TPEx publish a single fused reference price per 除權息 event
+covering cash and shares together, so recovering the price-only half
+means splitting that number event by event. A study that needs the
+price alone has no source here.
 
-The factors are the primary output — any other price column adjusts the
-same way (`adj_open_tr = open * tr_factor`) — and both are normalised to
-1.0 on the last row, so the adjusted close there is the raw close.
+The factor is the primary output — any other price column adjusts the
+same way (`adj_open_tr = open * tr_factor`) — and it is re-anchored to
+1.0 on the last covered session, so the adjusted close there is the raw
+close. The vendor anchors its own series to the latest session in
+FinMind's database, which moves on every re-download; re-anchoring is
+what makes a repeated download reproduce the same numbers rather than
+merely the same returns.
 
-`pr` costs something `tr` does not: the ex-day drop survives as a large
-mechanical negative return (−311 bp mean on 除權息 sessions, against
-+29 bp under `tr`) on a seasonally clustered set of dates, which a
-flow-return study has to handle rather than ignore. `pr` is also NaN
-before the last fused cash-and-share event whose cash leg could not be
-recovered — 107 events in 61 stocks — rather than silently guessing a
-split. Two sources are tried for that leg: the declaration in `dividend/`,
-then TWSE's own 息值 in `exright_reference.parquet`, which resolves 143
-events the declaration never covered. What remains is the 上櫃 side, which
-publishes no reachable archive, and the 權息 events from 2009 on, the year
-TWSE stopped printing the split (see caveat 7).
+**What the vendor computes**, and where it is wrong. Each 除權息 event
+should contribute the exchange's own `before_price / after_price`, and
+`vendor_event_audit.py` grades all 22,370 filed events against it —
+22,336 of them sit between two adjacent covered sessions and can be
+read. The step matches to 1e-6 on 83.3 % and to 1e-3 on 99.5 % (p99
+7.9e-4, max 4.1e-2). The residual is FinMind reaching the same number a
+different way: it subtracts the *declared* distribution from the prior
+close instead of reading the reference price, and the two land a whole
+cent apart in the per-share amount. 1715's 2005-07-25 event is typical —
+the exchange repriced 8.94 → 8.42 (息值 0.52) and the vendor removed
+0.51. That difference is bounded per event, does not accumulate, and
+lives only on the ex-date session.
 
-Two columns say which rows to trust, and both need filtering, not
+Seven events are not a cent apart but wrong, and `adjusted_loader`
+replaces the vendor's step with the exchange's on them:
+
+| defect | n | what it is |
+|---|---|---|
+| `sign_flip` | 6 | a 現金增資 subscribed **above** the market raises the reference price (25 events in the panel do); on these six the vendor scaled the history the other way |
+| `malformed_twin` | 1 | 3454 on 2011-07-27 is filed twice — the real 84.20 → 79.07 and a row reading before 0.00 / after −2.30. The vendor removed 7.42 = 5.12 + 2.30 |
+
+The patch moves the ex-date factor by 0.39 % to 4.11 %, and six of the
+seven reverse the sign of that session's return (1442 goes from −3.74 %
+to +0.22 %). Both defects are found by *shape* — a step on the wrong
+side of 1.0, a date carrying a non-positive reference leg — so a
+re-download is graded rather than matched against a list of stock ids.
+
+`vendor_event_audit.parquet` is the fixed record of all of this, one row
+per filed event. A step found later at a `vendor`/`rebuilt` boundary is
+answered by that file rather than re-derived from scratch;
+`test_assertions.py` regenerates it and fails if the committed copy has
+drifted.
+
+**Two columns say which rows to trust**, and both need filtering, not
 reading past:
 
 ```python
 df = load_adjusted("2330")
-df = df[df["is_valid"] & (df["close"] > 0)]   # then take returns
+df = df[df["is_valid"] & df["adj_close_tr"].notna()]   # then take returns
 ```
 
 `is_valid` is False for history behind a series break — a share
 cancellation no filing priced, or a multi-year trading gap after which
 the ticker came back as a different listing (309 breaks in 231 stocks,
-3.0 % of rows). `close == 0` is FinMind's encoding for a session the
-stock did not trade, not a price, so both adjusted closes are NaN there
-(179,749 rows, 2.34 %).
+3.00 % of rows). `invalid_reason` says which of the two, because the
+flag is one column and the two are not the same problem:
+`unpriced_cancellation` means a step is missing from the chain,
+`series_break` means the rows behind belong to another company. The
+vendor marks neither: 2357's 85 % reduction on 2010-06-24 comes through
+at a factor step of exactly 1, leaving the raw 53.2 → 240.5 jump in the
+adjusted series as a +351 % return (caveat 5).
 
-Verification results, the free parameters and the residual ex-day
-effect are in
-[`VERIFICATION.md`](VERIFICATION.md);
-`python -m finmind_data.validate_adjust` reproduces them.
+**`adj_source` says where the row's factor came from**, and `adj_method`
+which convention produced its ex-date steps. Split a panel on them
+before comparing anything across the boundary:
+
+| `adj_source` | `adj_method` | rows |
+|---|---|---|
+| `vendor` | `declared_dividend` | FinMind's series as served |
+| `vendor_patched` | `declared_dividend` | behind one of the seven replaced events |
+| `rebuilt_factored` | `exchange_reference` | 11 of the 38 holes, with a factor chain |
+| `rebuilt_noevent` | `none` | 27 of the 38, no corporate action in window — factor is 1.0 |
+| `""` | `""` | no price: the stock did not trade, or nothing covers the session |
+
+The two rebuilt values are kept apart on purpose: the cumulative-product
+path is the one with somewhere to go wrong, and separating it lets a
+later check isolate it without re-deriving which stocks had events.
+
+`adj_close_tr` is NaN where the raw `close` is 0 — FinMind's encoding
+for a session the stock did not trade (179,749 rows, 2.34 %, in 1,325
+stocks). The vendor prices 176,230 of those sessions anyway, at the last
+traded price, so the zero that identifies them survives only in
+`ohlcv/`; filtering on `adj_close_tr > 0` alone would keep every one of
+them.
+
+### The vendor's survivorship hole, and the rebuild that fills it
+
+`price_adj/` reaches 7,494,582 of the 7,509,555 traded sessions in
+`ohlcv/` — 99.80 % — and the 14,973 it misses are not missing at
+random. **38 of the 173 in-window universe delistings have raw prices
+and no adjusted series at all** (10,981 sessions), and every one of them
+delisted in 2005-2007. They are 38 of the 42 names `build_universe.py`
+carries as its survivorship overlay — added precisely because FinMind's
+live `taiwan_stock_info` had dropped them — and `TaiwanStockPriceAdj`
+drops them on the same registry. 51 downloaded files are empty in total;
+the other 13 are 2026 listings with no in-window prices either.
+
+Quoting the 99.95 % these same files give once those 38 names leave the
+denominator reports the coverage of a panel the bias has already been
+removed from — the vendor's coverage is 99.80 %, and
+`available_stocks()` lists the 2,103 names it serves.
+
+`load_adjusted` fills those 38 rather than returning a column of NaN a
+panel build would drop. `adjust.py` rebuilds the factor from the
+exchange's own per-event reference prices — `div_result/` and
+`capital_reduction.parquet`, never `price_adj/` — which is why the hole
+is recoverable at all: the reference prices are published per event and
+do not depend on the registry that dropped the names. All 38 come back
+priced across all 10,981 traded sessions, 11 with a factor chain and 27
+with no corporate action in window at all. That last figure is checked
+against three further sources: none of the 27 has a declaration in
+`dividend/`, a row in `exright_reference.parquet`, or a
+`capital_reduction` filing.
+
+**The rebuild is validated where the vendor exists.** The gate set is
+the 134 in-window delistings `price_adj/` *does* cover — same era, same
+delisting situation — run through the identical code path. Across
+268,485 daily adjusted returns the rebuild reproduces the vendor on
+99.93 % to 1e-6 and 99.998 % to 1e-3; what is left is the declared-vs-
+published cent above, on the ex-date session only.
+
+`adj_covered` stays False across all 38 even though they now carry a
+price, so the vendor's hole remains countable after it is filled — as a
+column rather than frame metadata, because `DataFrame.attrs` survives
+`pd.concat` only when every frame agrees. A panel of uniformly covered
+stocks would keep an `adj_coverage` nobody needs, and one mixing covered
+with uncovered stocks drops it silently; `merge` and `groupby` drop it
+always. The warning would go missing in exactly the case it exists to
+raise, so `df.attrs` is single-stock only.
+
+Four of the 38 — 1207, 1462, 2544, 2811 — hold 970 sessions behind a
+share cancellation no filing priced, and those come back
+`is_valid=False` with `invalid_reason == "unpriced_cancellation"`
+rather than NaN. The distinction matters: the sessions *after* each
+cancellation (19, 366, 11 and 15 of them) are ordinary prices, and NaN
+would have thrown them away along with the disconnected history — while
+also being unable to say whether a NaN meant "not recoverable" or "not
+attempted".
+
+**What is not rebuilt**, and stays NaN: the 3,992 sessions the vendor
+misses inside stocks it otherwise serves. 903 stocks are short exactly
+one session — their first — because the vendor series begins one session
+after the raw one. The remaining 3,089 sit past the end of a vendor
+series that stopped at a delisting while `ohlcv/` kept printing, five
+names holding 3,001 of them. 1107 is the largest: the adjusted series
+ends 2007-10-19 against a 2007-10-20 delisting while the raw file runs
+on to 2012-06-06 at 249 sessions/yr, on half the prior median volume
+(the other four fall by 81-97 %). Those are 興櫃 quotes for a name that
+left the exchange — the raw panel over-reaching the listing, not the
+adjusted panel falling short of it — and research filtering to listed
+common stock drops them anyway. Filling either class would mean splicing
+a rebuilt segment onto a vendor series at a level the two do not share;
+the whole-stock holes above have no such seam, which is what makes them
+safe to rebuild and these not.
+
+Two smaller edges: the vendor prices 600 sessions in 159 stocks that
+`ohlcv/` has no row for — a 補行交易日 or a stray 興櫃 print — and the
+left join on the raw calendar drops them, counted in
+`df.attrs["vendor_only_sessions"]`. And `ohlcv/` itself is a zero-row
+file for 13 stocks, on which `load_adjusted` raises.
 
 ## Load the full panel
 
@@ -322,8 +456,9 @@ ohlcv_all = pd.concat(
 ## Provenance
 
 - **Source:** FinMind API (`https://api.finmindtrade.com/api/v4/data`)
-- **Datasets:** all 12 per-stock endpoints listed in `download.py`
-  (`TaiwanStockPrice`, `TaiwanStockInstitutionalInvestorsBuySell`,
+- **Datasets:** all 13 per-stock endpoints listed in `download.py`
+  (`TaiwanStockPrice`, `TaiwanStockPriceAdj`,
+  `TaiwanStockInstitutionalInvestorsBuySell`,
   `TaiwanStockShareholding`, `TaiwanStockPER`,
   `TaiwanStockMarginPurchaseShortSale`, `TaiwanStockMonthRevenue`,
   `TaiwanStockFinancialStatements`, `TaiwanStockBalanceSheet`,
@@ -341,6 +476,9 @@ ohlcv_all = pd.concat(
   log: `nohup.bg2005.out`; per-stock log: `download.log`.
 - **Verification (2015-2024 build):** 2,101 freshly downloaded + 10
   pilot = 2,111 stocks, 0 failures.
+- **Adjusted prices:** 2026-08-16, after the account moved to the
+  sponsor tier. 2,154 requests at `--sleep 0.7` under the 6000/hr
+  quota, ~40 min, 0 failures. Log: `nohup.price_adj.out`.
 
 ## Known gaps / caveats
 
@@ -352,30 +490,33 @@ ohlcv_all = pd.concat(
    non-equity products are not present (see `delisted_universe.parquet`
    vs `universe.parquet` for the diff).
 4. **Price adjustment**: `TaiwanStockPrice` closes are **raw** — they reflect
-   nothing, not splits and not capital reductions. Build the adjusted series by
-   chaining the exchange's own reference prices: `div_result/` (除權息,
-   `after_price/before_price`, covers cash *and* rights) and `cap_red/` (減資).
-   The two event sets are disjoint, so the chains compose without double
-   counting. See [`VERIFICATION.md`](VERIFICATION.md).
+   nothing, not splits and not capital reductions. `price_adj/` carries the
+   adjusted series, in the total-return convention only; there is no
+   price-return variant to buy. It also serves nothing for 38 of the 173
+   in-window delistings and is wrong in direction on seven events;
+   `load_adjusted` fills the first and patches the second, marking both in
+   `adj_source`. Read `price_adj/` directly and you get neither. See
+   **Adjusted prices**.
 5. **減資 events start on 2011-01-25**, six years after the prices do. This is
    the *exchange's* limit, not FinMind's and not the download's: TWSE's own
    TWTAUU report refuses any start date before ROC 100/1/1 and its first row is
    the same 2011-01-25, so no tier and no mirror reaches further back and
-   nothing reconstructs the step. `detect_unpriced_actions.py` finds the
-   cancellations from
+   nothing reconstructs the step — including FinMind, whose adjusted series
+   carries such a reduction through at a factor step of exactly 1.
+   `detect_unpriced_actions.py` finds the cancellations from
    `shares/NumberOfSharesIssued` instead (92.6 % precision, 92.0 % recall where
-   the filed events can score it) and `adjust.py` marks the history behind each
-   one `is_valid=False`. 250 such cancellations in 193 stocks fall in the
-   uncovered window. Run it after `consolidate_capred.py`; `load_adjusted`
-   raises if its output is missing rather than adjusting as if the window were
-   clean.
+   the filed events can score it) and `adjusted_loader.py` marks the history
+   behind each one `is_valid=False`. 250 such cancellations in 193 stocks fall
+   in the uncovered window. Run it after `consolidate_capred.py`;
+   `load_adjusted` raises if its output is missing rather than serving the
+   vendor series as if the window were clean.
 6. **A handful of raw prices are wrong**, and no adjustment can repair a bad
-   input. `validate_adjust` check [7] lists what is left after adjustment on
-   rows the series vouches for: stale near-zero quotes, sporadic pre-listing
-   興櫃 sessions (2007-03-03 and 2007-04-14 carry clusters of them, all TPEx),
-   and at least one corrupted row — 8454 on 2014-09-09 reports `open` 241.04
-   and `max` 242.49 against `min` = `close` = 3.43, which reads as −98.6 %
-   followed by +6,853 %.
+   input: stale near-zero quotes, sporadic pre-listing 興櫃 sessions
+   (2007-03-03 and 2007-04-14 carry clusters of them, all TPEx), and at least
+   one corrupted row — 8454 on 2014-09-09 reports `open` 241.04 and `max`
+   242.49 against `min` = `close` = 3.43, which reads as −98.6 % followed by
+   +6,853 %. `is_valid` does not cover these; they are bad prices, not broken
+   series.
 7. **TWSE stopped publishing the 除權息 split in 2009.** `exright_reference.parquet`
    carries 權值 and 息值 as separate columns for 2005-2008 and only their sum
    `權值+息值` from 2009 on, alongside a `權/息` label. The label still settles a
@@ -384,6 +525,42 @@ ohlcv_all = pd.concat(
    identical field list but serves a rolling few-day window and ignores every
    date parameter, and its `preAnnounce` table likewise returns only current
    forward announcements. Both limits are the publisher's, not the download's.
+8. **No delisting reason, and no terminal value.** `delisted_universe.parquet`
+   carries `date`, `stock_id`, `stock_name` and a derived `year` — that is the
+   whole of `TaiwanStockDelisting`. Nothing separates a bankruptcy from a
+   merger, a voluntary buyout or a move to another venue, and no field records
+   what a holder received when trading stopped. Treating the last observed
+   price as the terminal value therefore books −100 % where a merger paid a
+   premium, and a premium where the shell was worthless; which error you make
+   is decided by the reason the table omits. This is delisting-return bias, and
+   it is **not** the survivorship bias the universe overlay fixes — a panel can
+   hold every delisted name and still misprice each one's final return. The
+   reasons live in 公開資訊觀測站 (`mops.twse.com.tw`) filings, which no FinMind
+   endpoint mirrors. Until those are pulled, any delisting return computed from
+   this package is an assumption wearing a number.
+9. **Fundamentals are dated by fiscal period end, not by announcement.**
+   `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
+   — the quarter that closed, not the day the filing became public — and carry
+   no column for the latter. Joining them to prices on `date` hands a trader
+   figures weeks before they existed, which is look-ahead bias, not
+   survivorship, and it reaches every fundamental signal built here. A TW
+   filing-deadline lag is the only in-package correction, and it is a bound
+   rather than a date. `month_rev/` has a `create_time` field that would carry
+   the disclosure stamp, but it is empty on **every** row — 40,735 of 40,735
+   across the first 200 files, not merely on the old ones. `dividend/` is the
+   exception that shows what the others lack: it carries `AnnouncementDate` and
+   `AnnouncementTime`, so its events align point-in-time as delivered.
+10. **`open` is not inside `[min, max]` on 2.2 % of rows.** 167,930 traded rows
+    across 836 stocks report an `open` above the session `max` or below the
+    session `min`; `close` never does, on any row of the panel. The deviation
+    beyond the bar is small on most of them — median 0.9 %, and 53 % sit within
+    1 % — but 1 % of them exceed 10 % and the worst reaches 82 %. They are
+    spread evenly over 2006-2024 rather than clustered in any one regime, so
+    this is a property of the `open` field, not of a period or a venue. A
+    strategy that enters at the open therefore prices ~2 % of its fills off a
+    number the same row contradicts, while the same strategy on `close` is
+    unaffected. Screen with `open.between(min, max)` before using it; caveat 6's
+    individually corrupt rows are a separate and much smaller set.
 
 ## Cross-market notes (Korea ↔ Taiwan)
 
@@ -446,18 +623,34 @@ Second batch (free-tier verified):
 | `div_result/` | `TaiwanStockDividendResult` | 除權除息結果表 — the exchange's **published reference prices** per ex-event (`before_price`, `after_price`). 22,369 events / 1,926 stocks. This, not `dividend/`, is what the adjusted series is built from. |
 | `sec_lending/` | `TaiwanStockSecuritiesLending` | 借券/議借 — institutional short proxy |
 
-**Excluded — paid tier or not in FinMind enum:**
+Sponsor tier (level 3, since 2026-08-16):
+
+| Subdir | Endpoint | Notes |
+|---|---|---|
+| `price_adj/` | `TaiwanStockPriceAdj` | 還原股價 — the back-adjusted OHLCV, **total-return convention** (see **Adjusted prices**). Gated above `register` until the tier was bought; the docs' "Free (with data_id)" line was wrong for every calling convention. Same schema as `ohlcv/`, and `Trading_Volume` is identical to it row for row — only the five price columns are adjusted. |
+
+The tier reports itself at `api.web.finmindtrade.com/v2/user_info`:
+`level: 3`, `level_title: "Sponsor"`, `api_request_limit_hour: 6000` — ten times
+the register quota, so pace `download.py` at `--sleep 0.7` rather than 6.5.
+
+**Not in FinMind's enum:**
 
 | Endpoint | Reason | Workaround |
 |---|---|---|
-| `TaiwanStockPriceAdj` | Above `register`, our token's level. This is a **tier gate, not a dead endpoint**: the name is in the v4 dataset enum, and where a bogus name returns HTTP 422 with an empty body, this returns HTTP 400 `"Your level is register. Please update your user level"`. Identical across all four calling conventions — with `data_id`, one-day range, no `data_id`, no dates — so the docs' "Free (with data_id)" line is simply wrong. No other host serves it (`api.web…/v2/data`, `/api/v3/data` both 404). Which paid tier unlocks it is not stated; the API only points at the Sponsor page. Re-probed 2026-07-29. | **Not needed.** `div_result/` (`TaiwanStockDividendResult`) is free at register level and gives the exchange's own per-event factor, which is strictly better than a pre-built series. Chain it with `cap_red/`. |
-| `TaiwanStockHoldingSharesPer` | Paid tier only | Skip; use TEJ or MOPS for holder distribution if needed |
 | `TaiwanStockEPS` | Not a FinMind dataset | EPS lives inside `TaiwanStockFinancialStatements` as `type == 'EPS'` rows |
 | `TaiwanStockShareholdingClassification` | Not a FinMind dataset | Use MOPS insider-holdings disclosures directly |
-| `TaiwanStockConvertibleBondInfo` | Paid tier only (verified 2026-04-26) | Use TEJ or paid FinMind sponsor tier |
-| `TaiwanStockConvertibleBondDaily` | Paid tier only (verified 2026-04-26) | Use TEJ or paid FinMind sponsor tier |
-| `TaiwanStockConvertibleBondDailyOverview` | Paid tier (assumed; not probed) | Same as above |
-| `TaiwanStockConvertibleBondInstitutionalInvestors` | Paid tier (assumed; not probed) | Same as above |
+
+**Ungated by the tier, not downloaded.** Every endpoint the 2026-04-26 pass
+recorded as paid-only answers HTTP 200 on the sponsor token (re-probed
+2026-08-16); none is fetched here, because none feeds a current question. The
+row below records that the gate is gone, not that the data is present or that
+any particular `data_id` returns rows.
+
+| Endpoint | Status |
+|---|---|
+| `TaiwanStockHoldingSharesPer` | Reachable — holder-size distribution, 68 rows for 2330 in Jan-2024 |
+| `TaiwanStockConvertibleBondInfo` | Reachable — 7 rows in Jan-2024 |
+| `TaiwanStockConvertibleBondDaily` / `…DailyOverview` / `…InstitutionalInvestors` | Reachable; the CB `data_id` convention was not explored |
 
 Follow-up — delivered (top-level files, not in per-stock DATASETS):
 
@@ -542,10 +735,15 @@ python consolidate_capred.py    # → capital_reduction.parquet
 # (Delisting events are already in delisted_universe.parquet — no
 # separate fetch needed; `TaiwanStockDelisting` produced this file.)
 
-# Adjustment — needs div_result/, capital_reduction.parquet and shares/
+# Adjusted prices (~40 min at the sponsor 6000/hr quota)
+nohup python download.py --datasets price_adj --sleep 0.7 \
+  > nohup.price_adj.out 2>&1 &
+
+# Validity mask — needs div_result/, capital_reduction.parquet and shares/
 python -m finmind_data.detect_unpriced_actions --calibrate   # → unpriced_actions.parquet
-python -m finmind_data.download_exright   # TWSE TWT49U, ~20 requests, no key
-python -m finmind_data.validate_adjust    # checks what adjust.py builds
+
+# Exchange 除權息 report, independent of the above (~20 requests, no key)
+python -m finmind_data.download_exright   # → exright_reference.parquet
 ```
 
 Re-running any command is safe: `download.py` skips stock-subdir pairs
