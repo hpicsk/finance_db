@@ -783,15 +783,22 @@ ohlcv_all = pd.concat(
     all. Six deals is few and the direction is what survives that; it is a
     downward bias on a portfolio rather than noise that averages out.
 
-    Where those six sit is itself worth reading. **Three of the four swaps are
-    band names** — the cuts leave them undecided and a label is what settles
-    them — while both cash deals and the remaining swap are classified payouts.
-    So the worst substitutes and the hardest calls are the same deals, which
-    would follow if a conversion's last close sits below the successor's opening
-    value: that is the discount, and it is also what drags the drawdown down into
-    the band. Offered as a reading of four deals rather than a finding, but it
-    says the +11 % is measured on a mix and not on classifier-confirmed payouts
-    alone.
+    Where those six sit is itself worth reading, and it generalises past them:
+    three of the four swaps are band names, and the deal form is legible in the
+    `source` text of most labelled payouts, not only of the six whose per-share
+    terms were transcribed. Of the **18 labelled payouts, 14 are share
+    exchanges, 2 are cash and 2 do not say**, and the two cash deals both sit
+    **outside** the band — drawdowns of 0.81 and 0.999, above its upper cut —
+    while share exchanges run 0.51 to 0.99 and straddle it. Inside the band all 9
+    payouts whose form is stated are exchanges. That is what a conversion's
+    discount would do, holding a swap's last close below its own peak while a
+    cash offer at a premium stops near it. But 9 of 9 against a base rate of 14
+    of 16 is what chance gives **0.175** of the time (Fisher exact on the stated
+    forms), so it is a reading rather than a finding. What it is good for is the
+    comparison it sets up: it says the +11 % is measured on a mix and not on
+    classifier-confirmed payouts alone, and it makes the **12** band names
+    nobody has looked up a live test, since a cash deal among them would be the
+    first the band has ever held.
 
     The obvious next move is to let the gap between the last trade and the formal
     date price that bias, on the reading that the last close goes *stale*: a
@@ -812,6 +819,15 @@ ohlcv_all = pd.concat(
     settling in 1 and 7 days against the swaps' 13 and 14: the deal form
     reported under the gap's name. The staleness account is untested rather than
     refuted, and these deals cannot test it.
+
+    What survives that is the direction, and not the mechanism. Why a
+    conversion's last close sits below what was paid is open: a liquidity
+    discount on a name whose exit is already fixed, terms revised upward between
+    announcement and effect, or four deals falling one way. Nothing in this
+    package separates them at n=4, and none of the three is assumed anywhere in
+    the code. Use the **+11 %** as a measured direction, not as a correction
+    with a reason behind it — a correction would have to know which of the three
+    it was undoing.
 
     So `terminal_value()` books on four bases, cut so each names a different
     piece of work. **`failed`** is zero. **`consideration`** is what was actually

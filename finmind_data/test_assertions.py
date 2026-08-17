@@ -732,6 +732,86 @@ def test_taiwan_delisting_substitute_is_biased_low():
             len(e))
 
 
+def test_taiwan_cash_payouts_land_outside_the_band():
+    """README caveat 8: every labelled cash deal sits above the band.
+
+    The substitute bias is measured on four share exchanges and two cash offers,
+    and three of the four exchanges are band names — which invites the reading
+    that a conversion's discount is what drags a payout into the band. The
+    reading is checkable past those six because the `form` column records what
+    the label's own `source` text states, across all eighteen labelled payouts.
+
+    What it buys is a comparison object for later, not a result now. Nine of
+    nine stated forms inside the band are exchanges, against a base rate of
+    fourteen of sixteen, and the exact test on that table returns 0.175 — a
+    reading, and asserted as one. The load-bearing half is the zero: no cash
+    deal has ever been labelled inside the band, and the twelve band names
+    nobody has looked up are where that can fail. This check is how it would
+    fail, so a cash deal arriving among the twelve is the finding, not a
+    regression.
+
+    `form` is deliberately blank where the source names a merger without saying
+    what was paid. Reading a form into those two would be inventing the very
+    fact the column exists to count.
+    """
+    from finmind_data.delisting_sign import _DD_MERGER, features
+
+    f = features()
+    labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
+                         dtype={"stock_id": str})
+    labels = labels[labels["label"].fillna("") != ""]
+    m = labels[labels["label"] == "merger"].drop(columns=["sign", "drawdown"])
+    m = m.merge(f[["stock_id", "sign", "drawdown"]], on="stock_id")
+    assert not len(labels[(labels["label"] != "merger")
+                          & (labels["form"].fillna("") != "")]), (
+        "`form` is what a payout paid, so a failure cannot carry one"
+    )
+
+    # The live test first. A new label changes the counts too, so pinning those
+    # ahead of it would answer the arrival of a cash deal in the band with a
+    # message about column totals — the wrong sentence for the event this check
+    # exists to catch.
+    form = m["form"].fillna("unstated")
+    in_band = m["sign"] == "ambiguous"
+    cash_in_band = m.loc[in_band & (form == "cash"), "stock_id"].tolist()
+    assert not cash_in_band, (
+        f"README caveat 8 says both labelled cash deals sit outside the band, "
+        f"which is what makes a cash deal among the twelve held-out names a "
+        f"live test of the clustering reading; {cash_in_band} is inside it. "
+        f"That is the test coming back, not a broken assertion"
+    )
+    assert m.loc[form == "cash", "drawdown"].min() > _DD_MERGER, (
+        f"README caveat 8 explains the split mechanically — a cash offer at a "
+        f"premium stops near its own high, above the band's upper cut of "
+        f"{_DD_MERGER} — but the lowest labelled cash deal is at "
+        f"{m.loc[form == 'cash', 'drawdown'].min():.3f}"
+    )
+
+    counts = form.value_counts().to_dict()
+    assert (len(m), counts.get("swap"), counts.get("cash"),
+            counts.get("unstated")) == (18, 14, 2, 2), (
+        f"README caveat 8 says 18 labelled payouts split 14 share exchanges, 2 "
+        f"cash and 2 that do not say; the label file now gives {len(m)} and "
+        f"{counts}. A label arriving for one of the twelve lands here, and the "
+        f"paragraph is what has to be re-read against the new table"
+    )
+
+    # Fisher exact on the stated forms, two-sided. Every other 2x2 with a cash
+    # cell is likelier than the observed one, so the tail is the single term.
+    band_n = int((in_band & (form != "unstated")).sum())
+    swap_n, stated_n = counts["swap"], counts["swap"] + counts["cash"]
+    p = math.comb(swap_n, band_n) / math.comb(stated_n, band_n)
+    assert math.isclose(p, 0.175, abs_tol=5e-4), (
+        f"README caveat 8 says 9 of 9 in the band is 'what chance gives 0.175 "
+        f"of the time' and reads it as a reading rather than a finding; the "
+        f"exact test now returns {p:.3f}"
+    )
+    return (f"{counts['cash']} labelled cash payouts, both above the band's "
+            f"{_DD_MERGER} cut; {band_n} of {band_n} stated forms inside it are "
+            f"share exchanges against {swap_n}/{stated_n} overall, p={p:.3f}",
+            len(m))
+
+
 def test_taiwan_fundamentals_are_fiscal_dated():
     """README caveat 9: fiscal period end, no announcement date.
 
@@ -1803,6 +1883,7 @@ CHECKS = [
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,
     test_taiwan_delisting_substitute_is_biased_low,
+    test_taiwan_cash_payouts_land_outside_the_band,
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,

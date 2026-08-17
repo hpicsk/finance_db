@@ -123,7 +123,10 @@ quotes it, so the gap is a known bias rather than an unknown one. What it is
 *not* is a stale price: the obvious correction, scaling the error by the days
 between the last trade and the formal date, fails because that gap is a
 settlement calendar rather than a deal characteristic, and because the swaps
-measured are conversions whose successor had no price during it at all.
+measured are conversions whose successor had no price during it at all. What is
+left is a direction without a mechanism — a discount, revised terms, or four
+deals falling one way, and nothing here separates them — so the bias is
+reported and never corrected for.
 
 Those four bases are the column a caller reads, and they are cut so that each
 names a different piece of work: none for a failure or a recorded payout, one
@@ -427,6 +430,12 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     Across all six the rank correlation with the gap is 0.76, which is the cash
     deals settling in 1 and 7 days against the swaps' 13 and 14: the gap standing
     in for the deal form, reported under its own name.
+
+    Ruling that out leaves the direction measured and the mechanism open. A
+    liquidity discount on a name whose exit is already fixed, terms revised
+    upward between announcement and effect, and four deals falling one way all
+    fit these residuals equally, and no caller should read a cause into the
+    column: ``residual`` is a bias to disclose, not a factor to divide out.
     """
     c = considerations(f)
     e = f[["stock_id", "last_close", "suspension_days"]].merge(c, on="stock_id")
@@ -520,6 +529,10 @@ def main() -> None:
             "stratum", "era", "purpose"]]
         out = out.sort_values(["purpose", "stratum", "delist_date"])
         out["label"] = ""        # merger | distress — filled in by hand
+        # swap | cash, and blank wherever `source` names a merger without saying
+        # what was paid; reading a form into those would invent the fact the
+        # column is counted for.
+        out["form"] = ""
         out["source"] = ""       # where the label came from
         out.to_csv(_LABEL_FILE, index=False)
 
