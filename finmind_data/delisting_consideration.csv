@@ -1,0 +1,7 @@
+stock_id,stock_name,delist_date,kind,successor,per_share,source
+8480,泰昇-KY,2022-12-21,cash,,85.0,cash merger at NT$85 per share
+3638,F-IML,2014-09-10,cash,,91.0,acquired by Exar at NT$91 per share
+2470,品佳,2005-11-09,swap,3702,1.0,share swap 1 share of WPG Holdings 3702 per share
+4733,上緯,2016-08-31,swap,3708,1.0,share swap 1 share of holding co 3708 per share
+2391,合勤科技,2010-08-16,swap,3704,1.0,share swap 1 share of holding co 3704 per share
+3698,隆達,2021-01-06,swap,3714,0.275,share swap 0.275 shares of Ennostar 3714 per share

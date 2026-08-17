@@ -750,17 +750,36 @@ ohlcv_all = pd.concat(
     undecided band the truth turns over near a drawdown of 0.50: of the 20
     labelled names between the cuts, 7 of the 8 below are failures and 10 of the
     12 above are payouts, so one cut there would decide most of what two leave
-    open. That is a hypothesis for a later pre-registration and not a licence to
-    move these cuts — the 0.50 boundary was read off the same 38 labels any rate
-    at it would be scored against, which is the circularity this whole
-    arrangement exists to avoid. Left as it stands the band holds ~32 names,
-    ~18 of them payouts.
+    open. It is not a licence to move these cuts — the 0.50 boundary was read
+    off the same 38 labels any rate at it would be scored against, which is the
+    circularity this whole arrangement exists to avoid. So it is registered
+    rather than adopted. `delisting_band.csv` records what 0.50 calls each of
+    the **12 band names that were never looked up**, committed while all 12 were
+    blank, along with a pass mark and the free alternative it has to beat: a
+    rule that reads the halt instead of the price, right 16 times on the same 20
+    that gave 0.50 its 17. The 12 are the entire test set — the band does not
+    grow — and their labels come free with any consideration pulled, since an
+    announcement names its own reason. That is why the registration is dated
+    before the payout work rather than after it. Until the gate is read the band
+    stands undecided at ~32 names, ~18 of them payouts.
 
-    What this does not fix is the size of the payout. A name classified as one
-    still needs its consideration to book a return, and the exchange announcement
-    carries it (NT$85 cash for 8480, 0.275 shares of 3714 for 3698) only for the
-    38 looked up so far. MOPS is still the fix; the classification narrows what
-    has to be pulled from it.
+    The payout's **size** is a separate gap, and smaller than it looked. A name
+    classified as one books its last traded close, and against the 6 deals whose
+    consideration is recorded in a form needing no ratio convention, that
+    substitute is wrong in one direction every time — it understates. By
+    **+0.6 %** on the two cash deals and **+11 %** on the four share swaps
+    (range +3 % to +13 %). The split is the usable part: a cash consideration is
+    the last close to within 1 %, while a swap's value floats with the
+    acquirer between the last trade and the effective date. Six deals is few and
+    the direction is what survives that; it is a downward bias on a portfolio
+    rather than noise that averages out.
+
+    So `terminal_value()` books zero for a failure, the last close for a payout
+    with the bias above, and **NaN for the undecided band** — the sign is what
+    the band does not know, and a number there would be a guess at the direction
+    rather than at the size. A study that holds one has to resolve it or drop
+    it, which is how the count of filings actually worth pulling falls out of
+    running the study instead of being estimated ahead of it.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

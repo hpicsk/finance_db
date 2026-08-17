@@ -490,6 +490,175 @@ def test_taiwan_delisting_sign_accuracy():
             len(labels))
 
 
+def test_taiwan_single_cut_is_registered_unscored():
+    """The cut that would close the undecided band, pinned before its labels exist.
+
+    The labelled band suggests one cut near 0.50 would decide most of what the
+    two cuts leave open, but it suggests that on the 20 band names already
+    looked up, so those 20 cannot also test it. The 12 that were never looked up
+    can, they are the only ones that ever will, and their labels arrive as a
+    byproduct of the payout work — an announcement names its own reason. Hence
+    the ordering this check exists to freeze: the calls are committed while no
+    label exists, and the gate is written down with them.
+
+    Editing `_DD_SINGLE` afterwards moves a call and fails here, which is what
+    makes the registration a property of the repo rather than a claim about
+    intent. The halt rule is held to the same standard for the same reason: it
+    is the free alternative to reading the price path, it was read off the same
+    20, and registering only the rule one hopes will win turns a comparison into
+    a formality.
+
+    `_GATE_MIN_LABELS` is re-derived rather than trusted, so a change to the
+    null or to alpha cannot leave a minimum behind that no longer matches them.
+
+    What this catches is an edit that changes a call, which is not the same as
+    any edit: the held-out names' suspensions run 3, 14, 14, 70 days and then
+    past 150, so `_LONG_SUSPENSION_DAYS` can be moved anywhere inside 15..69
+    without moving a call, and that move passes here. The claim is bounded to
+    what it can see, and the alternative — asserting the constants themselves —
+    would only restate them.
+    """
+    from finmind_data.delisting_sign import (
+        _DD_SINGLE, _GATE_MIN_LABELS, _GATE_NULL, band_holdout, features,
+        gate_threshold, single_cut_gate)
+
+    f = features()
+    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                         dtype={"stock_id": str})
+    band = pd.read_csv(REPO / "finmind_data/delisting_band.csv",
+                       dtype={"stock_id": str})
+    fresh = band_holdout(f, labels)
+
+    for col in ("call", "halt_call"):
+        want = dict(zip(fresh["stock_id"], fresh[col]))
+        got = dict(zip(band["stock_id"], band[col]))
+        assert want == got, (
+            f"delisting_band.csv is the pre-registration of the {col} rule: it "
+            f"records what the rule said before any of these names was looked "
+            f"up. Recomputing now disagrees on "
+            f"{sorted(k for k in want.keys() | got.keys() if want.get(k) != got.get(k))}. "
+            f"A rule edited after its labels arrive is fitted to them, and the "
+            f"held-out set cannot be refilled — the band does not grow"
+        )
+
+    # `_GATE_NULL` is what a reader gets inside the band by naming its larger
+    # class and never looking at a price, so it is a measurement, not a choice,
+    # and this is the measurement. It reads only `delisting_labels.csv`, which
+    # is full: labels bought from here on land in `delisting_band.csv` and
+    # cannot drag the registered null along behind them.
+    in_band = set(f.loc[f["sign"] == "ambiguous", "stock_id"])
+    seen = labels[labels["stock_id"].isin(in_band)]["label"]
+    assert math.isclose(_GATE_NULL, seen.value_counts().max() / len(seen),
+                        abs_tol=0.005), (
+        f"_GATE_NULL is the majority-class rate among the {len(seen)} band "
+        f"names already labelled, which is now "
+        f"{seen.value_counts().max() / len(seen):.3f} against the registered "
+        f"{_GATE_NULL}. The bar 0.50 has to clear was set by that rate"
+    )
+
+    # Why the halt rule is registered rather than dismissed: on the labelled
+    # band it is a point behind 0.50, which at n=20 is no distance at all.
+    scored = f.merge(labels[["stock_id", "label"]], on="stock_id")
+    scored = scored[scored["sign"] == "ambiguous"]
+    dd50 = int(((scored["drawdown"] > _DD_SINGLE).map(
+        {True: "merger", False: "distress"}) == scored["label"]).sum())
+    halt = int(((scored["has_tail"] | scored["long_suspension"]).map(
+        {True: "distress", False: "merger"}) == scored["label"]).sum())
+    assert (dd50, halt) == (17, 16), (
+        f"README caveat 8 says the halt rule is right 16 times on the 20 "
+        f"labelled band names against 0.50's 17, which is why both are "
+        f"registered; they now score {dd50} and {halt} of {len(scored)}"
+    )
+
+    assert gate_threshold(_GATE_MIN_LABELS) < _GATE_MIN_LABELS, (
+        f"the gate needs at least {_GATE_MIN_LABELS} labels because below that "
+        f"only a perfect score can clear the null; at {_GATE_MIN_LABELS} it now "
+        f"needs {gate_threshold(_GATE_MIN_LABELS)} of {_GATE_MIN_LABELS}"
+    )
+    below = _GATE_MIN_LABELS - 1
+    assert gate_threshold(below) in (None, below), (
+        f"_GATE_MIN_LABELS is meant to be the smallest sample the gate can "
+        f"clear without a perfect score, but {below} labels would already do "
+        f"it at {gate_threshold(below)} correct. The null or alpha moved and "
+        f"the minimum did not follow"
+    )
+
+    g = single_cut_gate(band)
+    blank = int((band["label"].fillna("") == "").sum())
+    assert g["n"] + blank == len(band), "every held-out name is labelled or not"
+    if g["need"] is None:
+        status = (f"gate unread, {_GATE_MIN_LABELS - g['n']} of "
+                  f"{_GATE_MIN_LABELS} labels short")
+    else:
+        status = (f"{g['correct']}/{g['n']} correct vs {g['need']} needed, "
+                  f"{g['trivial']} constant, {g['halt']} halt — "
+                  f"{'adopt' if g['adopt'] else 'decline'}")
+    return (f"single cut {_DD_SINGLE} and the halt rule registered on "
+            f"{len(band)} held-out names, {g['n']} labelled; {status}",
+            len(band))
+
+
+def test_taiwan_delisting_substitute_is_biased_low():
+    """README caveat 8: the last close understates a payout, and by how much.
+
+    The substitute a study books for a delisted payout name is its last traded
+    close, and the question is not whether that is imprecise but whether it is
+    wrong in a fixed direction — noise averages out of a portfolio, a bias does
+    not. It is one-directional here on every deal measured, which is what the
+    assertion pins; the size splits by deal type and the split is the finding,
+    because it decides which lookups are worth doing.
+
+    Six deals is few, and the direction is the part that survives that. It is
+    also not a sample that can be grown cheaply: it is what the labelling
+    happened to record in a form free of ratio conventions, and any addition to
+    `delisting_consideration.csv` moves these numbers on purpose.
+    """
+    from finmind_data.delisting_sign import (
+        features, substitute_error, terminal_value)
+
+    f = features()
+    e = substitute_error(f)
+    assert (e["residual"] > 0).all(), (
+        f"README caveat 8 says the last close understates the consideration on "
+        f"every deal measured, so the substitute is a downward bias rather "
+        f"than noise; "
+        f"{e.loc[e['residual'] <= 0, 'stock_id'].tolist()} now sit at or above "
+        f"what was paid"
+    )
+    cash = e.loc[e["kind"] == "cash", "residual"]
+    swap = e.loc[e["kind"] == "swap", "residual"]
+    assert cash.max() < 0.01, (
+        f"README caveat 8 says a cash consideration is within 1 % of the last "
+        f"close, which is why cash deals need no lookup; the worst is now "
+        f"{cash.max():+.1%}"
+    )
+    assert math.isclose(swap.median(), 0.112, abs_tol=0.02), (
+        f"README caveat 8 puts the share-swap understatement near 11 %; the "
+        f"median is now {swap.median():+.1%}. That number is what makes a "
+        f"swap worth resolving and a cash deal not"
+    )
+
+    t = terminal_value(f)
+    undecided = t[t["basis"] == "undecided"]
+    assert undecided["terminal"].isna().all(), (
+        f"the undecided band has no sign, so it can carry no terminal value; "
+        f"{int(undecided['terminal'].notna().sum())} names have been given one. "
+        f"A number there is a guess at the direction, not at the size"
+    )
+    assert (t.loc[t["basis"] == "failed", "terminal"] == 0).all(), (
+        "a failed delisting books zero"
+    )
+    assert (t.loc[t["basis"] == "substituted", "terminal"]
+            == t.loc[t["basis"] == "substituted", "last_close"]).all(), (
+        "a payout books its last close, which is the substitute being measured"
+    )
+    counts = t["basis"].value_counts().to_dict()
+    return (f"last close understates by {cash.median():+.1%} on {len(cash)} cash "
+            f"deals and {swap.median():+.1%} on {len(swap)} swaps, all one way; "
+            f"terminal basis {counts}",
+            len(e))
+
+
 def test_taiwan_fundamentals_are_fiscal_dated():
     """README caveat 9: fiscal period end, no announcement date.
 
@@ -1559,6 +1728,8 @@ CHECKS = [
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_delisting_sign_accuracy,
+    test_taiwan_single_cut_is_registered_unscored,
+    test_taiwan_delisting_substitute_is_biased_low,
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,

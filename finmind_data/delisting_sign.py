@@ -29,10 +29,23 @@ verdicts, weighted by stratum, turning on the single miss 1613.
 
 They also show the cuts are placed conservatively: inside the undecided band the
 truth turns over near a drawdown of 0.50, where one cut would decide most of
-what two leave open. That stays a hypothesis for a later pre-registration. The
-0.50 boundary was read off the same 38 labels any rate at it would be scored
-against, so adopting it here would buy a better-looking number by spending the
-only thing that makes the number mean anything.
+what two leave open. That boundary was read off the same labels any rate at it
+would be scored against, so it is not adopted here — it is *registered* here,
+which is the second half of this file.
+
+``_DD_SINGLE`` and the gate below are committed before the labels that will test
+them exist, exactly as the two cuts were. Twenty of the 32 undecided names are
+already labelled and are what suggested 0.50, so they cannot test it; the other
+twelve have never been looked up, and ``delisting_band.csv`` records what 0.50
+calls each of them while that is still true — beside the call of the free rule
+it has to beat, registered on the same terms so the comparison is not assembled
+afterwards. Those twelve are the whole test set, and they are as many as there
+will ever be, because the band does not grow. The work that would produce
+their labels is the payout lookup — an announcement states its own reason, so a
+name looked up for its consideration returns a reason for free — which is why
+this is committed first. Registered after that work begins, it would be
+registered against labels already seen, and there is no third batch to fall
+back on.
 
 Labels are two-valued by construction, and the question they answer is whether a
 transaction paid holders — cash, or shares in a surviving company — or the
@@ -50,13 +63,30 @@ Parameters, per the repo's degrees-of-freedom convention:
     the distribution before labels existed. Their cost is measured, not argued:
     99 % of the verdicts they issue, against the labels.
 ``_LONG_SUSPENSION_DAYS``
-    CHOSEN, structural. The routine gap between a last trade and the formal date
-    is 7-14 days for 73 of the priced delistings; anything past a month is a
-    halt, not paperwork.
+    CHOSEN, structural, and pre-registered since it also sets the halt rule's
+    calls. The routine gap between a last trade and the formal date is 7-14 days
+    for 73 of the priced delistings; anything past a month is a halt, not
+    paperwork. The held-out names' halts run 3, 14, 14, 70 days and then past
+    150, so a move inside 15..69 changes nothing and passes unnoticed — the
+    registration binds where it can see, which is where a call moves.
 ``_STRATUM_BRACKET``
     CHOSEN, structural. How far either side of a cut the draw treats as its
     boundary. Its value matters less than its being applied to both cuts, which
     is what ties the sample to them.
+``_DD_SINGLE``
+    CHOSEN, pre-registered, unscored. One cut proposed to replace the undecided
+    band, read off the 20 band names already labelled and therefore testable
+    only on the 12 that are not.
+``_GATE_NULL``
+    MEASURED, by this script, from those same 20: the larger label class is 11
+    of 20. It is what a reader gets inside the band for free by calling every
+    name a payout, so it is the rate 0.50 has to beat rather than 0.50 %.
+``_GATE_ALPHA``, ``_GATE_MIN_LABELS``
+    CHOSEN, pre-registered. The second is not free: below nine labels the
+    criterion can only be met by a perfect score, and a perfect score of eight
+    has a 27 % chance of arriving even if 0.50 is right at the rate the 20
+    suggest. ``_gate_threshold`` derives it, and the assertion re-derives it, so
+    it moves if the other two do.
 ``_SAMPLE_SEED``, ``_ALLOCATION``
     CHOSEN, pre-registered. Stratified because a uniform draw would spend most
     of its labels in the ``clear`` band where the shape is least in doubt; the
@@ -82,6 +112,15 @@ Both are found by asking whether the name is still quoted on the panel's last
 session — a fact about the market rather than about the delisting table, and
 binary, with the tails that really end doing so 12 to 18 years short of it.
 
+Classifying the exit is most of the work but not the number a study books, and
+``terminal_value`` is the rest of it: zero for a failure, the last traded close
+for a payout, and nothing at all for the undecided band. The substitute is not
+free — measured against the considerations recorded during labelling, the last
+close understates what was paid on every deal, by a rounding on a cash offer and
+by around a tenth on a share swap, whose value goes on moving with the acquirer
+after the target stops trading. ``substitute_error`` measures it and the README
+quotes it, so the gap is a known bias rather than an unknown one.
+
 Two things this file deliberately does not use. Balance-sheet equity, because
 the vendor's statement history begins 2012-03-31 and 80 of the 173 delisted
 before 2011 — the coverage is absent by construction rather than by non-filing,
@@ -95,6 +134,7 @@ below as corroboration and never as a verdict.
 """
 from __future__ import annotations
 
+from math import comb
 from pathlib import Path
 
 import numpy as np
@@ -136,7 +176,18 @@ _ALLOCATION = {          # stratum: (labels from <=2010, labels from >2010)
 }
 _SAMPLE_SEED = 20260817
 
+# The single cut that would close the undecided band, and the gate it has to
+# clear before it may. Registered unscored: the labels that can test it do not
+# exist yet, and the twelve names that can supply them are listed in
+# `delisting_band.csv` with 0.50's call on each already committed.
+_DD_SINGLE = 0.50
+_GATE_NULL = 0.55            # 11 of the 20 labelled band names are payouts
+_GATE_ALPHA = 0.05
+_GATE_MIN_LABELS = 9
+
 _LABEL_FILE = HERE / "delisting_labels.csv"
+_BAND_FILE = HERE / "delisting_band.csv"
+_CONSIDERATION_FILE = HERE / "delisting_consideration.csv"
 _OUT_FILE = HERE / "delisting_sign.parquet"
 
 
@@ -180,6 +231,7 @@ def features() -> pd.DataFrame:
             "delist_date": r.date,
             "last_trade": last_date,
             "suspension_days": (r.date - last_date).days,
+            "last_close": pre["close"].iloc[-1],
             "drawdown": pre["close"].iloc[-1] / window["close"].max(),
             "tail_sessions": int(len(after)),
             "quoted_through": p["date"].max(),
@@ -234,6 +286,131 @@ def draw_sample(f: pd.DataFrame) -> pd.DataFrame:
     return s
 
 
+def band_holdout(f: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFrame:
+    """The undecided names the registered rules have not been shown, and their calls.
+
+    An undecided name that already carries a label is evidence the rules were
+    read off and cannot test them; what is left is the held-out set, and it is
+    the entire held-out set, because the band does not grow.
+
+    Two calls, not one. ``halt_call`` is the rule a reader gets without the
+    drawdown at all — a name whose quotation stopped a month before the formal
+    date, or that went on trading after it, failed — and on the 20 labelled band
+    names it is right 16 times against 0.50's 17, which is no difference at that
+    size. It was read off the same 20, so it is registered on the same footing
+    rather than offered as a foil, and it disagrees with 0.50 on half the
+    held-out names: whatever the labels say, they say it about both.
+    """
+    labelled = set(labels.loc[labels["label"].fillna("") != "", "stock_id"])
+    b = f[(f["sign"] == "ambiguous") & ~f["stock_id"].isin(labelled)].copy()
+    b["call"] = np.where(b["drawdown"] <= _DD_SINGLE, "distress", "merger")
+    b["halt_call"] = np.where(b["has_tail"] | b["long_suspension"],
+                              "distress", "merger")
+    return b.sort_values("drawdown")[
+        ["stock_id", "stock_name", "delist_date", "drawdown", "call",
+         "halt_call"]]
+
+
+def gate_threshold(n: int) -> int | None:
+    """Correct calls needed at ``n`` labels to clear ``_GATE_NULL`` one-sided.
+
+    ``None`` where no attainable count does. A binomial tail rather than a
+    fixed rate because the sample size is not ours to pick: the labels arrive
+    as a byproduct of looking a name up for its payout, so ``n`` is however
+    many of the twelve a study turns out to hold.
+    """
+    p = _GATE_NULL
+    for k in range(n + 1):
+        if sum(comb(n, i) * p ** i * (1 - p) ** (n - i)
+               for i in range(k, n + 1)) <= _GATE_ALPHA:
+            return k
+    return None
+
+
+def single_cut_gate(band: pd.DataFrame) -> dict:
+    """Where the registered cut stands against whatever labels have arrived.
+
+    Three bars, all pre-registered, and 0.50 is adopted only by clearing every
+    one. The binomial bar asks whether it beats the rate a reader gets by naming
+    the band's larger class without looking at a price at all. ``trivial`` asks
+    the same of the best constant predictor on these particular names, which is
+    that objection in the form a referee can make once the labels are visible.
+    ``halt`` asks whether the drawdown earned its place against the free rule
+    that reads the halt instead — the one comparison that says whether the price
+    path is doing the work, and the reason the labels are worth collecting even
+    if 0.50 fails.
+    """
+    scored = band[band["label"].fillna("") != ""]
+    n = len(scored)
+    need = gate_threshold(n) if n >= _GATE_MIN_LABELS else None
+    correct = int((scored["call"] == scored["label"]).sum())
+    halt = int((scored["halt_call"] == scored["label"]).sum())
+    trivial = int(scored["label"].value_counts().max()) if n else 0
+    return {"n": n, "correct": correct, "halt": halt, "need": need,
+            "trivial": trivial,
+            "adopt": need is not None and correct >= need
+            and correct > trivial and correct > halt}
+
+
+def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
+    """How far the last traded close sits from the consideration actually paid.
+
+    A study that holds a payout name through its delisting has to book
+    *something*, and the cheapest something is the last close. Whether that is
+    adequate is measurable without opening a single filing: the considerations
+    are already recorded for the names looked up during labelling, and the
+    successors are already priced in the panel.
+
+    Only the deals whose consideration is stated in a form no convention has to
+    be applied to are used — cash per share, and swaps quoted as a number of
+    successor shares. A ratio written ``2.45:1`` has two readings, and picking
+    the reading that lands nearer the last close would measure the picking.
+    Those deals are excluded rather than resolved by inspection; four of the 18
+    payout labels go that way.
+    """
+    c = pd.read_csv(_CONSIDERATION_FILE,
+                    dtype={"stock_id": str, "successor": str})
+    c["delist_date"] = pd.to_datetime(c["delist_date"])
+    rows = []
+    for r in c.itertuples():
+        last = f.loc[f["stock_id"] == r.stock_id, "last_close"]
+        assert len(last) == 1, f"{r.stock_id} is not one priced market exit"
+        paid = r.per_share
+        if r.kind == "swap":
+            p = _price(r.successor)
+            assert p is not None, f"successor {r.successor} has no prices"
+            on_or_before = p[p["date"] <= r.delist_date]
+            assert len(on_or_before), f"successor {r.successor} not yet trading"
+            paid = r.per_share * on_or_before["close"].iloc[-1]
+        rows.append({"stock_id": r.stock_id, "stock_name": r.stock_name,
+                     "kind": r.kind, "last_close": float(last.iloc[0]),
+                     "consideration": float(paid),
+                     "residual": float(paid) / float(last.iloc[0]) - 1})
+    return pd.DataFrame(rows)
+
+
+def terminal_value(f: pd.DataFrame) -> pd.DataFrame:
+    """What a holder books when the series stops, and on what basis.
+
+    Three bases, and only one of them is a number this file stands behind.
+    ``failed`` is zero and needs no source. ``substituted`` is the last close
+    standing in for a consideration nobody has looked up, and it is biased low
+    by the amount ``substitute_error`` measures. ``undecided`` is left as NaN
+    rather than given a plausible default: the sign is what the band does not
+    know, and a substitute there would be a guess at the direction, not at the
+    size. A caller that hits one has to resolve it or drop it, which is the
+    point — the count of names that actually need a filing pulled falls out of
+    running a study rather than being estimated in advance.
+    """
+    t = f[["stock_id", "stock_name", "delist_date", "sign", "last_close"]].copy()
+    t["terminal"] = np.where(t["sign"] == "distress", 0.0,
+                             np.where(t["sign"] == "merger", t["last_close"],
+                                      np.nan))
+    t["basis"] = t["sign"].map({"distress": "failed", "merger": "substituted",
+                                "ambiguous": "undecided"})
+    return t
+
+
 def main() -> None:
     f = features()
     sample = draw_sample(f)
@@ -277,6 +454,31 @@ def main() -> None:
               f"accuracy pending")
         return
     accuracy(f, filled)
+
+    if not _BAND_FILE.exists():
+        held = band_holdout(f, labels)
+        held["label"] = ""       # merger | distress — filled in by hand
+        held["source"] = ""      # where the label came from
+        held.to_csv(_BAND_FILE, index=False)
+    band = pd.read_csv(_BAND_FILE, dtype={"stock_id": str})
+    g = single_cut_gate(band)
+    print(f"\n  single cut {_DD_SINGLE} registered on {len(band)} held-out "
+          f"undecided names, {g['n']} labelled")
+    if g["need"] is None:
+        print(f"  gate unread: needs {_GATE_MIN_LABELS} labels, "
+              f"{_GATE_MIN_LABELS - g['n']} short")
+    else:
+        print(f"  {g['correct']} correct; needs {g['need']}, and to beat "
+              f"{g['trivial']} constant and {g['halt']} halt-rule — "
+              f"{'adopt' if g['adopt'] else 'decline'}")
+
+    e = substitute_error(f)
+    print(f"\n  last close vs consideration actually paid, {len(e)} deals:")
+    for k, g in e.groupby("kind"):
+        print(f"    {k:5s} n={len(g)}  median {g['residual'].median():+.1%}  "
+              f"range {g['residual'].min():+.1%}..{g['residual'].max():+.1%}")
+    print(f"  terminal value basis: "
+          f"{terminal_value(f)['basis'].value_counts().to_dict()}")
 
 
 def accuracy(f: pd.DataFrame, filled: pd.DataFrame, verbose: bool = True) -> dict:
