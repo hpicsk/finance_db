@@ -1,0 +1,34 @@
+{
+  "test_adjust_canonical_cases": {
+    "bound": "monotone",
+    "n": 10027
+  },
+  "test_adjust_heuristics_removed": {
+    "bound": "monotone",
+    "n": 9
+  },
+  "test_adjust_provenance_stamp": {
+    "bound": "monotone",
+    "n": 3
+  },
+  "test_fnguide_benchmark_agreement": {
+    "bound": "monotone",
+    "n": 3535
+  },
+  "test_fnguide_disagreement_is_the_stuck_oracle": {
+    "bound": "monotone",
+    "n": 5511
+  },
+  "test_kr_kospi_common_count": {
+    "bound": "monotone",
+    "n": 3868
+  },
+  "test_kr_trading_days_2005_2024": {
+    "bound": "exact",
+    "n": 4940
+  },
+  "test_seibro_zero_is_non_payment": {
+    "bound": "monotone",
+    "n": 35999
+  }
+}

@@ -7,7 +7,8 @@
 # package fails. There is no CI, so this is the gate.
 #
 # Prerequisites: the data trees populated (marcap/ cloned, caches built) and a
-# conda env with pandas + pyarrow on PATH — e.g.
+# conda env carrying the packages' dependencies on PATH — the preflight below
+# names any that are missing rather than leaving it to this comment. E.g.
 #   source /home/st/miniconda3/bin/activate
 
 set -uo pipefail
@@ -54,11 +55,75 @@ if [ -n "$unregistered" ]; then
   exit 1
 fi
 
+# The suite's verdict must not depend on which interpreter invoked it. An env
+# short of one module turns the handful of checks that reach it into ERROR lines
+# that read like data problems, while every other package reports a clean pass —
+# and which env is active can differ between two runs on the same machine, so a
+# header comment naming the right one is read by nobody. Every module reachable
+# from a test_assertions.py is resolved here, before any check runs, so a wrong
+# interpreter is named as one. It also closes the regenerate-and-compare checks:
+# a committed artifact diffed against a fresh run says nothing about drift if the
+# two runs had different libraries underneath them.
+preflight=$(python - "${files[@]}" <<'EOF'
+import ast, importlib.util, sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+local = {p.name for p in ROOT.iterdir() if p.is_dir()}
+
+
+def targets(path):
+    for n in ast.walk(ast.parse(path.read_text())):
+        if isinstance(n, ast.Import):
+            yield from (a.name for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and not n.level and n.module:
+            yield n.module
+            # `from finmind_data import adjust` names the submodule in `names`,
+            # so following n.module alone stops at the package directory and
+            # misses everything that module imports in turn.
+            yield from (f"{n.module}.{a.name}" for a in n.names)
+
+
+seen, queue, need = set(), [Path(a) for a in sys.argv[1:]], set()
+while queue:
+    f = queue.pop()
+    if f in seen or not f.is_file():
+        continue
+    seen.add(f)
+    for m in targets(f):
+        top = m.split(".")[0]
+        if top in local:
+            queue.append(ROOT / (m.replace(".", "/") + ".py"))
+        elif top not in sys.stdlib_module_names:
+            need.add(top)
+
+absent = []
+for m in sorted(need):
+    try:
+        if importlib.util.find_spec(m) is None:
+            absent.append(m)
+    except (ImportError, ValueError):     # a namespace parent that will not load
+        absent.append(m)
+if absent:
+    print(f"  interpreter: {sys.executable}")
+    print(f"  reached:     {len(seen)} modules from {len(sys.argv) - 1} packages")
+    for m in absent:
+        print(f"  missing:     {m}")
+EOF
+)
+if [ -n "$preflight" ]; then
+  echo "FAIL  the interpreter on PATH cannot import what the assertions need," >&2
+  echo "      so some checks would error out while the rest reported a pass:" >&2
+  echo "$preflight" >&2
+  echo "      activate the project env — e.g. source /home/st/miniconda3/bin/activate" >&2
+  exit 1
+fi
+
 failed=()
 for f in "${files[@]}"; do
   pkg=$(dirname "$f")
   echo "── $pkg ──────────────────────────────────────────────"
-  python "$f" || failed+=("$pkg")
+  python "$f" "$@" || failed+=("$pkg")
   echo
 done
 

@@ -1,0 +1,94 @@
+{
+  "test_capital_reduction_artifact_exists": {
+    "bound": "monotone",
+    "n": 627
+  },
+  "test_taiwan_adj_covered_survives_concat": {
+    "bound": "monotone",
+    "n": 5068
+  },
+  "test_taiwan_adj_source_partitions_the_panel": {
+    "bound": "monotone",
+    "n": 15865
+  },
+  "test_taiwan_adjusted_coverage_decomposition": {
+    "bound": "monotone",
+    "n": 7509555
+  },
+  "test_taiwan_adjusted_series": {
+    "bound": "monotone",
+    "n": 138
+  },
+  "test_taiwan_adjusted_survivorship_hole": {
+    "bound": "exact",
+    "n": 173
+  },
+  "test_taiwan_delisting_table_has_no_reason": {
+    "bound": "monotone",
+    "n": 315
+  },
+  "test_taiwan_filing_deadline_table_covers_the_data": {
+    "bound": "monotone",
+    "n": 438
+  },
+  "test_taiwan_fundamentals_are_fiscal_dated": {
+    "bound": "monotone",
+    "n": 40735
+  },
+  "test_taiwan_make_up_sessions_are_recovered": {
+    "bound": "monotone",
+    "n": 600
+  },
+  "test_taiwan_month_rev_date_is_the_following_month": {
+    "bound": "monotone",
+    "n": 368265
+  },
+  "test_taiwan_no_trade_rows_are_not_holdable": {
+    "bound": "monotone",
+    "n": 7689904
+  },
+  "test_taiwan_ohlcv_is_raw": {
+    "bound": "monotone",
+    "n": 22369
+  },
+  "test_taiwan_ohlcv_one_per_universe": {
+    "bound": "monotone",
+    "n": 2154
+  },
+  "test_taiwan_open_outside_session_range": {
+    "bound": "monotone",
+    "n": 7509555
+  },
+  "test_taiwan_overlay_covers_2005_2014": {
+    "bound": "exact",
+    "n": 102
+  },
+  "test_taiwan_post_delisting_sessions_are_marked": {
+    "bound": "monotone",
+    "n": 3089
+  },
+  "test_taiwan_price_adj_one_per_universe": {
+    "bound": "monotone",
+    "n": 2154
+  },
+  "test_taiwan_rebuild_matches_vendor": {
+    "bound": "exact",
+    "n": 268503
+  },
+  "test_taiwan_survivorship_hole_is_rebuilt": {
+    "bound": "exact",
+    "n": 10981
+  },
+  "test_taiwan_vendor_defects_are_patched": {
+    "bound": "monotone",
+    "n": 3641
+  },
+  "test_taiwan_vendor_edges_are_carried": {
+    "bound": "monotone",
+    "n": 3092
+  },
+  "test_taiwan_vendor_event_audit_is_current": {
+    "bound": "monotone",
+    "n": 22370
+  }
+}
