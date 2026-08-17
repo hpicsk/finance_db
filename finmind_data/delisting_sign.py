@@ -113,13 +113,23 @@ session — a fact about the market rather than about the delisting table, and
 binary, with the tails that really end doing so 12 to 18 years short of it.
 
 Classifying the exit is most of the work but not the number a study books, and
-``terminal_value`` is the rest of it: zero for a failure, the last traded close
-for a payout, and nothing at all for the undecided band. The substitute is not
-free — measured against the considerations recorded during labelling, the last
-close understates what was paid on every deal, by a rounding on a cash offer and
-by around a tenth on a share swap, whose value goes on moving with the acquirer
-after the target stops trading. ``substitute_error`` measures it and the README
-quotes it, so the gap is a known bias rather than an unknown one.
+``terminal_value`` is the rest of it: zero for a failure, the consideration
+itself where one was recorded, the last traded close where one was not, and
+nothing at all for the twelve names whose sign is still open. The substitute is
+not free — measured against those recorded considerations, the last close
+understates what was paid on every deal, by a rounding on a cash offer and by
+around a tenth on a share swap. ``substitute_error`` measures it and the README
+quotes it, so the gap is a known bias rather than an unknown one. What it is
+*not* is a stale price: the obvious correction, scaling the error by the days
+between the last trade and the formal date, fails because that gap is a
+settlement calendar rather than a deal characteristic, and because the swaps
+measured are conversions whose successor had no price during it at all.
+
+Those four bases are the column a caller reads, and they are cut so that each
+names a different piece of work: none for a failure or a recorded payout, one
+filing for a substituted one, and the band's own question for an undecided one.
+A single missing value covering the last two would say a number is absent
+without saying which of two very different things would supply it.
 
 Two things this file deliberately does not use. Balance-sheet equity, because
 the vendor's statement history begins 2012-03-31 and 80 of the 173 delisted
@@ -352,6 +362,41 @@ def single_cut_gate(band: pd.DataFrame) -> dict:
             and correct > trivial and correct > halt}
 
 
+def considerations(f: pd.DataFrame) -> pd.DataFrame:
+    """What was actually paid per share, for the deals that state it plainly.
+
+    Only the deals whose consideration is stated in a form no convention has to
+    be applied to are here — cash per share, and swaps quoted as a number of
+    successor shares. A ratio written ``2.45:1`` has two readings, and picking
+    the reading that lands nearer the last close would measure the picking.
+    Those deals are excluded rather than resolved by inspection; four of the 18
+    payout labels go that way.
+
+    A swap is worth the successor's price, so it is priced on the panel at the
+    delisting date rather than taken from the filing.
+    """
+    c = pd.read_csv(_CONSIDERATION_FILE,
+                    dtype={"stock_id": str, "successor": str})
+    c["delist_date"] = pd.to_datetime(c["delist_date"])
+    rows = []
+    for r in c.itertuples():
+        assert (f["stock_id"] == r.stock_id).sum() == 1, \
+            f"{r.stock_id} is not one priced market exit"
+        paid = r.per_share
+        overlap = 0
+        if r.kind == "swap":
+            p = _price(r.successor)
+            assert p is not None, f"successor {r.successor} has no prices"
+            on_or_before = p[p["date"] <= r.delist_date]
+            assert len(on_or_before), f"successor {r.successor} not yet trading"
+            paid = r.per_share * on_or_before["close"].iloc[-1]
+            last_trade = f.loc[f["stock_id"] == r.stock_id, "last_trade"].iloc[0]
+            overlap = int((p["date"] <= last_trade).sum())
+        rows.append({"stock_id": r.stock_id, "stock_name": r.stock_name,
+                     "kind": r.kind, "paid": float(paid), "overlap": overlap})
+    return pd.DataFrame(rows)
+
+
 def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     """How far the last traded close sits from the consideration actually paid.
 
@@ -361,54 +406,96 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     are already recorded for the names looked up during labelling, and the
     successors are already priced in the panel.
 
-    Only the deals whose consideration is stated in a form no convention has to
-    be applied to are used — cash per share, and swaps quoted as a number of
-    successor shares. A ratio written ``2.45:1`` has two readings, and picking
-    the reading that lands nearer the last close would measure the picking.
-    Those deals are excluded rather than resolved by inspection; four of the 18
-    payout labels go that way.
+    ``gap`` is the days between the last trade and the formal date, and it is
+    here to be ruled out rather than used. The obvious reading of a one-sided
+    error is that the last close is *stale* — a swap's value goes on moving with
+    the acquirer while the target no longer trades, so a longer gap should carry
+    a larger error, and the gap would then price the bias on a name whose
+    acquirer cannot be identified. It does not, twice over. The gap barely
+    varies: 13, 13, 13, 14 days across the swaps against a residual spread of
+    +3 % to +13 %, and 77 % of the 99 payout-shaped names sit in 7-14 days,
+    because the gap is the settlement calendar rather than anything about the
+    deal. And the mechanism cannot have run at all — ``overlap`` counts the
+    successor's sessions on or before the target's last trade and it is zero on
+    every swap here, so there was no acquirer price to drift. All four are
+    holding-company conversions, whose successor first trades on the day the
+    target leaves. That is a property of the selection above and not a
+    coincidence: a share exchange stated 1:1 or as a flat share count is what a
+    conversion looks like, while a third-party acquisition for stock is the case
+    that carries the odd ratio excluded here — so the staleness account is
+    untested rather than refuted, and it is untestable on the deals in hand.
+    Across all six the rank correlation with the gap is 0.76, which is the cash
+    deals settling in 1 and 7 days against the swaps' 13 and 14: the gap standing
+    in for the deal form, reported under its own name.
     """
-    c = pd.read_csv(_CONSIDERATION_FILE,
-                    dtype={"stock_id": str, "successor": str})
-    c["delist_date"] = pd.to_datetime(c["delist_date"])
-    rows = []
-    for r in c.itertuples():
-        last = f.loc[f["stock_id"] == r.stock_id, "last_close"]
-        assert len(last) == 1, f"{r.stock_id} is not one priced market exit"
-        paid = r.per_share
-        if r.kind == "swap":
-            p = _price(r.successor)
-            assert p is not None, f"successor {r.successor} has no prices"
-            on_or_before = p[p["date"] <= r.delist_date]
-            assert len(on_or_before), f"successor {r.successor} not yet trading"
-            paid = r.per_share * on_or_before["close"].iloc[-1]
-        rows.append({"stock_id": r.stock_id, "stock_name": r.stock_name,
-                     "kind": r.kind, "last_close": float(last.iloc[0]),
-                     "consideration": float(paid),
-                     "residual": float(paid) / float(last.iloc[0]) - 1})
-    return pd.DataFrame(rows)
+    c = considerations(f)
+    e = f[["stock_id", "last_close", "suspension_days"]].merge(c, on="stock_id")
+    return e.rename(columns={"suspension_days": "gap"}).assign(
+        residual=lambda d: d["paid"] / d["last_close"] - 1)[
+        ["stock_id", "stock_name", "kind", "gap", "overlap", "last_close",
+         "paid", "residual"]]
 
 
-def terminal_value(f: pd.DataFrame) -> pd.DataFrame:
+def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
+                   ) -> pd.DataFrame:
     """What a holder books when the series stops, and on what basis.
 
-    Three bases, and only one of them is a number this file stands behind.
-    ``failed`` is zero and needs no source. ``substituted`` is the last close
-    standing in for a consideration nobody has looked up, and it is biased low
-    by the amount ``substitute_error`` measures. ``undecided`` is left as NaN
-    rather than given a plausible default: the sign is what the band does not
-    know, and a substitute there would be a guess at the direction, not at the
-    size. A caller that hits one has to resolve it or drop it, which is the
-    point — the count of names that actually need a filing pulled falls out of
-    running a study rather than being estimated in advance.
+    A hand-read filing outranks a price shape wherever one exists, so a label
+    settles the sign and the classifier fills the rest. That is not a courtesy
+    to the labels: 20 of the 32 undecided names already carry one, and booking
+    NaN for them would refuse an answer this package has already bought. It
+    also overturns one verdict outside the band, 1613, which is the single
+    disagreement ``accuracy`` reports and is left to stand there — the rate the
+    cuts earned is a fact about the cuts, and correcting the value a study books
+    does not change it.
+
+    Four bases, and ``basis`` is the whole of the column's contract: it names
+    what produced the number, and the four map one-to-one onto what a caller has
+    to do about it.
+
+    ``failed``
+        Zero. Needs no source and no action.
+    ``consideration``
+        What was actually paid, priced on the panel where the payment was in
+        shares. Exact, and no action.
+    ``substituted``
+        The last close standing in for a consideration nobody has looked up.
+        Biased low by the amount ``substitute_error`` measures, and one filing
+        closes it. A study counts these among the names it actually holds, which
+        is how the number of lookups worth doing falls out of running the study
+        rather than being estimated ahead of it.
+    ``undecided``
+        NaN, and the only NaN. The sign is what the band does not know, and a
+        substitute there would be a guess at the direction, not at the size —
+        the two other bases are guesses at a size at worst. A caller that hits
+        one resolves it or drops it, and there are twelve of them.
+
+    The distinction that matters is the last two: both are missing something,
+    they are missing different things, and the work that closes them is
+    different — one filing against a name whose sign is already known, or the
+    band's own question, which is what ``delisting_band.csv`` is registered
+    against.
     """
-    t = f[["stock_id", "stock_name", "delist_date", "sign", "last_close"]].copy()
-    t["terminal"] = np.where(t["sign"] == "distress", 0.0,
-                             np.where(t["sign"] == "merger", t["last_close"],
-                                      np.nan))
-    t["basis"] = t["sign"].map({"distress": "failed", "merger": "substituted",
-                                "ambiguous": "undecided"})
-    return t
+    if labels is None:
+        labels = pd.read_csv(_LABEL_FILE, dtype={"stock_id": str})
+    known = labels[labels["label"].fillna("") != ""][["stock_id", "label"]]
+
+    t = f[["stock_id", "stock_name", "delist_date", "sign",
+           "last_close"]].merge(known, on="stock_id", how="left")
+    resolved = t["label"].where(t["label"].notna(), t["sign"])
+    paid = t["stock_id"].map(considerations(f).set_index("stock_id")["paid"])
+
+    # `sign` stays beside `basis` because they answer different questions — what
+    # the price path said, and what was booked once a label outranked it.
+    t["basis"] = np.where(resolved == "distress", "failed",
+                          np.where(resolved == "ambiguous", "undecided",
+                                   np.where(paid.notna(), "consideration",
+                                            "substituted")))
+    t["terminal"] = np.select(
+        [t["basis"] == "failed", t["basis"] == "consideration",
+         t["basis"] == "substituted"],
+        [0.0, paid, t["last_close"]], default=np.nan)
+    return t.drop(columns=["label"])
 
 
 def main() -> None:
@@ -476,9 +563,11 @@ def main() -> None:
     print(f"\n  last close vs consideration actually paid, {len(e)} deals:")
     for k, g in e.groupby("kind"):
         print(f"    {k:5s} n={len(g)}  median {g['residual'].median():+.1%}  "
-              f"range {g['residual'].min():+.1%}..{g['residual'].max():+.1%}")
+              f"range {g['residual'].min():+.1%}..{g['residual'].max():+.1%}  "
+              f"gap {g['gap'].min()}..{g['gap'].max()}d  "
+              f"acquirer sessions before last trade {g['overlap'].sum()}")
     print(f"  terminal value basis: "
-          f"{terminal_value(f)['basis'].value_counts().to_dict()}")
+          f"{terminal_value(f, labels)['basis'].value_counts().to_dict()}")
 
 
 def accuracy(f: pd.DataFrame, filled: pd.DataFrame, verbose: bool = True) -> dict:

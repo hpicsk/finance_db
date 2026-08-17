@@ -612,9 +612,17 @@ def test_taiwan_delisting_substitute_is_biased_low():
     also not a sample that can be grown cheaply: it is what the labelling
     happened to record in a form free of ratio conventions, and any addition to
     `delisting_consideration.csv` moves these numbers on purpose.
+
+    The `overlap` assertion is the one that will fire on such an addition, and
+    it should. Zero acquirer sessions before the target's last trade is what
+    makes the caveat's "not staleness" claim true, and it holds because a swap
+    stated without a ratio convention is a holding-company conversion. A
+    third-party acquisition for stock would break it, and that is the deal the
+    staleness account could finally be tested on — so the failure is an
+    instruction to measure, not a regression.
     """
     from finmind_data.delisting_sign import (
-        features, substitute_error, terminal_value)
+        band_holdout, features, substitute_error, terminal_value)
 
     f = features()
     e = substitute_error(f)
@@ -637,6 +645,28 @@ def test_taiwan_delisting_substitute_is_biased_low():
         f"median is now {swap.median():+.1%}. That number is what makes a "
         f"swap worth resolving and a cash deal not"
     )
+    assert (e.loc[e["kind"] == "swap", "overlap"] == 0).all(), (
+        f"README caveat 8 says the understatement is not the last close going "
+        f"stale, because the successor of every swap measured first trades on "
+        f"the day the target leaves — no acquirer price to drift against. "
+        f"{e.loc[e['overlap'] > 0, 'stock_id'].tolist()} now overlap, which "
+        f"makes the staleness account testable and the caveat's dismissal of "
+        f"it stale in turn"
+    )
+    sign = f.set_index("stock_id")["sign"]
+    in_band = int((e.loc[e["kind"] == "swap", "stock_id"].map(sign)
+                   == "ambiguous").sum())
+    assert in_band == 3, (
+        f"README caveat 8 says three of the four swaps are band names, so the "
+        f"+11 % is measured on a mix rather than on classifier-confirmed "
+        f"payouts alone; {in_band} are now undecided by the cuts"
+    )
+    assert e.loc[e["kind"] == "swap", "gap"].nunique() <= 2, (
+        f"README caveat 8 says the gap cannot price the bias because it barely "
+        f"varies across the swaps; it now takes "
+        f"{e.loc[e['kind'] == 'swap', 'gap'].nunique()} values, so the check "
+        f"the caveat rules out may now have something to read"
+    )
 
     t = terminal_value(f)
     undecided = t[t["basis"] == "undecided"]
@@ -645,6 +675,11 @@ def test_taiwan_delisting_substitute_is_biased_low():
         f"{int(undecided['terminal'].notna().sum())} names have been given one. "
         f"A number there is a guess at the direction, not at the size"
     )
+    assert t.loc[t["basis"] != "undecided", "terminal"].notna().all(), (
+        "README caveat 8 says the undecided band is the only missing terminal "
+        "value, because that is what makes `basis` tell a caller which of two "
+        "different jobs would supply the number; a second basis is now NaN too"
+    )
     assert (t.loc[t["basis"] == "failed", "terminal"] == 0).all(), (
         "a failed delisting books zero"
     )
@@ -652,10 +687,48 @@ def test_taiwan_delisting_substitute_is_biased_low():
             == t.loc[t["basis"] == "substituted", "last_close"]).all(), (
         "a payout books its last close, which is the substitute being measured"
     )
+    paid = e.set_index("stock_id")["paid"]
+    booked = t[t["basis"] == "consideration"].set_index("stock_id")["terminal"]
+    assert booked.to_dict() == paid.to_dict(), (
+        f"README caveat 8 says a name whose consideration is recorded books "
+        f"that consideration rather than the substitute it is measured "
+        f"against; {sorted(set(paid.index) ^ set(booked.index))} disagree"
+    )
+
+    # A label outranks the shape, so the undecided rows are exactly the band
+    # names nobody has looked up — the same twelve the single cut is registered
+    # against. Read off the label file rather than off a count, because a count
+    # would still pass if the twelve were a different twelve.
+    labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
+                         dtype={"stock_id": str})
+    labels = labels[labels["label"].fillna("") != ""]
+    expected = {"distress": "failed", "merger": "substituted"}
+    off_label = t.merge(labels[["stock_id", "label"]], on="stock_id")
+    wrong = off_label[off_label["basis"].replace("consideration", "substituted")
+                      != off_label["label"].map(expected)]
+    assert not len(wrong), (
+        f"README caveat 8 says a hand-read filing outranks the price shape "
+        f"wherever one exists; {wrong['stock_id'].tolist()} book against their "
+        f"own label instead"
+    )
+    band = int((f["sign"] == "ambiguous").sum())
+    assert (band, len(undecided)) == (32, 12), (
+        f"README caveat 8 says the 38 labels empty 20 of the 32 band names and "
+        f"leave 12 without a terminal value; the cuts now leave {band} open and "
+        f"{len(undecided)} survive the labels. An emptied label file lands here"
+    )
+    assert set(undecided["stock_id"]) == set(
+        band_holdout(f, labels)["stock_id"]), (
+        "README caveat 8 says the twelve names left without a terminal value "
+        "are the twelve the single cut is registered against; they have come "
+        "apart, so the band a study is told to resolve is no longer the band "
+        "`delisting_band.csv` froze"
+    )
     counts = t["basis"].value_counts().to_dict()
     return (f"last close understates by {cash.median():+.1%} on {len(cash)} cash "
             f"deals and {swap.median():+.1%} on {len(swap)} swaps, all one way; "
-            f"terminal basis {counts}",
+            f"not staleness ({int(e['overlap'].sum())} acquirer sessions before "
+            f"the last trade); terminal basis {counts}",
             len(e))
 
 

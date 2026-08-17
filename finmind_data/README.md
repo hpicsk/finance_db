@@ -770,8 +770,8 @@ ohlcv_all = pd.concat(
     that gave 0.50 its 17. The 12 are the entire test set — the band does not
     grow — and their labels come free with any consideration pulled, since an
     announcement names its own reason. That is why the registration is dated
-    before the payout work rather than after it. Until the gate is read the band
-    stands undecided at ~32 names, ~18 of them payouts.
+    before the payout work rather than after it. Until the gate is read the cuts
+    leave the band undecided at ~32 names, ~18 of them payouts.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
     classified as one books its last traded close, and against the 6 deals whose
@@ -779,17 +779,61 @@ ohlcv_all = pd.concat(
     substitute is wrong in one direction every time — it understates. By
     **+0.6 %** on the two cash deals and **+11 %** on the four share swaps
     (range +3 % to +13 %). The split is the usable part: a cash consideration is
-    the last close to within 1 %, while a swap's value floats with the
-    acquirer between the last trade and the effective date. Six deals is few and
-    the direction is what survives that; it is a downward bias on a portfolio
-    rather than noise that averages out.
+    the last close to within 1 %, so those names never need a filing pulled at
+    all. Six deals is few and the direction is what survives that; it is a
+    downward bias on a portfolio rather than noise that averages out.
 
-    So `terminal_value()` books zero for a failure, the last close for a payout
-    with the bias above, and **NaN for the undecided band** — the sign is what
-    the band does not know, and a number there would be a guess at the direction
-    rather than at the size. A study that holds one has to resolve it or drop
-    it, which is how the count of filings actually worth pulling falls out of
-    running the study instead of being estimated ahead of it.
+    Where those six sit is itself worth reading. **Three of the four swaps are
+    band names** — the cuts leave them undecided and a label is what settles
+    them — while both cash deals and the remaining swap are classified payouts.
+    So the worst substitutes and the hardest calls are the same deals, which
+    would follow if a conversion's last close sits below the successor's opening
+    value: that is the discount, and it is also what drags the drawdown down into
+    the band. Offered as a reading of four deals rather than a finding, but it
+    says the +11 % is measured on a mix and not on classifier-confirmed payouts
+    alone.
+
+    The obvious next move is to let the gap between the last trade and the formal
+    date price that bias, on the reading that the last close goes *stale*: a
+    swap's value would go on moving with the acquirer while the target no longer
+    trades, and the gap would then estimate the error on a name whose acquirer
+    was never identified. It does not work, and the reason is worth recording so
+    nobody buys it twice. The gap barely varies — 13, 13, 13 and 14 days across
+    the swaps against residuals spread +3 % to +13 %, and **77 % of the 99
+    payout-shaped names sit at 7-14 days** — because it is the settlement
+    calendar rather than anything about the deal. And the mechanism cannot have
+    run: the successor of every swap measured first trades on the day the target
+    leaves, **zero sessions of overlap**, so there was no acquirer price to drift
+    against. All four are holding-company conversions, which follows from the
+    selection rather than being a coincidence — a swap stated 1:1 or as a flat
+    share count is what a conversion looks like, while a third-party acquisition
+    for stock is the case carrying the odd ratio excluded here. Across all six
+    the rank correlation with the gap is 0.76, and that is the cash deals
+    settling in 1 and 7 days against the swaps' 13 and 14: the deal form
+    reported under the gap's name. The staleness account is untested rather than
+    refuted, and these deals cannot test it.
+
+    So `terminal_value()` books on four bases, cut so each names a different
+    piece of work. **`failed`** is zero. **`consideration`** is what was actually
+    paid, for the 6 recorded, a swap priced on the panel at the delisting date.
+    **`substituted`** is the last close standing in for a consideration nobody
+    has looked up, carrying the bias above, and one filing closes each.
+    **`undecided`** is NaN and is the only NaN — the sign is what the band does
+    not know, and a number there would be a guess at the direction rather than
+    at the size. That distinction is what the column is for: the last two are
+    both missing something, and it is not the same something, so a study that
+    meets one has to pull a filing while a study that meets the other has to
+    resolve the band or drop the name. Either way the count falls out of running
+    the study instead of being estimated ahead of it.
+
+    A hand-read filing outranks a price shape wherever one exists, so the 38
+    labels settle the sign and the cuts fill the rest. That empties 20 of the 32
+    band names, leaving exactly the **12** the single cut is registered against,
+    and it overturns one verdict outside the band — 1613 books zero rather than
+    its last close. The 99 % above is unchanged by this and should be: it is a
+    fact about the cuts, and booking the value a label already settled does not
+    make the cuts better. The counts a study meets are **51 `failed`, 6
+    `consideration`, 103 `substituted`, 12 `undecided`**.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry
