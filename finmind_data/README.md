@@ -728,17 +728,39 @@ ohlcv_all = pd.concat(
     the obvious second opinion and is not available: the vendor's statement
     history starts 2012-03-31 and 80 of these names delisted before 2011.
 
-    None of that split is established yet, and the split is not what would
-    establish it. The two cuts were fixed before a single reason was looked up,
-    which is the only thing that makes an accuracy measured against them worth
-    reading, and `delisting_labels.csv` plus the assertion over it exist to keep
-    that true — the draw is a function of the cuts, so a cut edited after the
-    labels arrive changes which names were sampled and fails the suite. 33 names
-    are drawn stratified across the cuts and the eras to measure how often the
-    shape is right; 12 carry no corroborating feature at all and are resolved by
-    hand instead of classified, 5 of them outside the drawn sample. Until those
-    38 labels are filled in, this is a hypothesis with a committed test rather
-    than an answer to the caveat above.
+    The two cuts were fixed before a single reason was looked up, which is the
+    only thing that makes an accuracy measured against them worth reading, and
+    `delisting_labels.csv` plus the assertion over it keep that true — the draw
+    is a function of the cuts, so a cut edited after the labels arrive changes
+    which names were sampled and fails the suite. 38 names carry a label read
+    off exchange announcements and contemporary reporting: 33 drawn stratified
+    across the cuts and the eras, 5 more that carried no corroborating feature
+    and were resolved by hand rather than classified.
+
+    Scored on the names the cuts actually decide, the shape is right on **99 %
+    of the 140** carrying a verdict. That is an estimate from 18 labelled
+    verdicts weighted up by stratum, not 140 verified ones, and it turns on a
+    single miss: **1613 台一** stopped 25 % below its peak, which reads as an
+    acquisition, and was in fact thrown off the exchange for failing to file its
+    China subsidiary's accounts. A failure that never panicked the tape is the
+    error this method makes, and forced delistings for non-filing are where to
+    expect it.
+
+    The labels also show the cuts are placed conservatively. Inside the
+    undecided band the truth turns over near a drawdown of 0.50: of the 20
+    labelled names between the cuts, 7 of the 8 below are failures and 10 of the
+    12 above are payouts, so one cut there would decide most of what two leave
+    open. That is a hypothesis for a later pre-registration and not a licence to
+    move these cuts — the 0.50 boundary was read off the same 38 labels any rate
+    at it would be scored against, which is the circularity this whole
+    arrangement exists to avoid. Left as it stands the band holds ~32 names,
+    ~18 of them payouts.
+
+    What this does not fix is the size of the payout. A name classified as one
+    still needs its consideration to book a return, and the exchange announcement
+    carries it (NT$85 cash for 8480, 0.275 shares of 3714 for 3698) only for the
+    38 looked up so far. MOPS is still the fix; the classification narrows what
+    has to be pulled from it.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

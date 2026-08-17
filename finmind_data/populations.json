@@ -23,6 +23,10 @@
     "bound": "exact",
     "n": 173
   },
+  "test_taiwan_delisting_sign_accuracy": {
+    "bound": "exact",
+    "n": 38
+  },
   "test_taiwan_delisting_sign_sample_is_preregistered": {
     "bound": "exact",
     "n": 172

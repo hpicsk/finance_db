@@ -6,7 +6,8 @@ failed is a total loss, one that was acquired or folded into a holding company
 pays out at something near its last price. A study that drops delisted names
 loses both; one that marks them all -100 % is wrong on the larger half. The
 exchange publishes the reason only for TPEx names delisted from 2021 (7 of the
-173 here), so the reason has to be read off the panel instead.
+173 priced in-window delistings), so the reason has to be read off the panel
+instead.
 
 It is legible there because the price paths differ in shape. An acquisition is
 announced, jumps to a premium, then converges flat to the consideration and
@@ -14,17 +15,29 @@ stops at its own high. A failure collapses. The ratio of the last traded close
 to the highest close of the preceding year separates them without needing the
 level, the currency, or any adjustment — raw and adjusted closes give the same
 ratio to four decimals (median |log difference| 0.0000, correlation 0.984), so
-this runs on the 173 names with any price history rather than the 135 the
-vendor's adjusted series covers.
+this runs on every name with a price history rather than the 135 the vendor's
+adjusted series covers.
 
 **The cuts below were fixed before any label was collected, and this file is
 that record.** They are not tuned to the labels and must not be: an accuracy
 measured at a cut chosen after seeing the answers is an accuracy of the choosing.
 ``delisting_labels.csv`` is drawn here, filled in by hand from the exchange and
 the filings, and read back by this same script to report how often the shape was
-right. If the cuts turn out to be misplaced, the honest report is the accuracy
-they earned plus the observed composition of each band, not a second run at
-better cuts.
+right. The labels are in, and at the cuts as committed the shape is right on
+99 % of the 140 names carrying a verdict — an estimate from 18 labelled
+verdicts, weighted by stratum, turning on the single miss 1613.
+
+They also show the cuts are placed conservatively: inside the undecided band the
+truth turns over near a drawdown of 0.50, where one cut would decide most of
+what two leave open. That stays a hypothesis for a later pre-registration. The
+0.50 boundary was read off the same 38 labels any rate at it would be scored
+against, so adopting it here would buy a better-looking number by spending the
+only thing that makes the number mean anything.
+
+Labels are two-valued by construction, and the question they answer is whether a
+transaction paid holders — cash, or shares in a surviving company — or the
+listing simply ended. A compulsory delisting for non-filing is a failure by that
+test even where the company kept trading elsewhere, because no payout occurred.
 
 Parameters, per the repo's degrees-of-freedom convention:
 
@@ -35,11 +48,15 @@ Parameters, per the repo's degrees-of-freedom convention:
 ``_DD_DISTRESS`` / ``_DD_MERGER``
     CHOSEN, pre-registered. Two cuts on the drawdown, placed by inspection of
     the distribution before labels existed. Their cost is measured, not argued:
-    see the accuracy block this script prints once labels are filled in.
+    99 % of the verdicts they issue, against the labels.
 ``_LONG_SUSPENSION_DAYS``
     CHOSEN, structural. The routine gap between a last trade and the formal date
-    is 7-14 days (73 of 173 names); anything past a month is a halt, not
-    paperwork.
+    is 7-14 days for 73 of the priced delistings; anything past a month is a
+    halt, not paperwork.
+``_STRATUM_BRACKET``
+    CHOSEN, structural. How far either side of a cut the draw treats as its
+    boundary. Its value matters less than its being applied to both cuts, which
+    is what ties the sample to them.
 ``_SAMPLE_SEED``, ``_ALLOCATION``
     CHOSEN, pre-registered. Stratified because a uniform draw would spend most
     of its labels in the ``clear`` band where the shape is least in doubt; the
@@ -51,9 +68,11 @@ Parameters, per the repo's degrees-of-freedom convention:
     the wrong mix.
 
 BASELINE: price-shape classification | obvious alternative: the exchange's own
-stated reason, which exists for 7 of 173 | discharge: pending, and what
-``delisting_labels.csv`` is for — the 7 are included in the draw and carry no
-special weight, since 7 labels cannot validate anything on their own.
+stated reason, which exists for 7 of the 173 | discharge: the reason was read by
+hand for 38 names and the shape agrees with it on all but one, so the objection
+is answered by measurement rather than by argument. The 7 TPEx names are in the
+draw on the same footing as the rest and carry no special weight; 7 labels could
+not have settled this alone, which is why the other 31 were bought.
 
 Not every row of the delisting table is an exit. A name that changes boards is
 recorded as leaving the one it left and goes on trading, so it has no sign to
@@ -94,14 +113,18 @@ _DD_MERGER = 0.70
 _LONG_SUSPENSION_DAYS = 30
 
 # Stratum edges on the drawdown, and how many labels each stratum gets per era.
-# Edges bracket the two cuts so the draw concentrates where a misplacement would
-# show, and the middle band gets labels because nothing is decided there at all.
+# The edges are *derived from the cuts* rather than written out, and that is what
+# makes the pre-registration enforceable instead of merely stated: a cut moved
+# after the labels are in moves the stratum boundaries, moves which names were
+# drawn, and fails the assertion that redraws against the committed CSV. Written
+# as five literal pairs they would not, and the edit would land silently.
+_STRATUM_BRACKET = 0.05
 _STRATA = [
-    ("deep", 0.00, 0.25),
-    ("edge_lo", 0.25, 0.35),
-    ("mid", 0.35, 0.65),
-    ("edge_hi", 0.65, 0.75),
-    ("clear", 0.75, 1.01),
+    ("deep", 0.00, _DD_DISTRESS - _STRATUM_BRACKET),
+    ("edge_lo", _DD_DISTRESS - _STRATUM_BRACKET, _DD_DISTRESS + _STRATUM_BRACKET),
+    ("mid", _DD_DISTRESS + _STRATUM_BRACKET, _DD_MERGER - _STRATUM_BRACKET),
+    ("edge_hi", _DD_MERGER - _STRATUM_BRACKET, _DD_MERGER + _STRATUM_BRACKET),
+    ("clear", _DD_MERGER + _STRATUM_BRACKET, 1.01),
 ]
 _EARLY_ERA_END = 2010
 _ALLOCATION = {          # stratum: (labels from <=2010, labels from >2010)
@@ -253,39 +276,62 @@ def main() -> None:
         print(f"  {_LABEL_FILE.name}: 0 of {len(labels)} labelled — "
               f"accuracy pending")
         return
-    report_accuracy(f, filled)
+    accuracy(f, filled)
 
 
-def report_accuracy(f: pd.DataFrame, filled: pd.DataFrame) -> None:
-    """Per-stratum agreement, weighted back up by stratum size."""
+def accuracy(f: pd.DataFrame, filled: pd.DataFrame, verbose: bool = True) -> dict:
+    """Agreement on the names that carry a verdict, weighted by stratum.
+
+    Only the ``measure`` rows enter: they are the stratified random draw, so
+    within a stratum each sampled name stands for ``N_s / n_s`` of the
+    population. The ``resolve`` rows were picked precisely because they were
+    undecided, which makes them the hardest cases by construction — averaging
+    them in would bias the rate down.
+
+    Whether a name is scored is decided by the name, not by its stratum. Both
+    edge strata straddle a cut, so each holds names on either side of it, and an
+    ``ambiguous`` name can never equal a ``merger``/``distress`` label — scoring
+    it would count the undecided band as a wrong answer rather than as no
+    answer.
+    """
     m = filled[filled["purpose"] == "measure"].merge(
-        f[["stock_id", "sign", "stratum"]], on="stock_id",
-        suffixes=("_csv", ""))
-    m["correct"] = m["sign"] == m["label"]
+        f[["stock_id", "sign", "stratum"]], on="stock_id", suffixes=("_csv", ""))
     sizes = f["stratum"].value_counts()
 
-    print(f"\n  labels: {len(filled)} filled "
-          f"({(filled['purpose'] == 'measure').sum()} measure, "
-          f"{(filled['purpose'] == 'resolve').sum()} resolve)")
-    print("  stratum   n  correct  stratum_size")
-    num = den = 0.0
+    est_verdict = est_correct = est_amb = est_amb_merger = 0.0
+    rows = []
     for stratum in [e[0] for e in _STRATA]:
         g = m[m["stratum"] == stratum]
         if not len(g):
             continue
-        acc = g["correct"].mean()
-        size = int(sizes.get(stratum, 0))
-        # Verdicts are only issued outside the undecided band; the middle
-        # strata are sampled to show what is in them, not to be scored.
-        scored = stratum in ("deep", "edge_lo", "edge_hi", "clear")
-        print(f"  {stratum:9s} {len(g):2d}  {acc:6.1%}  {size:4d}"
-              f"{'' if scored else '   (composition only)'}")
-        if scored:
-            num += acc * size
-            den += size
-    if den:
-        print(f"  weighted accuracy over the {int(den)} names carrying a "
-              f"verdict: {num / den:.1%}")
+        weight = int(sizes.get(stratum, 0)) / len(g)
+        verdict = g[g["sign"] != "ambiguous"]
+        amb = g[g["sign"] == "ambiguous"]
+        correct = int((verdict["sign"] == verdict["label"]).sum())
+        est_verdict += weight * len(verdict)
+        est_correct += weight * correct
+        est_amb += weight * len(amb)
+        est_amb_merger += weight * int((amb["label"] == "merger").sum())
+        rows.append((stratum, int(sizes.get(stratum, 0)), len(g), len(verdict),
+                     correct, len(amb)))
+
+    acc = est_correct / est_verdict
+    if verbose:
+        print("\n  stratum   size  drawn  verdicts  correct  undecided")
+        for s, size, n, v, c, a in rows:
+            print(f"  {s:9s} {size:4d}  {n:5d}  {v:8d}  {c:7d}  {a:9d}")
+        print(f"  verdicts are right on {acc:.1%} of the "
+              f"{est_verdict:.0f} names carrying one "
+              f"({(f['sign'] != 'ambiguous').sum()} actual)")
+        print(f"  the undecided band is ~{est_amb:.0f} names, "
+              f"~{est_amb_merger:.0f} of them payouts "
+              f"({(f['sign'] == 'ambiguous').sum()} actual)")
+    scored = m[m["sign"] != "ambiguous"]
+    return {"accuracy": acc, "n_verdict": est_verdict,
+            "n_ambiguous": est_amb, "n_ambiguous_merger": est_amb_merger,
+            "n_scored": len(scored),
+            "missed": sorted(scored.loc[scored["sign"] != scored["label"],
+                                        "stock_id"])}
 
 
 if __name__ == "__main__":

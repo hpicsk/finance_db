@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import glob
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -429,6 +430,64 @@ def test_taiwan_delisting_sign_sample_is_preregistered():
             f"accuracy names and {int((labels['purpose'] == 'resolve').sum())} "
             f"to resolve, {n_lab} of {len(labels)} labelled",
             exited)
+
+
+def test_taiwan_delisting_sign_accuracy():
+    """README caveat 8: the price shape is right on 99 % of the names it decides.
+
+    The claim the labels bought, and the two ways it can rot. It can rot at the
+    labels — a CSV half filled in would quietly shrink the sample the rate is
+    computed over — so every drawn name must carry one. And it can rot at the
+    code, if a change to the feature or the cuts moves which names are decided;
+    the rate is recomputed here from the module and the committed labels rather
+    than restated, so it moves when they do.
+
+    The single miss is asserted by name because it is what the README says the
+    method gets wrong: a failure whose price never panicked. If a second one
+    appears, or this one stops missing, the sentence describing the error mode
+    is no longer the sentence the data supports.
+    """
+    from finmind_data.delisting_sign import accuracy, features
+
+    f = features()
+    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                         dtype={"stock_id": str})
+    blank = labels.loc[labels["label"].fillna("") == "", "stock_id"]
+    assert not len(blank), (
+        f"README caveat 8 reports a rate over all {len(labels)} labelled "
+        f"names; {len(blank)} are still blank ({sorted(blank)[:5]}), so the "
+        f"rate would be computed over a smaller sample than the text claims"
+    )
+
+    r = accuracy(f, labels, verbose=False)
+    assert r["n_scored"] == 18, (
+        f"the rate rests on 18 labelled names that carry a verdict; "
+        f"{r['n_scored']} do now. The estimate is weighted by stratum, so a "
+        f"change in which names are decided changes what the 99 % is over"
+    )
+    assert r["missed"] == ["1613"], (
+        f"README caveat 8 says the one miss is 1613 台一, a forced delisting "
+        f"for non-filing that never collapsed; the misses are now "
+        f"{r['missed']}. The described error mode no longer matches the data"
+    )
+    assert math.isclose(r["accuracy"], 0.993, abs_tol=0.005), (
+        f"README caveat 8 claims the shape is right on 99 % of the names "
+        f"carrying a verdict; the weighted rate is now {r['accuracy']:.1%}"
+    )
+    assert math.isclose(r["n_verdict"], 140, abs_tol=3), (
+        f"README caveat 8 puts 140 names under a verdict (41 + 99); the "
+        f"stratum-weighted estimate is {r['n_verdict']:.0f}, so the sample no "
+        f"longer reconstructs the population it is weighted to"
+    )
+    assert math.isclose(r["n_ambiguous_merger"], 18, abs_tol=3), (
+        f"README caveat 8 says ~18 of the ~32 undecided names are payouts; "
+        f"the weighted estimate is now {r['n_ambiguous_merger']:.0f}"
+    )
+    return (f"{r['accuracy']:.1%} of {r['n_verdict']:.0f} verdicts correct "
+            f"from {r['n_scored']} labelled, miss = {r['missed']}; "
+            f"undecided band ~{r['n_ambiguous']:.0f}, "
+            f"~{r['n_ambiguous_merger']:.0f} payouts",
+            len(labels))
 
 
 def test_taiwan_fundamentals_are_fiscal_dated():
@@ -1499,6 +1558,7 @@ CHECKS = [
     test_taiwan_open_outside_session_range,
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_delisting_sign_sample_is_preregistered,
+    test_taiwan_delisting_sign_accuracy,
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,
