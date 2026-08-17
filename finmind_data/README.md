@@ -351,9 +351,9 @@ fails three ways. Two are the ends of the series: behind the last break
 — a share cancellation no filing priced, or a multi-year trading gap
 after which the ticker came back as a different listing (309 breaks in
 231 stocks, 3.00 % of rows) — and past the delisting date, the 4,632
-quotes in 14 names below. The third is one session anywhere between them:
-the stock did not trade (167,162 rows in 1,309 stocks), so no level the
-panel carries was a price anyone could transact at.
+quotes in 14 delisted names below. The third is one session anywhere
+between them: the stock did not trade (167,162 rows in 1,309 stocks), so
+no level the panel carries was a price anyone could transact at.
 
 `invalid_reason` says which, because the flag is one column and the four
 are not the same problem: `unpriced_cancellation` means a step is
@@ -693,19 +693,29 @@ ohlcv_all = pd.concat(
    this package is an assumption wearing a number.
 
     The 4,632 post-delisting sessions are the one piece of direct evidence
-    the package does hold against this. Fourteen names go on being quoted for 8
-    to 1,151 sessions after leaving the exchange, and where each converges over
-    that stretch is a market observation of what the shell was worth — which
-    the last exchange close is not. It is also a weak signal on the reason,
-    since a name that left by merger does not go to 興櫃 at all. Fourteen names
-    is a sample, not a fix; the fix is still MOPS.
+    the package does hold against this. Fourteen delisted names go on being
+    quoted for 8 to 1,151 sessions after leaving the exchange, and where each
+    converges over that stretch is a market observation of what the shell was
+    worth — which the last exchange close is not. It is also a weak signal on
+    the reason, since a name that left by merger does not go to 興櫃 at all.
+    Fourteen quoted tails is a sample, not a fix; the fix is still MOPS.
 
     One name is the opposite error. 6446 is in the delisting table with a
     2024-01-25 date and never left: it moved onto the exchange, which the table
     does not record, and a delisting return computed for it would be a loss it
-    never took. The panel finds it because the vendor keeps pricing it past the
-    date, so it is one delisting the caveat does not apply to — and a reminder
-    that the table's dates are exits from *a* board, not from the market.
+    never took. It is one delisting the caveat does not apply to — and a
+    reminder that the table's dates are exits from *a* board, not from the
+    market.
+
+    What separates it from the other thirteen is that it is still quoted on the
+    panel's last session. That is worth stating because three of the fourteen
+    invite the opposite reading: 1408, 2407 and 2811 trade *heavier* after their
+    delisting than before it (71-336 % of their own listed-era median), which is
+    not what a negotiated market looks like and would fit a demotion to another
+    board — the mirror of 6446, and the same sign flip. It is not one. All three
+    stop for good within 10 sessions to 5 months, where a name that changed
+    boards goes on trading. Exactly three tickers outlive the panel: 6446, and
+    2301 and 2432 whose 4-digit codes were reissued to different companies.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

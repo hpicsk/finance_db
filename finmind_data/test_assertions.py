@@ -838,6 +838,15 @@ def test_taiwan_post_delisting_sessions_are_marked():
     acquired tails the boundary could not see, and this check went on passing
     because it was still looking at its original seven. A check that names its
     subjects cannot report the ones that arrive after it is written.
+
+    Which leaves the other half of the same problem: what the check *classifies*
+    on. Deciding a transfer by the vendor's coverage flag, as the loader does,
+    would make this check a restatement of the loader rather than a test of it —
+    the two would agree on a rebuilt name by construction, both of them silent.
+    It reads the panel instead, and a disagreement is loud in both directions: a
+    name still quoted at the panel's edge that the loader marked fails the
+    assertion below, and one that stops being quoted but was left unmarked fails
+    the `post == after` assertion further down.
     """
     sys.path.insert(0, str(REPO))
     import numpy as np
@@ -846,6 +855,23 @@ def test_taiwan_post_delisting_sessions_are_marked():
 
     d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
+
+    # What separates a departure from an exit has to be something the loader did
+    # not classify on, or the two cannot disagree and the check only restates the
+    # code. The loader reads the vendor's coverage flag, which is False across
+    # every rebuilt name and so cannot see a transfer among them; this reads the
+    # market instead. A name still quoted on the panel's last session did not
+    # leave the market whatever the delisting table says, and that is a fact
+    # about the panel, defined for rebuilt and vendor-served names alike.
+    last = {}
+    for r in d.itertuples():
+        f = REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet"
+        if not f.exists():
+            continue
+        c = pd.read_parquet(f)
+        if len(c):
+            last[str(r.stock_id)] = pd.to_datetime(c["date"]).max()
+    panel_end = max(last.values())
 
     marked = transferred = 0
     names = []
@@ -860,16 +886,19 @@ def test_taiwan_post_delisting_sessions_are_marked():
         after = (pd.to_datetime(df["date"]) > r.date).to_numpy()
         if not after.any():
             continue
-        # A name the vendor keeps pricing past its delisting date did not leave
-        # the market. Asserting that no such name picks up the reason is what
-        # stops the boundary from being applied by date alone to a stock that is
-        # still listed — the delisting table records departures from a board,
-        # and a departure is not always an exit.
-        if df["adj_covered"].to_numpy()[after].any():
+        # A name still being quoted on the panel's last session did not leave the
+        # market. Asserting that no such name picks up the reason is what stops
+        # the boundary from being applied by date alone to a stock that is still
+        # listed — the delisting table records departures from a board, and a
+        # departure is not always an exit. The separation is not marginal: the
+        # tails that end do so 12 to 18 years short of the panel, the shortest
+        # after 8 sessions and the longest after 1,151.
+        if last[sid] == panel_end:
             still = (df["invalid_reason"] == "post_delisting_emerging").to_numpy()
             assert not still[after].any(), (
-                f"{sid}: the vendor prices it past its {r.date.date()} delisting "
-                f"date, so the name did not leave the market, but "
+                f"{sid}: it is still quoted on {panel_end.date()}, the panel's "
+                f"last session, so its {r.date.date()} delisting was a departure "
+                f"from a board and not from the market, but "
                 f"{int(still[after].sum())} of its {int(after.sum())} later "
                 f"sessions are marked as having followed an exit. The other "
                 f"reasons may still claim rows here and should")

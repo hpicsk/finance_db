@@ -106,16 +106,30 @@ standing behind it, and median volume runs at 3.6-48 % of each name's own
 listed-era median. Across the rebuilt seven that signature does not hold — 1408,
 2407 and 2811 print at 71-336 % of their prior median — so the reason names which
 side of the delisting a row falls on rather than which market carried it, and it
-is the exchange's termination date that disqualifies it either way. What they *are* is the
-terminal value: where a delisted name converges over the months after it leaves
-is a market observation, and the last exchange close is not one. That is the use
-the fill is for, and the flag is what keeps it to that use.
+is the exchange's termination date that disqualifies it either way. Turnover that
+heavy is not negotiated trading, which raises the opposite possibility: that the
+three were demoted to another board rather than delisted, and their tails are
+sessions a study could have held. They were not. All three stop permanently
+within 10 sessions to 5 months and never trade again, where a name that changes
+boards goes on trading — 6446 is still quoted on the panel's last session. What
+they *are* is the terminal value: where a delisted name converges over the months
+after it leaves is a market observation, and the last exchange close is not one.
+That is the use the fill is for, and the flag is what keeps it to that use.
 
 A name the vendor keeps pricing past that date did not leave. 6446 moved onto
 the exchange in 2024 and the table records the departure without the arrival, so
 its 224 later sessions stay holdable. 2301 and 2432 come back 791 and 5,385 days
 after theirs, which is a reused code rather than a return, and the break above
 cuts the earlier issuer's history off the later one's.
+
+That carve-out reads the vendor's coverage, and so has the blind spot the
+boundary above had: ``adj_covered`` is False across every rebuilt name, so a
+rebuilt name that changed boards would be marked here and nothing in this module
+could tell. It stays vendor-side because the alternative is a panel-wide fact and
+this loads one stock. What closes it is that
+``test_taiwan_post_delisting_sessions_are_marked`` classifies on that fact
+instead — still quoted on the panel's last session — so the two routes can
+disagree, and today they agree on all fourteen.
 
 ``is_valid`` is therefore "this row is a position a study could have held", and
 it fails three ways. Two are the ends of the series: a row before the last break
