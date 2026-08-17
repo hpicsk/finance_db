@@ -716,6 +716,29 @@ ohlcv_all = pd.concat(
     stop for good within 10 sessions to 5 months, where a name that changed
     boards goes on trading. Exactly three tickers outlive the panel: 6446, and
     2301 and 2432 whose 4-digit codes were reissued to different companies.
+
+    The reason the table omits is partly legible in the price path, and
+    `delisting_sign.py` reads it there. An acquisition is announced, jumps to a
+    premium and converges flat to the consideration, stopping at its own high; a
+    failure collapses. On the ratio of the last traded close to the highest
+    close of the preceding year, **41 of the 172 market exits are
+    failure-shaped, 99 payout-shaped, and 32 sit between the two cuts** — 172
+    rather than the 173 priced in-window delistings because 6446 changed boards
+    and has no shareholder outcome to classify. Balance-sheet equity would be
+    the obvious second opinion and is not available: the vendor's statement
+    history starts 2012-03-31 and 80 of these names delisted before 2011.
+
+    None of that split is established yet, and the split is not what would
+    establish it. The two cuts were fixed before a single reason was looked up,
+    which is the only thing that makes an accuracy measured against them worth
+    reading, and `delisting_labels.csv` plus the assertion over it exist to keep
+    that true — the draw is a function of the cuts, so a cut edited after the
+    labels arrive changes which names were sampled and fails the suite. 33 names
+    are drawn stratified across the cuts and the eras to measure how often the
+    shape is right; 12 carry no corroborating feature at all and are resolved by
+    hand instead of classified, 5 of them outside the drawn sample. Until those
+    38 labels are filled in, this is a hypothesis with a committed test rather
+    than an answer to the caveat above.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

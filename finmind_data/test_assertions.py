@@ -370,6 +370,67 @@ def test_taiwan_delisting_table_has_no_reason():
             len(d))
 
 
+def test_taiwan_delisting_sign_sample_is_preregistered():
+    """The label draw is fixed before the labels exist, and this is what pins it.
+
+    `delisting_sign.py` splits the delisted names into failures and payouts on
+    the shape of the price path, at two cuts chosen while no label existed to
+    tune them against. That ordering is the whole defence of the accuracy the
+    labels will eventually report — a cut moved after seeing the answers gives
+    an accuracy of the moving — and a committed constant does not enforce it,
+    because editing `_DD_DISTRESS` once the labels are in would change the
+    reported rate with nothing to say so.
+
+    What makes it enforceable is that the draw is a function of the cuts: the
+    strata bracket them, so a cut that moves moves which names were sampled.
+    Re-drawing here and comparing against the committed `delisting_labels.csv`
+    turns that edit into a failing assertion. The independence is in the CSV
+    being frozen in git rather than in a second implementation of the draw —
+    this recomputes, git remembers, and the two can disagree.
+    """
+    from finmind_data.delisting_sign import (
+        _DD_DISTRESS, _DD_MERGER, features, draw_sample)
+
+    f = features()
+    exited = len(f)
+    # 173 in-window delistings have prices; `test_taiwan_adjusted_survivorship_hole`
+    # counts those. This counts the ones that left the *market* — the same set
+    # less 6446, which changed boards and goes on trading, so it has no
+    # shareholder outcome to classify.
+    assert exited == 172, (
+        f"README's delisting-sign section counts 172 in-window delistings that "
+        f"exited the market, the 173 priced less the one board transfer; "
+        f"features() now returns {exited}"
+    )
+
+    drawn = set(draw_sample(f)["stock_id"])
+    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                         dtype={"stock_id": str})
+    committed = set(labels.loc[labels["purpose"] == "measure", "stock_id"])
+    assert drawn == committed, (
+        f"the accuracy sample is pre-registered, so redrawing it must return "
+        f"the committed draw; {len(drawn - committed)} names are new and "
+        f"{len(committed - drawn)} have dropped out "
+        f"({sorted(drawn ^ committed)[:6]}). Either a cut, a stratum edge, the "
+        f"seed or the population moved — if that was intended, the labels "
+        f"collected against the old draw no longer measure this classifier"
+    )
+
+    allowed = {"merger", "distress", ""}
+    got = set(labels["label"].fillna("").unique())
+    assert got <= allowed, (
+        f"delisting_labels.csv carries labels outside {sorted(allowed - {''})}: "
+        f"{sorted(got - allowed)}. A third outcome means the two-sign split the "
+        f"README describes is wrong, not that the label is"
+    )
+    n_lab = int((labels["label"].fillna("") != "").sum())
+    return (f"{exited} market exits classified at cuts "
+            f"{_DD_DISTRESS}/{_DD_MERGER}; {len(committed)} pre-registered "
+            f"accuracy names and {int((labels['purpose'] == 'resolve').sum())} "
+            f"to resolve, {n_lab} of {len(labels)} labelled",
+            exited)
+
+
 def test_taiwan_fundamentals_are_fiscal_dated():
     """README caveat 9: fiscal period end, no announcement date.
 
@@ -1437,6 +1498,7 @@ CHECKS = [
     test_taiwan_adj_covered_survives_concat,
     test_taiwan_open_outside_session_range,
     test_taiwan_delisting_table_has_no_reason,
+    test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,
