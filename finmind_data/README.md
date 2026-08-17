@@ -18,29 +18,69 @@ backup directories (see "Directory layout").
 
 ## Universe
 
-**2,154 common stocks** (4-digit ticker codes), as of the 2026-04-27
-`build_universe.py` rebuild:
+**2,121 common stocks** (4-digit ticker codes), from the 2026-04-27
+`build_universe.py` rebuild with the 2026-08-17 filter correction below:
 
 | Exchange | Count |
 |---|---|
-| TWSE                                   | 1,198 |
+| TWSE                                   | 1,168 |
 | TPEx                                   |   914 |
-| Pre-2015 delistings (type unknown)     |    42 |
-| **Total**                              | **2,154** |
+| Pre-2015 delistings (type unknown)     |    39 |
+| **Total**                              | **2,121** |
 
 Excludes: ETFs (`00xxx` codes), warrants, TDRs (industry categories
 "存託憑證" / "臺灣存託憑證"), beneficiary certificates ("受益證券"),
 ETNs, and the TWSE Innovation Board relaxed-disclosure tier
 ("創新版股票" / "創新板股票").
 
-The 42 pre-2015 delistings are added on top of FinMind's live
-`taiwan_stock_info` output — they are 4-digit common stocks present in
-`delisted_universe.parquet` (delisting between 2005-01-01 and
-2014-12-31) that the live endpoint no longer returns. They carry
+The 39 pre-2015 delistings are added on top of FinMind's live
+`taiwan_stock_info` output — they are 4-digit common stocks whose
+*company* the live endpoint no longer returns, delisting between
+2005-01-01 and 2014-12-31 per `delisted_universe.parquet`. They carry
 `type=NaN` and `industry_category=NaN`. FinMind still serves
 price/flow data for these names up to their delisting date. Without
 them the Taiwan panel would be 0%-coverage on pre-2015 delistings
 while fnguide is ~90%-coverage, breaking cross-market symmetry.
+
+Company rather than code, because one code is held by two companies:
+2432 delisted as 倚天資訊 in 2008 and 倚天酷碁 was later issued the same
+code. The endpoint answers for the successor, so testing the code would
+report the predecessor as still listed and drop it from the overlay.
+
+### The exclusions ran against rows, and admitted 33 names
+
+`taiwan_stock_info` returns one row per (market, industry) a stock has
+been classified under — 835 of 2,162 four-digit TWSE/TPEx codes carry
+more than one, rows still in force stamped with the query date and
+retired ones with the date they were retired. Until 2026-08-17 the
+filters above dropped matching *rows* and deduplicated afterwards, which
+drops nothing when a stock has a second row: every Innovation Board name
+also carries an ordinary industry row, so all 30 in the file survived on
+it — 29 of them wrongly, and 2432 under a name and industry three years
+stale, kept only because its row stands for the predecessor rather than
+the Innovation Board company now holding the code. Four TDRs — 9101
+福雷電, 9102 東亞科, 9104 萬宇科, 9151 旺旺 — came back by the other route,
+since the overlay asked whether a code was absent from the *filtered*
+table and the filter had just removed them.
+
+The count beside this section was asserted and the criterion was not, so
+2,154 stayed green while 33 of the names under it were forbidden. Both
+filters now drop the stock on the evidence of any of its rows,
+`build_universe.py` asserts that no excluded instrument survived, and
+`test_taiwan_universe_excludes_the_instruments_it_claims_to` checks the
+criterion rather than the total.
+
+Six of the 29 have since transferred to the ordinary board and are
+excluded here too: the earliest retired Innovation Board classification
+is stamped 2024-11-25, so each was on the relaxed-disclosure tier for
+all but the last five weeks of the 2005-2024 window.
+
+Two things this correction did not do. Per-stock files under
+`ohlcv/`, `price_adj/` and the rest still exist for the 33 removed
+names and are simply unread — no download was rerun. And the rest of
+the file is the 2026-04-27 snapshot: 675 of the retained rows still
+carry the industry the endpoint listed first rather than the one in
+force, which only a full rebuild refreshes.
 
 Per-stock files under earlier (2,111- and 2,112-ticker) universes
 remain valid for the 2015-2024 window and are preserved as
@@ -121,7 +161,7 @@ so you should filter by `date` rather than assume uniform coverage.
 ```
 /home/st/research/finance_db/finmind_data/
 ├── README.md                          (this file)
-├── universe.parquet                   2,154 common stocks (id, name, type, industry)
+├── universe.parquet                   2,121 common stocks (id, name, type, industry)
 ├── delisted_universe.parquet          315 historical delistings — `TaiwanStockDelisting` output
 ├── delisted_missing.parquet           9 delistings excluded from universe (ETFs/DRs)
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
@@ -414,20 +454,20 @@ filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
-`price_adj/` reaches 7,494,582 of the 7,509,555 traded sessions in
-`ohlcv/` — 99.80 % — and the 14,973 it misses are not missing at
-random. **38 of the 173 in-window universe delistings have raw prices
+`price_adj/` reaches 7,468,985 of the 7,483,951 traded sessions in
+`ohlcv/` — 99.80 % — and the 14,966 it misses are not missing at
+random. **38 of the 169 in-window universe delistings have raw prices
 and no adjusted series at all** (10,981 sessions), and every one of them
-delisted in 2005-2007. They are 38 of the 42 names `build_universe.py`
+delisted in 2005-2007. They are 38 of the 39 names `build_universe.py`
 carries as its survivorship overlay — added precisely because FinMind's
 live `taiwan_stock_info` had dropped them — and `TaiwanStockPriceAdj`
-drops them on the same registry. 51 downloaded files are empty in total;
-the other 13 are 2026 listings with no in-window prices either.
+drops them on the same registry. 49 downloaded files are empty in total;
+the other 11 are 2026 listings with no in-window prices either.
 
 Quoting the 99.95 % these same files give once those 38 names leave the
 denominator reports the coverage of a panel the bias has already been
 removed from — the vendor's coverage is 99.80 %, and
-`available_stocks()` lists the 2,103 names it serves.
+`available_stocks()` lists the 2,072 names it serves.
 
 `load_adjusted` fills those 38 rather than returning a column of NaN a
 panel build would drop. `adjust.py` rebuilds the factor from the
@@ -476,8 +516,8 @@ delisting table (caveat 8).
 
 ### The two edges of the vendor series
 
-The other 3,992 missing sessions are not whole stocks but the two ends
-of a series the vendor serves. 903 stocks are short exactly one — their
+The other 3,985 missing sessions are not whole stocks but the two ends
+of a series the vendor serves. 896 stocks are short exactly one — their
 first traded session, one per stock, verified as that and nothing else.
 The remaining 3,089 sit past the end of a vendor series that stopped at
 a delisting while `ohlcv/` kept printing, in seven names. 1107 is the
@@ -979,7 +1019,7 @@ Second batch (free-tier verified):
 | `fin_is/` | `TaiwanStockFinancialStatements` | Quarterly income statement (includes EPS as a `type` row) |
 | `fin_bs/` | `TaiwanStockBalanceSheet` | Quarterly balance sheet |
 | `fin_cf/` | `TaiwanStockCashFlowsStatement` | Quarterly cash-flow statement |
-| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends, at **declaration** level — the per-component split (`CashEarningsDistribution`, `StockEarningsDistribution`, `CashIncreaseSubscriptionRate`). Units differ per field: stock dividends are per NT$10 par, rights are 每仟股. Also carries `CashExDividendTradingDate`, a **declared ex-date usable as an independent second source** for `div_result`'s event date — the two agree on 19,722 of 19,730 comparable events (**99.96 %**; of 2,228 non-matches, 2,220 are outside that stock's `div_result` span and only 8 are real). Present for 1,768 of 2,154 stocks. |
+| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends, at **declaration** level — the per-component split (`CashEarningsDistribution`, `StockEarningsDistribution`, `CashIncreaseSubscriptionRate`). Units differ per field: stock dividends are per NT$10 par, rights are 每仟股. Also carries `CashExDividendTradingDate`, a **declared ex-date usable as an independent second source** for `div_result`'s event date — the two agree on 19,722 of 19,730 comparable events (**99.96 %**; of 2,228 non-matches, 2,220 are outside that stock's `div_result` span and only 8 are real). Present for 1,844 of the 2,121 universe stocks, counting a stock as covered when any row carries a non-blank value (re-measured 2026-08-17). |
 | `div_result/` | `TaiwanStockDividendResult` | 除權除息結果表 — the exchange's **published reference prices** per ex-event (`before_price`, `after_price`). 22,369 events / 1,926 stocks. This, not `dividend/`, is what the adjusted series is built from. |
 | `sec_lending/` | `TaiwanStockSecuritiesLending` | 借券/議借 — institutional short proxy |
 

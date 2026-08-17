@@ -13,7 +13,7 @@
   },
   "test_taiwan_adjusted_coverage_decomposition": {
     "bound": "monotone",
-    "n": 7509555
+    "n": 7483951
   },
   "test_taiwan_adjusted_series": {
     "bound": "monotone",
@@ -21,7 +21,7 @@
   },
   "test_taiwan_adjusted_survivorship_hole": {
     "bound": "exact",
-    "n": 173
+    "n": 169
   },
   "test_taiwan_cash_payouts_land_outside_the_band": {
     "bound": "exact",
@@ -69,7 +69,11 @@
   },
   "test_taiwan_ohlcv_one_per_universe": {
     "bound": "monotone",
-    "n": 2154
+    "n": 2121
+  },
+  "test_taiwan_universe_excludes_the_instruments_it_claims_to": {
+    "bound": "monotone",
+    "n": 2121
   },
   "test_taiwan_open_outside_session_range": {
     "bound": "monotone",
@@ -85,7 +89,7 @@
   },
   "test_taiwan_price_adj_one_per_universe": {
     "bound": "monotone",
-    "n": 2154
+    "n": 2121
   },
   "test_taiwan_rebuild_matches_vendor": {
     "bound": "exact",

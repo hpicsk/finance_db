@@ -57,9 +57,77 @@ def _tw_ids():
 def test_taiwan_ohlcv_one_per_universe():
     u, _, uid, files = _tw_ids()
     missing = uid - files
-    assert len(u) == 2154, f"Taiwan universe = {len(u)}, README pins 2,154"
+    assert len(u) == 2121, f"Taiwan universe = {len(u)}, README pins 2,121"
     assert not missing, f"{len(missing)} universe ids have no OHLCV file"
     return f"Taiwan universe = {len(u)}; all have OHLCV", len(u)
+
+
+# TWSE appends this to the abbreviated name of an Innovation Board listing.
+_INNOVATION_BOARD_SUFFIX = r"-(?:KY)?創$"
+
+# 4-digit codes that delisted inside the window and are not common stock:
+# 福雷電, 東亞科, 萬宇科, 旺旺, each still carried by taiwan_stock_info under its
+# delisting-day name as 存託憑證. See test_taiwan_overlay_covers_2005_2014.
+_INWINDOW_TDRS = {"9101", "9102", "9104", "9151"}
+
+# The instrument types README "Universe" excludes, as `taiwan_stock_info`
+# spells them. Kept in step with `build_universe.exclude_industries`.
+_EXCLUDED_INSTRUMENTS = {
+    "ETF", "ETN", "受益證券", "存託憑證", "臺灣存託憑證",
+    "創新版股票", "創新板股票",
+}
+
+
+def test_taiwan_universe_excludes_the_instruments_it_claims_to():
+    """README "Universe": ETFs, ETNs, TDRs and the Innovation Board are excluded.
+
+    The count beside that sentence used to be the only thing asserted, and a
+    count cannot tell a universe of 2,154 correct names from one of 2,121
+    correct names plus 33 the criterion forbids. That is what shipped: every
+    Innovation Board name carries an ordinary industry row *as well as* its
+    創新板股票 row, so a filter that dropped rows and deduplicated afterwards
+    removed the tier row and kept the stock on the other one, admitting all 29
+    of the names the exclusion was written to remove. Four TDRs arrived by a
+    second route — the pre-2015 delisting overlay tested "absent from the
+    filtered table" and so re-admitted exactly what the filter had removed.
+
+    This check is deliberately partial, and the partiality is the point. A
+    committed row records one classification, so it cannot show that a *second*
+    row disqualifies the stock — 2432 sits here as 倚天/通信網路業, and only the
+    live endpoint knows it is now 倚天酷碁-創/創新板股票. The complete test needs
+    the source table and therefore lives at the generator, in
+    `build_universe.py`, which asserts the exclusion dropped stocks rather than
+    rows. What is checkable offline is the two signatures a leak leaves in the
+    file itself, and both are enumerated over every row rather than looked up
+    for the names this bug happened to involve.
+    """
+    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    name = u["stock_name"].astype(str)
+
+    bad_industry = u[u["industry_category"].isin(_EXCLUDED_INSTRUMENTS)]
+    assert bad_industry.empty, (
+        f"README 'Universe' excludes ETFs, ETNs, beneficiary certificates and "
+        f"TDRs, but {len(bad_industry)} rows carry one as their "
+        f"industry_category: "
+        f"{bad_industry[['stock_id', 'stock_name', 'industry_category']].to_dict('records')[:5]}"
+    )
+
+    inn = u[name.str.contains(_INNOVATION_BOARD_SUFFIX, regex=True, na=False)]
+    assert inn.empty, (
+        f"README 'Universe' excludes the TWSE Innovation Board, but "
+        f"{len(inn)} names carry its -創 suffix: "
+        f"{sorted(inn['stock_id'].astype(str))}. The 2005-2024 window closes "
+        f"before any of these graduated to the ordinary board"
+    )
+
+    assert u["stock_id"].is_unique, (
+        f"universe.parquet has {len(u) - u['stock_id'].nunique()} duplicate "
+        f"stock_id — taiwan_stock_info returns one row per classification, not "
+        f"per stock, and a duplicate means the reduction to one row per stock "
+        f"did not happen"
+    )
+    return (f"{len(u)} ids, none carrying an excluded instrument type or the "
+            f"Innovation Board -創 suffix"), len(u)
 
 
 def test_taiwan_price_adj_one_per_universe():
@@ -80,9 +148,9 @@ def test_taiwan_price_adj_one_per_universe():
     empty = sum(1 for sid in uid
                 if not len(pd.read_parquet(
                     REPO / f"finmind_data/price_adj/{sid}.parquet")))
-    assert empty == 51, (
-        f"README pins 51 empty adjusted series (38 of them 2005-2007 "
-        f"delistings, 13 post-window listings); the tree now has {empty}. "
+    assert empty == 49, (
+        f"README pins 49 empty adjusted series (38 of them 2005-2007 "
+        f"delistings, 11 post-window listings); the tree now has {empty}. "
         f"A change here moves the survivorship hole the README quantifies"
     )
     return (f"all {len(uid)} ids fetched; {empty} empty, {len(uid) - empty} "
@@ -90,9 +158,9 @@ def test_taiwan_price_adj_one_per_universe():
 
 
 def test_taiwan_adjusted_survivorship_hole():
-    """README, "The adjusted panel is survivorship-biased": 38 of 173.
+    """README, "The adjusted panel is survivorship-biased": 38 of 169.
 
-    The universe carries a 42-name overlay of 2005-2007 delistings that
+    The universe carries a 39-name overlay of 2005-2007 delistings that
     FinMind's live `taiwan_stock_info` no longer returns (see
     `test_taiwan_overlay_covers_2005_2014`). `TaiwanStockPriceAdj` drops the
     same names, so the raw panel is survivorship-free and the adjusted one is
@@ -114,12 +182,12 @@ def test_taiwan_adjusted_survivorship_hole():
         if len(raw) and not len(adj):
             hole.append(sid)
 
-    assert len(inwin["sid"].unique()) == 173, (
-        f"README counts 173 in-window universe delistings; found "
+    assert len(inwin["sid"].unique()) == 169, (
+        f"README counts 169 in-window universe delistings; found "
         f"{len(inwin['sid'].unique())}"
     )
     assert len(hole) == 38, (
-        f"README claims 38 of the 173 in-window delistings have raw prices and "
+        f"README claims 38 of the 169 in-window delistings have raw prices and "
         f"no adjusted series; found {len(hole)}. If this shrank the vendor has "
         f"backfilled and the caveat is overstated; if it grew the hole is wider "
         f"than the paragraph says"
@@ -129,7 +197,7 @@ def test_taiwan_adjusted_survivorship_hole():
         f"README claims every one of them delisted in 2005-2007, which is what "
         f"makes the hole an edge rather than a scatter; the latest is {yrs.max()}"
     )
-    return (f"{len(hole)} of 173 in-window delistings have raw prices and no "
+    return (f"{len(hole)} of 169 in-window delistings have raw prices and no "
             f"adjusted series, all delisted {yrs.min()}-{yrs.max()}"
             ), len(inwin["sid"].unique())
 
@@ -196,15 +264,15 @@ def test_taiwan_adjusted_coverage_decomposition():
             f"documented offset and is not what the carry fills"
         )
 
-    assert (traded, covered) == (7509555, 7494582), (
-        f"README pins adjusted coverage at 7,494,582 of the 7,509,555 traded "
+    assert (traded, covered) == (7483951, 7468985), (
+        f"README pins adjusted coverage at 7,468,985 of the 7,483,951 traded "
         f"sessions in ohlcv/ (99.80 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first) == (10981, 3089, 903), (
+    assert (hole, tail, first) == (10981, 3089, 896), (
         f"README splits the {traded - covered:,} missing sessions into 10,981 "
         f"in the 38 delistings with no adjusted series, 3,089 past the end of a "
-        f"vendor series that stopped at a delisting, and 903 first sessions; "
+        f"vendor series that stopped at a delisting, and 896 first sessions; "
         f"this tree gives {hole:,} / {tail:,} / {first:,}. The first number is "
         f"the survivorship hole — if it moved, so did the bias"
     )
@@ -240,11 +308,18 @@ def test_taiwan_adjusted_coverage_decomposition():
 def test_taiwan_overlay_covers_2005_2014():
     """Survivorship invariant.
 
-    The 42-name overlay must cover every 2005-2014 4-digit common delisting
+    The 39-name overlay must cover every 2005-2014 4-digit common delisting
     FinMind purged. Codes are restricted to 4-digit numeric (the universe's own
-    filter); pre-2005 names never trade in-window and 2015+ absentees are
-    ETF/TDR instruments the universe excludes. The naive "all delisted ids have
-    OHLCV" form was a false alarm.
+    filter); pre-2005 names never trade in-window. The naive "all delisted ids
+    have OHLCV" form was a false alarm.
+
+    4-digit numeric was taken to mean common stock, and for four names it does
+    not: `_INWINDOW_TDRS` delisted inside the window carrying a 9xxx code, and
+    the endpoint still lists each under its delisting-day name as 存託憑證. They
+    are the instrument the README "Universe" excludes, so their absence is the
+    filter working. They are named rather than derived because nothing offline
+    can tell them from a common stock — `delisted_universe.parquet` carries no
+    industry — and the count is asserted so a fifth cannot join them silently.
     """
     u, d, uid, _ = _tw_ids()
     d = d.copy()
@@ -252,14 +327,19 @@ def test_taiwan_overlay_covers_2005_2014():
     d["sid"] = d["stock_id"].astype(str)
     d4 = d[d["sid"].str.fullmatch(r"\d{4}")]
     in_2005_2014 = d4[(d4["date"] >= WIN_START) & (d4["date"] <= pd.Timestamp("2014-12-31"))]
-    missing = sorted(set(in_2005_2014["sid"]) - uid)
+    commons = set(in_2005_2014["sid"]) - _INWINDOW_TDRS
+    assert len(in_2005_2014["sid"].unique()) - len(commons) == len(_INWINDOW_TDRS), (
+        f"a 2005-2014 delisting named in _INWINDOW_TDRS is no longer in the "
+        f"table, so the exception now excuses a name that is not there"
+    )
+    missing = sorted(commons - uid)
     assert not missing, (
         f"{len(missing)} 2005-2014 4-digit common delistings absent from "
         f"universe.parquet (overlay gap): {missing}"
     )
     n_overlay = int(u[u["type"].isna()]["stock_id"].astype(str).str.fullmatch(r"\d{4}").sum())
-    assert n_overlay == 42, f"4-digit type=NaN overlay ids = {n_overlay}, expected 42"
-    return ("2005-2014 commons fully covered; 42-name overlay present",
+    assert n_overlay == 39, f"4-digit type=NaN overlay ids = {n_overlay}, expected 39"
+    return ("2005-2014 commons fully covered; 39-name overlay present",
             len(in_2005_2014))
 
 
@@ -394,14 +474,20 @@ def test_taiwan_delisting_sign_sample_is_preregistered():
 
     f = features()
     exited = len(f)
-    # 173 in-window delistings have prices; `test_taiwan_adjusted_survivorship_hole`
-    # counts those. This counts the ones that left the *market* — the same set
-    # less 6446, which changed boards and goes on trading, so it has no
-    # shareholder outcome to classify.
+    # `features()` reads `delisted_universe.parquet` under its own 4-digit
+    # filter, so it is a slightly wider set than the analysis universe: it
+    # keeps 9101/9102/9104/9151, the four in-window TDR delistings the universe
+    # excludes as instruments (`test_taiwan_overlay_covers_2005_2014`). None of
+    # the four is labelled or in the undecided band, so the pre-registered
+    # sample is drawn from the same names it always was, and 172 is left alone
+    # rather than redrawn at 168 — a sample redrawn after the labels are in is
+    # not the sample that was committed. The 169 in
+    # `test_taiwan_adjusted_survivorship_hole` is the universe-side count of
+    # the same delistings, and the gap to 172 is those four plus 6446, which
+    # changed boards and goes on trading, so it has no outcome to classify.
     assert exited == 172, (
         f"README's delisting-sign section counts 172 in-window delistings that "
-        f"exited the market, the 173 priced less the one board transfer; "
-        f"features() now returns {exited}"
+        f"exited the market; features() now returns {exited}"
     )
 
     drawn = set(draw_sample(f)["stock_id"])
@@ -1601,7 +1687,7 @@ def test_taiwan_make_up_sessions_are_recovered():
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 38 stocks, 10,981 sessions.
 
-    The universe carries a 42-name overlay of 2005-2007 delistings FinMind's
+    The universe carries a 39-name overlay of 2005-2007 delistings FinMind's
     live registry dropped, and `TaiwanStockPriceAdj` drops 38 of them too. A
     panel built by concatenating `load_adjusted` and dropping NaN used to
     reinstate the bias silently; it no longer can, but only while every one of
@@ -1863,6 +1949,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
 
 CHECKS = [
     test_taiwan_ohlcv_one_per_universe,
+    test_taiwan_universe_excludes_the_instruments_it_claims_to,
     test_taiwan_price_adj_one_per_universe,
     test_taiwan_overlay_covers_2005_2014,
     test_taiwan_adjusted_survivorship_hole,
