@@ -1,0 +1,78 @@
+script	transcript_call	what_it_did
+delisting/594.sh	594	Inspect the drawn label sample
+delisting/596.sh	596	Re-run with transfers excluded
+delisting/600.sh	600	Register population and run the finmind suite
+delisting/611.sh	611	Fill labels and compute accuracy
+delisting/612.sh	612	Show every labelled name against its prediction
+delisting/614.sh	614	Check imports, register the check and its population
+delisting/617.sh	617	Negative test: move a pre-registered cut
+delisting/618.sh	618	Verify edges unchanged then re-run the cut mutation
+delisting/619.sh	619	Run remaining negative tests and confirm restore
+delisting/620.sh	620	Check margins and re-run the module
+delisting/624.sh	624	code: /home/st/miniconda3/bin/python - <<'PY' import pandas as pd
+delisting/625.sh	625	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python - <<'PY' import pandas as pd
+delisting/628.sh	628	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python - <<'PY' import pandas as pd
+delisting/629.sh	629	Where the truth turns over inside the band — the reading that produced the 0.50 cut
+delisting/633.sh	633	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python - <<'PY' import pandas as pd
+delisting/640.sh	640	Free successor identification: first session of every 4-digit code against each payout's delisting date
+delisting/641.sh	641	Same with first and last session — the attempt that matched 98 of 99 on unrelated IPOs, and was dropped
+delisting/645.sh	645	code: cd /home/st/research/finance_db && cp finmind_data/delisting_sign.py /tmp/claude-1001/-home-st-research-financ
+delisting/646.sh	646	code: cd /home/st/research/finance_db run() { /home/st/miniconda3/bin/python - <<PY 2>&1 | tail -2
+delisting/647.sh	647	code: cd /home/st/research/finance_db run() { /home/st/miniconda3/bin/python - <<PY 2>&1 | tail -2
+delisting/659.sh	659	code: cd /home/st/research/finance_db && sed -i 's| _DD_SINGLE, _GATE_MIN_LABELS, band_holdout, features, gate_thres
+delisting/660.sh	660	code: cd /home/st/research/finance_db && B=/tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-
+delisting/667.sh	667	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python - <<'PY' import sys; sys.path.insert(0, "/ho
+delisting/706.sh	706	The 6 recorded deals sorted by settlement gap — gap has no variance within the swaps
+delisting/707.sh	707	Decomposing the residual into deal discount x acquirer return; the IndexError here is how zero overlap was found
+delisting/708.sh	708	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import pandas as pd, numpy as np
+delisting/709.sh	709	Settlement-gap distribution over the 99 payout-shaped names — the 77 % at 7-14 days
+delisting/711.sh	711	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import pandas as pd, numpy as np
+delisting/723.sh	723	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+delisting/725.sh	725	Substitute error joined to sign and drawdown — three of the four swaps are band names
+delisting/740.sh	740	Print the 12 held-out band names with their observables
+delisting/741.sh	741	Print the 12 with observables
+delisting/743.sh	743	Print all 38 labels with sources
+delisting/745.sh	745	List every labelled payout with its band membership and source text
+delisting/746.sh	746	Cross-tabulate deal form against band membership
+delisting/747.sh	747	Deal form against band membership, with the exact test — 9 of 9 in band, p=0.175
+delisting/769.sh	769	Confirming the form column was the only change to the label file
+exchange/462.sh	462	Probe TWSE delisted-company CSV endpoint
+exchange/463.sh	463	Fetch full TWSE delisted list, inspect columns and span
+exchange/465.sh	465	Probe TWSE HTML/JSON variants and TPEx openapi
+exchange/468.sh	468	Check TWSE HTML for reason column and probe TPEx
+exchange/537.sh	537	Probe TPEx open API for a delisted-companies list
+exchange/538.sh	538	Probe TPEx for a terminated-listing dataset
+exchange/539.sh	539	Find the data endpoint behind the TPEx delisted page
+exchange/540.sh	540	Resolve the final URL and look for data attributes
+exchange/541.sh	541	Query the TPEx delisted API
+exchange/543.sh	543	Locate the TPEx delisted data endpoint
+exchange/544.sh	544	Inspect the page form and try a POST query
+exchange/697.sh	697	code: cd /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad 
+exchange/698.sh	698	code: cd /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad 
+exchange/699.sh	699	code: cd /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad 
+exchange/700.sh	700	code: cd /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad 
+exchange/701.sh	701	code: cd /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad 
+extract_from_transcript.sh	803	Extract and bucket the substantive commands
+finmind_api/009.sh	9	Probe TaiwanStockPriceAdj with current token
+finmind_api/010.sh	10	Probe adj price date range and delisted list
+finmind_api/011.sh	11	Probe delisted-stock coverage in adj endpoint
+finmind_api/013.sh	13	Test whether FinMind adj matches our TR or PR series
+finmind_api/014.sh	14	Check universe size and probe user_info for rate limit
+finmind_api/015.sh	15	Check whether adjusted series depends on requested date range
+finmind_api/020.sh	20	Check vendor handling of no-trade rows and unpriced 2010 reduction
+finmind_api/021.sh	21	Inspect vendor series at series break and on no-trade sessions
+finmind_api/022.sh	22	Inspect factor step at 2357 reduction and 8934 no-trade fill
+finmind_api/034.sh	34	Re-probe previously paid-only endpoints at sponsor tier
+finmind_api/086.sh	86	Probe TaiwanStockPriceAdj without data_id
+finmind_api/087.sh	87	Probe bulk calling conventions
+finmind_api/088.sh	88	Measure universe coverage gain from a per-date sweep
+finmind_api/089.sh	89	Classify the extra names a per-date sweep would reach
+finmind_api/091.sh	91	Verify per-date bulk numbers match the per-stock files
+finmind_api/092.sh	92	Verify per-date bulk matches per-stock files
+mutation/717.sh	717	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+mutation/718.sh	718	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+mutation/719.sh	719	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+mutation/722.sh	722	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+mutation/724.sh	724	code: cd /home/st/research/finance_db && /home/st/miniconda3/bin/python -c " import sys; sys.path.insert(0,'.')
+mutation/756.sh	756	Mutation-testing the cash-payout check; caught the ordering flaw where the count assertion shadowed the live test
+mutation/757.sh	757	The same mutations after reordering — each caught by the assertion naming its event

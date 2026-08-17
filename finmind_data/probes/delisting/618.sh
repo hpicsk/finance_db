@@ -1,0 +1,5 @@
+# Session 2026-08-17, transcript call 618.
+# Verify edges unchanged then re-run the cut mutation
+# Verbatim as run; paths are the session's and it is an archive, not a runnable script.
+
+cd /home/st/research/finance_db && echo "=== baseline (edges must be unchanged) ===" && /home/st/miniconda3/bin/python /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad/neg.py 2>&1 | grep -v 'terminate\|Aborted\|core dumped' && cp finmind_data/delisting_sign.py /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad/ds.bak && echo && echo "=== mutation 1 again: _DD_MERGER 0.70 -> 0.60 ===" && sed -i 's/^_DD_MERGER = 0.70$/_DD_MERGER = 0.60/' finmind_data/delisting_sign.py && /home/st/miniconda3/bin/python /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad/neg.py 2>&1 | grep -v 'terminate\|Aborted\|core dumped'; cp /tmp/claude-1001/-home-st-research-finance-db-finmind-data/013bad53-ea1c-455c-8f0b-2e6e1120e8d2/scratchpad/ds.bak finmind_data/delisting_sign.py
