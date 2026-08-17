@@ -692,6 +692,16 @@ ohlcv_all = pd.concat(
    endpoint mirrors. Until those are pulled, any delisting return computed from
    this package is an assumption wearing a number.
 
+    The obvious cheaper source is empty, and it is worth saying so because it is
+    the first place anyone looks. TWSE's own 終止上市公司 table
+    (`www.twse.com.tw/rwd/zh/company/suspendListingCsvAndHtml?type=csv`) returns
+    264 rows over 2001-2026 under exactly three headers — 終止上市日期, 公司名稱,
+    上市編號 — which is date, name and code, the same three fields
+    `TaiwanStockDelisting` already carries. Joining it adds nothing. TPEx's
+    終止櫃檯買賣 list does filter by reason, but reaches back only to 2021, which
+    is 7 of the 173. Both probed 2026-08-17. The reason is published per company
+    in a filing, never in a table, and that is what makes it expensive.
+
     The 4,632 post-delisting sessions are the one piece of direct evidence
     the package does hold against this. Fourteen delisted names go on being
     quoted for 8 to 1,151 sessions after leaving the exchange, and where each
