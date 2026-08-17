@@ -91,18 +91,31 @@ row before the last of them. The same flag carries series splices, where a ticke
 stops trading for years and comes back as a different listing, so
 ``invalid_reason`` names which of the four disqualified it.
 
-**A price is not a permission.** The 3,089 carried sessions are 興櫃 quotes for
-names that left the exchange — 1107 is the largest at 1,151: the vendor ends
-2007-10-19 against a 2007-10-20 delisting and ``ohlcv/`` runs to 2012-06-06.
-興櫃 is a negotiated market: ``open`` is the previous session's average rather
-than a trade, a quote depends on a recommending broker standing behind it, and
-median volume across the seven runs at 3.6-48 % of each name's own listed-era
-median. A backtest holding those rows would be trading a book it could not have
-filled, which is why they carry ``is_valid`` False under
-``invalid_reason = 'post_delisting_emerging'``. What they *are* is the terminal
-value: where a delisted name converges over the months after it leaves is a
-market observation, and the last exchange close is not one. That is the use the
-fill is for, and the flag is what keeps it to that use.
+**A price is not a permission.** 4,632 sessions across 14 names print after the
+exchange ended the listing — 1107 is the largest at 1,151: the vendor ends
+2007-10-19 against a 2007-10-20 delisting and ``ohlcv/`` runs to 2012-06-06. The
+boundary is the delisting table's date and not the session where the vendor's
+series stops, because a rebuilt name has no vendor series to stop: reading the
+stop found only the seven the vendor serves, and left the tails of seven of the
+38 rebuilt names holdable. A backtest holding any of them would be trading a
+book it could not have filled, which is why they carry ``is_valid`` False under
+``invalid_reason = 'post_delisting_emerging'``. On the seven the vendor serves
+the destination is visibly 興櫃, a negotiated market: ``open`` is the previous
+session's average rather than a trade, a quote depends on a recommending broker
+standing behind it, and median volume runs at 3.6-48 % of each name's own
+listed-era median. Across the rebuilt seven that signature does not hold — 1408,
+2407 and 2811 print at 71-336 % of their prior median — so the reason names which
+side of the delisting a row falls on rather than which market carried it, and it
+is the exchange's termination date that disqualifies it either way. What they *are* is the
+terminal value: where a delisted name converges over the months after it leaves
+is a market observation, and the last exchange close is not one. That is the use
+the fill is for, and the flag is what keeps it to that use.
+
+A name the vendor keeps pricing past that date did not leave. 6446 moved onto
+the exchange in 2024 and the table records the departure without the arrival, so
+its 224 later sessions stay holdable. 2301 and 2432 come back 791 and 5,385 days
+after theirs, which is a reused code rather than a return, and the break above
+cuts the earlier issuer's history off the later one's.
 
 ``is_valid`` is therefore "this row is a position a study could have held", and
 it fails three ways. Two are the ends of the series: a row before the last break
@@ -132,6 +145,7 @@ ROOT = Path(__file__).resolve().parent
 OHLCV_DIR = ROOT / 'ohlcv'
 PRICE_ADJ_DIR = ROOT / 'price_adj'
 UNPRICED_PATH = ROOT / 'unpriced_actions.parquet'
+DELISTED_PATH = ROOT / 'delisted_universe.parquet'
 
 # A listing that stops trading for two years and returns is not the same series.
 # Observed gap lengths are empty between 419 and 738 days, so every cut in that
@@ -174,6 +188,24 @@ def _unpriced_dates(stock_id: str) -> np.ndarray:
     u = pd.read_parquet(UNPRICED_PATH)
     u = u[(u['stock_id'].astype(str) == str(stock_id)) & ~u['explained']]
     return pd.to_datetime(u['date']).to_numpy()
+
+
+def _delisting_date(stock_id: str):
+    """The date this stock left the exchange, or None if it never did.
+
+    A missing file raises for the reason ``_unpriced_dates`` does: returning
+    nothing quietly would leave every delisted name's tail reading as a tradable
+    position, which is the failure the date exists to prevent.
+    """
+    if not DELISTED_PATH.exists():
+        raise FileNotFoundError(
+            f'{DELISTED_PATH} is missing — run '
+            f'`python -m finmind_data.build_universe` first. Without it the '
+            f'sessions a delisted name goes on printing stay is_valid and a '
+            f'backtest holds them.')
+    d = pd.read_parquet(DELISTED_PATH)
+    hit = d.loc[d['stock_id'].astype(str) == str(stock_id), 'date']
+    return pd.to_datetime(hit.iloc[0]) if len(hit) else None
 
 
 def load_adjusted(stock_id: str,
@@ -338,10 +370,22 @@ def load_adjusted(stock_id: str,
     # they are. What they *are* good for is the terminal value — where a
     # delisted name converges over the following months is a market observation,
     # and the last exchange close is not one.
-    vendor_served = out['adj_covered'].to_numpy()
-    if vendor_served.any():
-        after = np.arange(len(out)) > np.nonzero(vendor_served)[0][-1]
-        if after.any():
+    #
+    # The boundary is the delisting table's date, not the session where the
+    # vendor's series stops. The two pick out the same 3,089 rows on the seven
+    # names the vendor serves, because the stop was only ever standing in for the
+    # date; but a rebuilt name has ``adj_covered`` False throughout and no stop to
+    # read, so the stand-in was silent on exactly the names the rebuild added —
+    # 1,524 sessions across seven of the 38, left tradable by a fix for the
+    # opposite bias.
+    delisted_on = _delisting_date(stock_id)
+    if delisted_on is not None:
+        after = out['date'].to_numpy() > np.datetime64(delisted_on)
+        # A name the vendor keeps pricing past that date did not leave the
+        # market, it changed boards: 6446 moved to the exchange in 2024 and the
+        # delisting table records the departure without recording the arrival.
+        # Those sessions are exchange sessions and a study could have held them.
+        if after.any() and not (out['adj_covered'].to_numpy() & after).any():
             valid[after] = False
             out.loc[after, 'invalid_reason'] = 'post_delisting_emerging'
 
@@ -500,8 +544,9 @@ def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
     Two edges need it. The vendor series begins one session after the raw one on
     903 stocks, which costs each of them its **first return** rather than its
     first price, and a first return is the whole observation in a listing study.
-    It ends before the raw one on 7, which is the 3,089 sessions a delisted name
-    went on being quoted for.
+    It ends before the raw one on 7, whose 3,089 later sessions this prices —
+    part of the 4,632 that follow a delisting, the rest belonging to names the
+    vendor never served and the rebuild supplies.
 
     The condition is checked per row rather than assumed: every date the stock
     filed a 除權息 or a 減資 on, plus the share cancellations no filing explains,

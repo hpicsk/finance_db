@@ -350,25 +350,25 @@ df = df[df["is_valid"] & df["adj_close_tr"].notna()]   # then take returns
 fails three ways. Two are the ends of the series: behind the last break
 — a share cancellation no filing priced, or a multi-year trading gap
 after which the ticker came back as a different listing (309 breaks in
-231 stocks, 3.00 % of rows) — and past the last exchange session, the
-3,089 興櫃 quotes below. The third is one session anywhere between them:
-the stock did not trade (167,181 rows in 1,309 stocks), so no level the
+231 stocks, 3.00 % of rows) — and past the delisting date, the 4,632
+quotes in 14 names below. The third is one session anywhere between them:
+the stock did not trade (167,162 rows in 1,309 stocks), so no level the
 panel carries was a price anyone could transact at.
 
 `invalid_reason` says which, because the flag is one column and the four
 are not the same problem: `unpriced_cancellation` means a step is
 missing from the chain, `series_break` means the rows behind belong to
 another company, `post_delisting_emerging` means the price is right and
-the market was not one you could trade in, `no_trade` means there was
+the exchange had ended the listing before it, `no_trade` means there was
 nothing to buy. None of them means "this price is wrong". The vendor
 marks none of them: 2357's 85 % reduction on 2010-06-24 comes through at
 a factor step of exactly 1, leaving the raw 53.2 → 240.5 jump in the
 adjusted series as a +351 % return (caveat 5).
 
-The two segment reasons win where they overlap the third, so the 12,749
-no-trade sessions that sit behind a break keep the break's name — a row
-in a history this series does not continue would not have been holdable
-had it traded either. `adj_close_tr` was already NaN on all 179,930, so
+The two segment reasons win where they overlap the third, so the 12,768
+no-trade sessions a segment claims keep the segment's name — a row in a
+history this series does not continue, or one printed after the listing
+ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 179,930, so
 the two-column filter above dropped them before this reason existed;
 what changed is that `is_valid` alone now drops them too, and that every
 False row in the panel's 7,689,904 carries a reason for being one.
@@ -464,7 +464,15 @@ rather than NaN. The distinction matters: the sessions *after* each
 cancellation (19, 366, 11 and 15 of them) are ordinary prices, and NaN
 would have thrown them away along with the disconnected history — while
 also being unable to say whether a NaN meant "not recoverable" or "not
-attempted".
+attempted". Two of the four delist inside that stretch, so 282 of 1462's
+and 8 of 2811's are ordinary prices in a market that was no longer the
+exchange, and carry the delisting reason instead.
+
+A further 1,524 sessions across seven of the 38 — 1408, 1462, 1807,
+2326, 2407, 2410, 2811 — follow the name's delisting date. They were
+holdable until the boundary stopped being read off the vendor's last
+session, which these stocks do not have, and started being read off the
+delisting table (caveat 8).
 
 ### The two edges of the vendor series
 
@@ -498,7 +506,10 @@ recommending broker standing behind it, and median volume across the
 seven runs at 3.6-48 % of each name's own listed-era median. So those
 rows carry `is_valid=False` under `invalid_reason ==
 "post_delisting_emerging"`, which keeps a backtest out of them
-automatically. What they are good for is the **terminal value**: where a
+automatically. They are not the whole of that flag: it is applied from
+the delisting table's date, which reaches seven further names the vendor
+serves nothing for, for 4,632 sessions in all. What they are good for is
+the **terminal value**: where a
 delisted name converges over the months after it leaves the exchange is
 a market observation, and the last exchange close is not one. A name
 that left by merger does not go to 興櫃 at all, so the presence of a
@@ -681,13 +692,20 @@ ohlcv_all = pd.concat(
    endpoint mirrors. Until those are pulled, any delisting return computed from
    this package is an assumption wearing a number.
 
-    The 3,089 post-delisting 興櫃 sessions are the one piece of direct evidence
-    the package does hold against this. Seven names go on being quoted for 15
+    The 4,632 post-delisting sessions are the one piece of direct evidence
+    the package does hold against this. Fourteen names go on being quoted for 8
     to 1,151 sessions after leaving the exchange, and where each converges over
     that stretch is a market observation of what the shell was worth — which
     the last exchange close is not. It is also a weak signal on the reason,
-    since a name that left by merger does not go to 興櫃 at all. Seven names is
-    a sample, not a fix; the fix is still MOPS.
+    since a name that left by merger does not go to 興櫃 at all. Fourteen names
+    is a sample, not a fix; the fix is still MOPS.
+
+    One name is the opposite error. 6446 is in the delisting table with a
+    2024-01-25 date and never left: it moved onto the exchange, which the table
+    does not record, and a delisting return computed for it would be a loss it
+    never took. The panel finds it because the vendor keeps pricing it past the
+    date, so it is one delisting the caveat does not apply to — and a reminder
+    that the table's dates are exits from *a* board, not from the market.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2005-03-31, 2005-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

@@ -823,49 +823,110 @@ def test_taiwan_vendor_edges_are_carried():
 
 
 def test_taiwan_post_delisting_sessions_are_marked():
-    """README, "Which rows to trust": the 3,089 興櫃 sessions are not tradable.
+    """README, "Which rows to trust": no session after a delisting is holdable.
 
-    Carrying the factor past a delisting makes the level continuous, which is
-    what the price is wanted for. It does not make the sessions tradable — 興櫃
-    is a negotiated market, `open` is the previous session's average rather than
-    a trade, and volume runs far under the exchange-listed years. `is_valid`
-    False with `invalid_reason` `post_delisting_emerging` is what keeps a
-    backtest out while leaving the rows readable as terminal-value evidence,
-    which is the one use they are good for.
+    The exchange ended the listing on the date the delisting table carries, so
+    whatever market the quotes that follow belong to, it is not the one a fill is
+    assumed to come from. `is_valid` False with `invalid_reason`
+    `post_delisting_emerging` is what keeps a backtest out while leaving the rows
+    readable as terminal-value evidence, which is the one use they are good for.
+
+    The population is derived from the delisting table rather than listed here,
+    and that is the whole point of the check. It used to name seven stocks — the
+    ones whose vendor series stops at the delisting, which was how the boundary
+    was found. The rebuild gave 38 names no vendor series at all, so seven more
+    acquired tails the boundary could not see, and this check went on passing
+    because it was still looking at its original seven. A check that names its
+    subjects cannot report the ones that arrive after it is written.
     """
     sys.path.insert(0, str(REPO))
-    from finmind_data.adjusted_loader import load_adjusted
+    import numpy as np
 
-    tails = ("1107", "2381", "2396", "2341", "3142", "2479", "3053")
-    n = 0
-    ratios = []
-    for sid in tails:
-        df = load_adjusted(sid)
-        post = df["invalid_reason"] == "post_delisting_emerging"
-        assert post.any(), f"{sid} carries no post-delisting sessions"
-        assert not df.loc[post, "is_valid"].any(), (
-            f"{sid}: {int(df.loc[post, 'is_valid'].sum())} post-delisting rows "
-            f"are still is_valid, so a backtest would trade them"
-        )
-        assert df.loc[post, "adj_close_tr"].notna().all(), (
-            f"{sid}: the post-delisting rows carry no adjusted price, so the "
-            f"terminal-value evidence they exist for is not there"
-        )
-        n += int(post.sum())
-        pre = df.loc[~post & (df["close"] > 0), "Trading_Volume"]
-        ratios.append(float(df.loc[post, "Trading_Volume"].median()
-                            / max(pre.tail(250).median(), 1.0)))
-    assert n == 3089, (
-        f"README claims 3,089 post-delisting sessions; this tree marks {n:,}"
-    )
-    assert max(ratios) < 0.5, (
-        f"the post-delisting sessions are quoted at a fraction of the listed "
-        f"years' volume, which is why they are not tradable; the thickest here "
-        f"runs at {100 * max(ratios):.0f} % of its own prior median"
-    )
-    return (f"{n:,} post-delisting sessions priced and marked invalid across "
-            f"{len(tails)} names, quoted at {100 * min(ratios):.1f}-"
-            f"{100 * max(ratios):.0f} % of their listed-era volume"), n
+    from finmind_data.adjusted_loader import _BREAK_GAP_DAYS, load_adjusted
+
+    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    d["date"] = pd.to_datetime(d["date"])
+
+    marked = transferred = 0
+    names = []
+    moved = []
+    reissued = []
+    for r in d.itertuples():
+        sid = str(r.stock_id)
+        try:
+            df = load_adjusted(sid)
+        except (FileNotFoundError, ValueError):
+            continue                      # no OHLCV file, or one with no rows
+        after = (pd.to_datetime(df["date"]) > r.date).to_numpy()
+        if not after.any():
+            continue
+        # A name the vendor keeps pricing past its delisting date did not leave
+        # the market. Asserting that no such name picks up the reason is what
+        # stops the boundary from being applied by date alone to a stock that is
+        # still listed — the delisting table records departures from a board,
+        # and a departure is not always an exit.
+        if df["adj_covered"].to_numpy()[after].any():
+            still = (df["invalid_reason"] == "post_delisting_emerging").to_numpy()
+            assert not still[after].any(), (
+                f"{sid}: the vendor prices it past its {r.date.date()} delisting "
+                f"date, so the name did not leave the market, but "
+                f"{int(still[after].sum())} of its {int(after.sum())} later "
+                f"sessions are marked as having followed an exit. The other "
+                f"reasons may still claim rows here and should")
+            # It kept being priced for one of two reasons, and the gap tells
+            # them apart on the same threshold the break machinery uses: either
+            # it never stopped, which is a board transfer the table records the
+            # departure of and not the arrival, or it came back long after,
+            # which is a different company on a reused code.
+            gap = (pd.to_datetime(df["date"]).to_numpy()[after].min()
+                   - r.date.to_datetime64()) / np.timedelta64(1, "D")
+            if gap <= _BREAK_GAP_DAYS:
+                transferred += int(after.sum())
+                moved.append(sid)
+            else:
+                assert not df["is_valid"].to_numpy()[~after].any(), (
+                    f"{sid}: its code was reissued {gap:.0f} days after the "
+                    f"{r.date.date()} delisting, so the sessions before that "
+                    f"date belong to a different company; "
+                    f"{int(df['is_valid'].to_numpy()[~after].sum())} of them are "
+                    f"still holdable, which splices two issuers into one series")
+                reissued.append(sid)
+            continue
+        post = (df["invalid_reason"] == "post_delisting_emerging").to_numpy()
+        assert (post == after).all(), (
+            f"{sid}: {int(after.sum())} sessions follow its {r.date.date()} "
+            f"delisting and {int(post.sum())} carry the reason. A session the "
+            f"exchange delisted the name before is not a position, whether or "
+            f"not the vendor served the name")
+        assert not df["is_valid"].to_numpy()[post].any(), (
+            f"{sid}: {int(df['is_valid'].to_numpy()[post].sum())} post-delisting "
+            f"rows are still is_valid, so a backtest would trade them")
+        # On the traded ones. A tail also holds sessions the stock did not trade,
+        # and those carry no adjusted price anywhere in the panel — the segment
+        # reason claims them from `no_trade`, it does not give them a level.
+        priced = post & (df["close"].to_numpy() > 0)
+        assert df.loc[priced, "adj_close_tr"].notna().all(), (
+            f"{sid}: {int(df.loc[priced, 'adj_close_tr'].isna().sum())} of its "
+            f"{int(priced.sum())} traded post-delisting rows carry no adjusted "
+            f"price, so the terminal-value evidence they exist for is not there")
+        marked += int(post.sum())
+        names.append(sid)
+
+    assert (len(names), marked) == (14, 4_632), (
+        f"README claims 4,632 post-delisting sessions across 14 names; this "
+        f"tree marks {marked:,} across {len(names)}")
+    # Sorted, because the loop takes the delisting table's row order and a
+    # re-collect that reorders it would fail this on nothing.
+    assert (sorted(moved), sorted(reissued)) == (["6446"], ["2301", "2432"]), (
+        f"README names 6446 as the one delisting that is a board transfer and "
+        f"2301 and 2432 as the two reused codes; this tree finds {moved} and "
+        f"{reissued}. A new transfer is a name whose exit the table records and "
+        f"whose arrival it does not, so a delisting return computed for it "
+        f"would be a loss it never took")
+    return (f"{marked:,} post-delisting sessions priced and marked invalid "
+            f"across {len(names)} names; {transferred} sessions of {moved[0]}'s "
+            f"board transfer left holdable, {len(reissued)} reused codes cut "
+            f"behind their reissue"), marked + transferred
 
 
 # ---- Taiwan: no-trade sessions, and the closure of is_valid ----------------
@@ -880,7 +941,7 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     delisted. A backtest filtering on the flag alone would have assumed a fill.
 
     Two things are asserted, and they fail on different mistakes. The counts pin
-    *this* reason: dropping the mask leaves the 167,181 rows valid with no reason
+    *this* reason: dropping the mask leaves the 167,162 rows valid with no reason
     at all, which the reason split below catches and the closure below does not,
     because a row that is valid and unnamed is consistent. The closure pins the
     *next* one: every False row carries a reason and every True row carries none,
@@ -944,13 +1005,14 @@ def test_taiwan_no_trade_rows_are_not_holdable():
         f"README claims is_valid alone is now enough — every False row carries "
         f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
         f"rows break that, so invalid_reason no longer accounts for is_valid")
-    assert by_reason == {"no_trade": 167_181,
+    assert by_reason == {"no_trade": 167_162,
+                         "post_delisting_emerging": 19,
                          "series_break": 3_244,
                          "unpriced_cancellation": 9_505}, (
-        f"README claims 167,181 no-trade sessions take the new reason and the "
-        f"12,749 behind a break keep the break's; the split here is {by_reason}")
+        f"README claims 167,162 no-trade sessions take the new reason and the "
+        f"12,768 behind a segment reason keep it; the split here is {by_reason}")
     assert len(no_trade_stocks) == 1_309, (
-        f"README claims the 167,181 no_trade rows fall in 1,309 stocks — the "
+        f"README claims the 167,162 no_trade rows fall in 1,309 stocks — the "
         f"1,325 with a zero close, less the 16 whose zero closes all sit behind "
         f"a break; {len(no_trade_stocks):,} carry one here")
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
@@ -1089,15 +1151,14 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     holes = [sid for sid in sorted(set(inwin["sid"]))
              if len(pd.read_parquet(REPO / f"finmind_data/ohlcv/{sid}.parquet"))
              and not len(pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet"))]
-    traded = priced = invalid = 0
+    traded = priced = 0
     kinds = {}
-    reasons = set()
+    invalid = {}
     for sid in holes:
         df = load_adjusted(sid)
         t = df["close"] > 0
         traded += int(t.sum())
         priced += int((t & df["adj_close_tr"].notna()).sum())
-        invalid += int((t & ~df["is_valid"]).sum())
         assert not df["adj_covered"].any(), (
             f"{sid} is one of the 38 the vendor serves nothing for, but "
             f"adj_covered is True somewhere — the hole is no longer countable"
@@ -1107,7 +1168,8 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         # Over the traded sessions only, which is the population `invalid`
         # counts. Every stock also carries no-trade rows, and they are invalid
         # for a reason that has nothing to do with the rebuild.
-        reasons |= set(df.loc[t & ~df["is_valid"], "invalid_reason"].unique())
+        for k, c in df.loc[t & ~df["is_valid"], "invalid_reason"].value_counts().items():
+            invalid[k] = invalid.get(k, 0) + int(c)
 
     assert (len(holes), traded, priced) == (38, 10981, 10981), (
         f"README claims all 38 vendor holes come back priced across their "
@@ -1120,13 +1182,19 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         f"corporate action in window; this tree gives {kinds}. The split is "
         f"what isolates the cumulative-product path from the flat one"
     )
-    assert (invalid, reasons) == (970, {"unpriced_cancellation"}), (
+    assert invalid == {"unpriced_cancellation": 970,
+                       "post_delisting_emerging": 1_524}, (
         f"README claims 970 of those sessions sit behind an unpriced share "
-        f"cancellation in 4 of the 38; this tree gives {invalid:,} for "
-        f"{sorted(reasons)}"
+        f"cancellation in 4 of the 38, and 1,524 follow a delisting in 7 of "
+        f"them; this tree gives {invalid}. The second number is the one the "
+        f"rebuild itself created: these stocks have no vendor series, so the "
+        f"delisting boundary had nothing to read until it was moved onto the "
+        f"delisting table"
     )
     return (f"{len(holes)} holes rebuilt over {priced:,} traded sessions "
-            f"({kinds}); {invalid:,} behind an unpriced cancellation"), traded
+            f"({kinds}); {invalid['unpriced_cancellation']:,} behind an "
+            f"unpriced cancellation, "
+            f"{invalid['post_delisting_emerging']:,} past a delisting"), traded
 
 
 def test_taiwan_rebuild_matches_vendor():
