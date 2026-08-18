@@ -6,6 +6,12 @@ Per-stock parquet files for three datasets:
   - shares/{stock_id}.parquet         (TaiwanStockShareholding)
 
 Resumable: skips existing files. Retries on 402 rate-limit with backoff.
+
+`--extend` tops each existing file up to a later `--end` instead of skipping
+it. Skip-existing is per *file*, so it cannot move an end date: every file
+exists, so a plain re-run with a later `--end` downloads nothing and reports a
+clean pass. Under `--extend` a file's own last date is what the next request
+starts from, and the pull is appended to it.
 """
 from __future__ import annotations
 
@@ -129,21 +135,63 @@ def fetch(dataset: str, stock_id: str, start: str, end: str,
 
 
 def download_stock(stock_id: str, start: str, end: str, sleep_s: float,
-                   datasets: dict[str, str]) -> dict:
-    """Download the given datasets for one stock; skip existing files."""
+                   datasets: dict[str, str], extend: bool = False) -> dict:
+    """Download the given datasets for one stock.
+
+    Skips existing files, or under `extend` requests only what each one is
+    missing at its far end and appends that. Every dataset here carries a
+    `date` column, so the resume point is read from the file rather than
+    tracked separately — a per-dataset key table would be one more thing to
+    keep in step with the vendor's schema.
+    """
     result = {subdir: "skip" for subdir in datasets}
     for subdir, dataset in datasets.items():
         path = ROOT / subdir / f"{stock_id}.parquet"
+        old = None
+        req_start = start
         if path.exists():
-            continue
-        df = fetch(dataset, stock_id, start, end)
+            if not extend:
+                continue
+            old = pd.read_parquet(path)
+            if len(old):
+                last = pd.to_datetime(old["date"]).max()
+                if last >= pd.Timestamp(end):
+                    continue
+                req_start = (last + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                # An empty file records that the stock had no rows in the range
+                # pulled, which says nothing about a range it did not cover, so
+                # it is re-pulled whole rather than treated as a resume point.
+                old = None
+        df = fetch(dataset, stock_id, req_start, end)
         if df is None:
             result[subdir] = "fail"
             continue
+        time.sleep(sleep_s)
+        if old is not None:
+            if set(df.columns) != set(old.columns) and not df.empty:
+                # A column added or dropped between pulls would be concatenated
+                # into a ragged file whose new rows carry NaN for the old
+                # columns and vice versa. Refuse and leave the file as it was.
+                log(f"  schema-drift {stock_id} {dataset}: "
+                    f"+{sorted(set(df.columns) - set(old.columns))} "
+                    f"-{sorted(set(old.columns) - set(df.columns))}")
+                result[subdir] = "fail"
+                continue
+            added = len(df)
+            if added:
+                df = (pd.concat([old, df], ignore_index=True)
+                        .sort_values("date", kind="stable")
+                        .reset_index(drop=True))
+            else:
+                df = old
+            result[subdir] = f"+{added}"
+            if not added:
+                continue
+        else:
+            result[subdir] = f"ok({len(df)})"
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
-        result[subdir] = f"ok({len(df)})"
-        time.sleep(sleep_s)
     return result
 
 
@@ -156,6 +204,9 @@ def main() -> int:
                          "quota (register 600/hr → 6s, sponsor 6000/hr → 0.7s), "
                          "which api.web.finmindtrade.com/v2/user_info reports "
                          "as api_request_limit_hour")
+    ap.add_argument("--extend", action="store_true",
+                    help="top existing files up to --end instead of skipping "
+                         "them; each file resumes from its own last date")
     ap.add_argument("--limit", type=int, default=0, help="0 = all")
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--stocks", nargs="*", default=None,
@@ -186,11 +237,13 @@ def main() -> int:
         stock_ids = stock_ids[: args.limit]
 
     log(f"=== start: {len(stock_ids)} stocks, {args.start}..{args.end}, "
-        f"sleep={args.sleep}s, datasets={list(active)} ===")
+        f"sleep={args.sleep}s, datasets={list(active)}"
+        f"{', extend' if args.extend else ''} ===")
 
     ok_n = fail_n = skip_n = 0
     for i, sid in enumerate(stock_ids, 1):
-        res = download_stock(sid, args.start, args.end, args.sleep, active)
+        res = download_stock(sid, args.start, args.end, args.sleep, active,
+                             extend=args.extend)
         status = " ".join(f"{k}={v}" for k, v in res.items())
         log(f"{i}/{len(stock_ids)} {sid}: {status}")
         if any(v == "fail" for v in res.values()):
