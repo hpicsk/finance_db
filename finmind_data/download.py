@@ -200,10 +200,17 @@ def main() -> int:
     ap.add_argument("--start", default="2005-01-01")
     ap.add_argument("--end", default="2024-12-31")
     ap.add_argument("--sleep", type=float, default=6.5,
-                    help="seconds between requests; pace to the token's hourly "
-                         "quota (register 600/hr → 6s, sponsor 6000/hr → 0.7s), "
-                         "which api.web.finmindtrade.com/v2/user_info reports "
-                         "as api_request_limit_hour")
+                    help="seconds to wait *in addition to* the request itself. "
+                         "The quota is spent per request, not per sleep, so the "
+                         "pace is 3600/api_request_limit_hour minus the "
+                         "round-trip — measured at 0.27 s here, which is "
+                         "negligible against the register tier's 6 s budget and "
+                         "close to half of the sponsor tier's 0.6 s. Register "
+                         "600/hr -> 5.7, sponsor 6000/hr -> 0.33; "
+                         "api.web.finmindtrade.com/v2/user_info reports the "
+                         "limit. Leave a margin: overshooting earns a 402, and "
+                         "fetch() answers that by sleeping to the top of the "
+                         "hour and then failing the stock after two of them")
     ap.add_argument("--extend", action="store_true",
                     help="top existing files up to --end instead of skipping "
                          "them; each file resumes from its own last date")
