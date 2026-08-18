@@ -42,8 +42,7 @@ re-deriving it.
 The window was originally 2015-01-01 → 2024-12-31; on 2026-04-27 the start
 was rolled back to 2005-01-01 to give 20 years of overlap with fnguide, and
 on 2026-08-17 the answerable range was cut to 2011-01-25 for the reason
-above. The pre-rollback files are preserved in `<dataset>_2015_2024/` backup
-directories (see "Directory layout").
+above.
 
 ## Universe
 
@@ -127,10 +126,6 @@ names and are simply unread — no download was rerun. And the rest of
 the file is the 2026-04-27 snapshot: 675 of the retained rows still
 carry the industry the endpoint listed first rather than the one in
 force, which only a full rebuild refreshes.
-
-Per-stock files under earlier (2,111- and 2,112-ticker) universes
-remain valid for the 2015-2024 window and are preserved as
-`<dataset>_2015_2024/` backup dirs.
 
 #### Mirroring the fnguide criterion
 
@@ -222,7 +217,6 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── div_result/<stock_id>.parquet      除權息 exchange reference prices → adj. factor      (2005-2024)
 ├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2024)
 ├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2011-2024)
-├── *_2015_2024/<stock_id>.parquet     **backup** of pre-rollback (2015-2024) build       (~700 MB total)
 ├── build_universe.py                  universe construction script (incl. delisted merge)
 ├── refresh_delisting.py               re-pulls the market-wide TaiwanStockDelisting table
 ├── window.py                          COVERAGE_START / COVERAGE_END, declared once
@@ -238,11 +232,6 @@ so you should filter by `date` rather than assume uniform coverage.
 ├── nohup.bg2005.out                   2005-2024 re-download runtime log (started 2026-04-27)
 └── .token                             FinMind API token (chmod 600)
 ```
-
-The `*_2015_2024/` directories preserve the original 2,112-ticker /
-10-year build downloaded 2026-04-20 to 2026-04-26. They can be deleted
-once the 2005-2024 re-download has completed and been verified — until
-then they are an in-place rollback target.
 
 ## File schemas
 
@@ -706,7 +695,7 @@ ohlcv_all = pd.concat(
 - **Upstream origin:** TWSE daily disclosures and TPEx daily disclosures
   (Taiwan's "three major institutional investors" reporting regime)
 - **Original 2015-2024 build:** 2026-04-20 to 2026-04-26 via
-  `download.py` (preserved in `*_2015_2024/` backup dirs).
+  `download.py`. Superseded by the build below and deleted 2026-08-18.
 - **Current 2005-2024 build:** started 2026-04-27 via `download.py`
   with default `--start 2005-01-01`. Total: 2,154 stocks × 12 datasets
   = ~25,800 requests at ~6.5 s/req under FinMind's 600/hr free-tier

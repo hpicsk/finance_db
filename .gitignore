@@ -56,9 +56,6 @@ finmind_data/div_result/
 finmind_data/sec_lending/
 finmind_data/cap_red/
 
-# Pre-rollback (2015–2024) backup dirs
-finmind_data/*_2015_2024/
-
 # Capital-reduction consolidated output is regenerable from cap_red/ via
 # consolidate_capred.py
 finmind_data/capital_reduction.parquet
