@@ -4,7 +4,7 @@ exchange published for it, and write the result as the panel's fixed record.
 Two conventions live in the adjusted panel and this file is where the boundary
 between them is legible. FinMind builds its series by subtracting the *declared*
 distribution from the prior close; ``adjust.py`` rebuilds the holes from the
-exchange's *published reference price*. The two name the same number on 83 % of
+exchange's *published reference price*. The two name the same number on 84 % of
 events and land a cent apart on most of the rest — small, bounded, and not
 cumulative, but a step at a vendor/rebuilt boundary looks like a bug to whoever
 finds it next, and this table is the answer to that.
@@ -14,22 +14,23 @@ what ``adjusted_loader`` patches:
 
 ``sign_flip``
     A 現金增資 subscribed above the market price raises the reference price —
-    ``after > before``, 25 filed and 24 gradable — and on 6 of them the vendor
-    applied the move in the opposite direction. The error is the full width of
-    the reprice, up to 4.11 % of one session's return, and it sits in the
-    factor for the stock's whole history behind that date.
+    ``after > before``, 15 filed and 14 gradable inside the window — and where
+    the vendor applies the move in the opposite direction the error is the full
+    width of the reprice, sitting in the factor for the stock's whole history
+    behind that date.
 
-    **All six are 2005-2008, and every upward reprice after the last of them is
-    right.** 2005-04-21, 2005-07-28, 2006-02-09, 2006-07-07, 2007-12-21 and
-    2008-09-16 are flipped; the 16 from 2008-11-25 through 2024-12-12 are exact.
-    The cut is not clean — 2008-08-06 and 2008-08-28 are already exact while
-    2008-09-16 is still flipped — so what the dates show is a transition over
-    the autumn of 2008 rather than a switch thrown on one day. Either way it is
-    a fixed era and not a rate: something in the vendor's pipeline changed and
-    the defect stops, so the next search of this kind can start before 2009
-    instead of over the panel. It is also why a rate estimated on the
-    delisting-era gate set does not extrapolate — that sample is 2005-2007 by
-    construction and sits inside the defective window.
+    **The window holds none of them**, and that is a fact about the era rather
+    than a rate. Six flips exist in the vendor's series, dated 2005-04-21,
+    2005-07-28, 2006-02-09, 2006-07-07, 2007-12-21 and 2008-09-16, all of them
+    before ``COVERAGE_START``; the 14 in-window upward reprices from 2011-09-15
+    through 2024-12-12 are exact. The cut is not clean even there — 2008-08-06
+    and 2008-08-28 are already exact while 2008-09-16 is still flipped — so what
+    the dates show is a transition over the autumn of 2008 rather than a switch
+    thrown on one day. Either way something in the vendor's pipeline changed and
+    the defect stops, so a search of this kind that extends the coverage
+    backwards can start before 2009 instead of over the panel. It is also why a
+    rate estimated on a 2005-2007 delisting sample would not extrapolate — that
+    sample sits inside the defective era by construction.
 
 ``malformed_twin``
     A filing whose date also carries a ``div_result`` row with a non-positive
@@ -41,12 +42,12 @@ Both are found by shape rather than by stock id, so a re-download that moves
 them is graded, not matched against a list.
 
 Writes ``vendor_event_audit.parquet``: one row per filed 除權息, whether or not
-the vendor series covers it. **22,370 filed, 22,336 gradable** — both numbers
+the vendor series covers it. **18,277 filed, 18,087 gradable** — both numbers
 are the file's own and neither is a filter that moved. ``checkable`` is the
-column that separates them, and the 34 it excludes are 12 events in the stocks
-the vendor serves nothing for and 22 whose bracketing sessions sit further apart
-than ``_MAX_BRACKET_DAYS``. Every rate quoted here — 83.3 %, 99.5 %, the defect
-counts — is over the 22,336; every count of what was *filed* is over the 22,370.
+column that separates them, and the 190 it excludes are 174 events in the stocks
+the vendor serves nothing for and 16 whose bracketing sessions sit further apart
+than ``_MAX_BRACKET_DAYS``. Every rate quoted here — 84.2 %, 99.5 %, the defect
+counts — is over the 18,087; every count of what was *filed* is over the 18,277.
 
     python -m finmind_data.vendor_event_audit
 """
@@ -57,6 +58,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
+
+from .window import clip
 
 ROOT = Path(__file__).resolve().parent
 OHLCV_DIR = ROOT / 'ohlcv'
@@ -87,6 +90,10 @@ def _vendor_factor(stock_id: str) -> pd.DataFrame | None:
     adj = pd.read_parquet(a, columns=['date', 'close']).rename(columns={'close': 'adj'})
     raw['date'] = pd.to_datetime(raw['date'])
     adj['date'] = pd.to_datetime(adj['date'])
+    # The trees run past the window on both sides, so an unclipped merge grades
+    # events the package does not answer for and reports the total as the
+    # window's.
+    raw, adj = clip(raw), clip(adj)
     d = raw.merge(adj, on='date', how='inner').sort_values('date')
     d = d[d['close'] > 0]
     if len(d) < 2:
@@ -104,6 +111,14 @@ def audit() -> pd.DataFrame:
         sid = p.stem
         e = pd.read_parquet(p)
         e['date'] = pd.to_datetime(e['date'])
+        # Clipped like the price frames below, and for a sharper reason: an
+        # event outside the window has no bracketing sessions to be graded
+        # against, so leaving it in does not add an ungraded row, it adds one
+        # that can only be ungraded — inflating the filed total and deflating
+        # the graded share by the same events.
+        e = clip(e)
+        if not len(e):
+            continue
         b = e['before_price'].astype(float).to_numpy()
         a = e['after_price'].astype(float).to_numpy()
         wellformed = (b > 0) & (a > 0)

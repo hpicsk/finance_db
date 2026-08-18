@@ -162,7 +162,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from .adjusted_loader import _BREAK_GAP_DAYS
-from .window import COVERAGE_START, COVERAGE_END
+from .window import COVERAGE_START, COVERAGE_END, clip
 
 HERE = Path(__file__).resolve().parent
 
@@ -219,7 +219,26 @@ _OUT_FILE = HERE / "delisting_sign.parquet"
 
 
 def _price(stock_id: str) -> pd.DataFrame | None:
-    """Raw closes for one name, positive rows only, in date order."""
+    """Raw closes for one name, positive rows only, in date order.
+
+    Deliberately *not* clipped, unlike every other read of the trees here. The
+    window decides which delistings this study answers for, and `features()`
+    already applies it to the event date. It does not bound how far back a
+    feature may look to characterise an event that is inside it: `drawdown`
+    divides by the peak of the trailing `_PEAK_WINDOW_DAYS`, so clipping the
+    lookback would leave a name whose last trade sits near `COVERAGE_START`
+    dividing by a partial window while every other name divides by a full one —
+    the same number measured over different spans.
+
+    It costs 4408 its stratum. Its last trade is 2011-08-08 after a 266-day
+    suspension, so 120 of the 248 sessions in its peak window are pre-window
+    and the peak is among them: clipped, the drawdown rises 0.249 -> 0.378 and
+    crosses `_DD_DISTRESS`. The pre-window half is not the contamination
+    `COVERAGE_START` exists to exclude — no capital reduction is filed for it,
+    and no session in the window moves more than the 7 % daily limit, so there
+    is no unexplained cut hiding in it. Clipping here would move a
+    pre-registered draw on an artefact of the truncation.
+    """
     f = HERE / f"ohlcv/{stock_id}.parquet"
     if not f.exists():
         return None
@@ -238,7 +257,10 @@ def _panel_last_session() -> pd.Timestamp:
     Read across the whole panel rather than the delisted frame, and rather than
     taken from `COVERAGE_END`: this is the measurement `features()` compares a
     name's last quote against, so it has to be a session the panel really has,
-    not the date the download was asked to stop on.
+    not the date the download was asked to stop on. Those two came to the same
+    thing while the trees ended where the window did; `--extend` separated them,
+    and an unclipped scan now answers 2026 to a question asked about the window.
+    It is the last session the panel really has *inside* the window.
 
     Stocks the endpoint returned nothing for are written as zero-row files with
     no schema at all, so the column projection is guarded instead of pushed down
@@ -248,9 +270,17 @@ def _panel_last_session() -> pd.Timestamp:
     for f in sorted(HERE.glob("ohlcv/*.parquet")):
         if "date" not in pq.read_schema(f).names:
             continue
-        m = pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]).max()
+        d = pd.read_parquet(f, columns=["date"])
+        d["date"] = pd.to_datetime(d["date"])
+        d = clip(d)
+        if not len(d):
+            # Every session this stock has sits outside the window; it
+            # contributes no candidate rather than a NaT that would swallow
+            # the running maximum on the first file that hits it.
+            continue
+        m = d["date"].max()
         last = m if last is None or m > last else last
-    assert last is not None, "no priced sessions in ohlcv/"
+    assert last is not None, "no priced sessions in ohlcv/ inside the window"
     return last
 
 

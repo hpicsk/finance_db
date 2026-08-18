@@ -1,14 +1,22 @@
 """Merge per-stock cap_red parquets into a single capital_reduction.parquet.
 
-cap_red/ contains 2,154 per-stock files but capital reductions are sparse:
-most stocks have 0 events. Empty files are written with 0 columns; filter
-them out before concat. Output sorted by date.
+cap_red/ holds one file per stock, but capital reductions are sparse: most
+stocks have none. Empty files are written with 0 columns; filter them out
+before concat. Output sorted by date.
+
+Clipped to the window like every other read of the trees. The filings are what
+the window's start is set by, so an unclipped merge cannot reach further back
+than `COVERAGE_START` — but `download.py --extend` moves the far end, and a
+filing after `COVERAGE_END` prices a session the panel does not contain. With
+the clip, re-running this after an extension rewrites the same file.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 import pandas as pd
+
+from finmind_data.window import clip
 
 ROOT = Path("/home/st/research/finance_db/finmind_data")
 SRC = ROOT / "cap_red"
@@ -34,7 +42,8 @@ def main() -> None:
         print(f"all {len(files)} files empty; nothing to consolidate")
         return
 
-    out = pd.concat(frames, ignore_index=True).sort_values(["date", "stock_id"])
+    out = clip(pd.concat(frames, ignore_index=True))
+    out = out.sort_values(["date", "stock_id"])
     out = out.reset_index(drop=True)
     out.to_parquet(OUT, index=False)
 

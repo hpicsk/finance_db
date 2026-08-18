@@ -12,53 +12,60 @@ here.
 Five things happen on top of the vendor series, all of them marked in a column
 rather than done silently.
 
-**The survivorship hole is filled.** ``price_adj/`` serves nothing at all for 38
-of the 173 in-window universe delistings — every one a 2005-2007 delisting,
-10,981 traded sessions, and 38 of the 42 names the universe carries precisely as
-its survivorship overlay, dropped from FinMind's live registry and from this
-endpoint on the same list. ``adjust.rebuild_tr_factor`` rebuilds those 38 from
+**The survivorship hole is filled.** ``price_adj/`` serves nothing at all
+inside the window for 54 stocks, 61,505 traded sessions. Fifty are in-window
+universe delistings — 50 of the 164, delisted 2012-2020, and 50 of the 57 names
+the universe carries precisely as its survivorship overlay, dropped from
+FinMind's live registry and from this endpoint on the same list. The other four
+delisted between 2007 and 2010 and went on being quoted on 興櫃 into the window,
+so the vendor's series for them ends before ``COVERAGE_START`` and covers none
+of their in-window sessions. ``adjust.rebuild_tr_factor`` rebuilds all 54 from
 the exchange's own reference prices, which is why they are recoverable at all:
 the reference prices are published per event and do not depend on the registry.
-Validated on the 134 covered in-window delistings — the same era, the same
+Validated on the 116 covered in-window delistings — the same era, the same
 situation, the vendor present to compare against — where the rebuild reproduces
-99.93 % of 268,503 daily adjusted returns to 1e-6 and 99.997 % to 1e-3.
+99.954 % of 203,671 daily adjusted returns to 1e-6 and 99.998 % to 1e-3.
 
-**Seven vendor events are replaced with the exchange's own step.** Six are
-現金增資 subscribed above the market, where the reference price *rises* and the
-vendor scaled the history the other way, up to 4.11 % on one session and
-carried through the whole history behind it; one is a filing the vendor added a
-malformed duplicate row into. ``vendor_event_audit`` grades every event and
-finds both by shape, not by stock id.
+**One vendor event is replaced with the exchange's own step.** 3454's
+2011-07-27 除權息 is filed twice, the second row reading before 0.00 / after
+−2.30, and the vendor read both as one distribution — a step 2.98 % off the
+exchange's, carried through the whole history behind it. A second defect class
+exists and the window holds none of it: on six 現金增資 subscribed above the
+market, where the reference price *rises*, the vendor scaled the history the
+other way, and all six are dated 2005-2008. ``vendor_event_audit`` grades every
+event and finds both shapes by shape, not by stock id.
 
-**Both edges of the vendor series are carried outward.** It begins one session
-after the raw series on 903 stocks and ends before it on 7, and a factor moves
-only on an ex date — so where no filing sits in the gap, the adjacent covered
-session's factor *is* the missing one, and carrying it is exact rather than an
-interpolation or a splice. That recovers 902 **first returns** — the price was
-never the loss; the session-1-to-session-2 return was — and prices the 3,089
-sessions seven delisted names went on being quoted for. The condition is tested
-per row against every filed 除權息 and 減資 plus the cancellations no filing
-explains, and it refuses the 903rd: 4141's first print sits 376 days before the
-vendor's first session, with a cancellation on that session. Those rows are
-``vendor_carried``.
+**The one edge of the vendor series is carried outward.** It begins one traded
+session after the raw series on 493 stocks, and a factor moves only on an ex
+date — so where no filing sits in the gap, the adjacent covered session's factor
+*is* the missing one, and carrying it is exact rather than an interpolation or a
+splice. That recovers 492 **first returns** — the price was never the loss; the
+session-1-to-session-2 return was. The condition is tested per row against every
+filed 除權息 and 減資 plus the cancellations no filing explains, and it refuses
+the 493rd: 4141's first print sits 376 days before the vendor's first session,
+with a cancellation on that session. Those rows are ``vendor_carried``. The
+other edge — a vendor series stopping at a delisting while ``ohlcv/`` keeps
+printing — has no in-window instance: every name it applies to delisted before
+the window, which is what makes those four a hole for the rebuild rather than an
+edge for the carry.
 
 **The sessions the raw endpoint dropped are put back.** ``ohlcv/`` has no row
-at all for 600 sessions ``price_adj/`` carries, in 159 stocks, and every one of
+at all for 303 sessions ``price_adj/`` carries, in 96 stocks, and every one of
 them is a 補行交易日 — a Saturday worked to make up a holiday. The cost is not
 the missing row but the return after it, which spans two sessions instead of one:
-600 absent rows are 600 overstated returns, clustered on 22 holiday-adjacent
+303 absent rows are 303 overstated returns, clustered on 14 holiday-adjacent
 dates rather than scattered. ``price_adj/`` carries the whole row — ``open``,
 ``max`` and ``min`` on the close's own factor, the volume columns unadjusted — so
 the raw row is the vendor's divided by the factor at an adjacent session, a
 vendor factor over a vendor factor, and the declared-vs-published cent below
-cancels instead of propagating. 419 come back as traded sessions and the 181 the
+cancels instead of propagating. 210 come back as traded sessions and the 93 the
 vendor reports no volume on as the zero rows ``ohlcv/`` writes for a session with
 none. Those rows are ``raw_covered`` False.
 
 **Two conventions therefore live in one panel**, and ``adj_method`` says which.
 FinMind subtracts the *declared* distribution from the prior close; the rebuild
 reads the exchange's *published reference price*. The two name the same number
-to 1e-6 on 83.3 % of 22,336 graded events and to 1e-3 on 99.5 %, and where they
+to 1e-6 on 84.2 % of 18,087 graded events and to 1e-3 on 99.5 %, and where they
 differ it is by a whole cent in the per-share distribution — bounded, not
 cumulative, and confined to the ex-date session. ``vendor_event_audit.parquet``
 is the fixed record of that, so a step found at a vendor/rebuilt boundary is
@@ -70,10 +77,10 @@ calculation should not believe, all measured against ``ohlcv/`` and
 ``unpriced_actions.parquet``:
 
 **A no-trade session carries a price.** FinMind writes a session the stock did
-not trade as ``close == 0`` in ``ohlcv/`` — 179,749 rows there in 1,325 stocks,
-and 179,930 in this panel once the make-up sessions above are put back, 2.34 %
-of it. The adjusted series fills 179,622 of the ones ``ohlcv/`` holds with the
-last traded price instead (8934 has 2,441 of them, every one carrying a number),
+not trade as ``close == 0`` in ``ohlcv/`` — 127,745 rows there in 1,150 stocks,
+and 127,838 in this panel once the make-up sessions above are put back, 2.17 %
+of it. The adjusted series fills 125,904 of the ones ``ohlcv/`` holds with the
+last traded price instead (8934 has 1,321 of them, every one carrying a number),
 so the zero that identifies them is gone and a caller filtering on
 ``adj_close_tr > 0`` keeps all of them. They are NaN here, the raw ``close`` is
 kept alongside so the test stays available, and they are ``is_valid`` False
@@ -81,46 +88,39 @@ under ``invalid_reason = 'no_trade'``: a price nobody could transact at is not a
 position, and a backtest that filtered on the flag alone would otherwise assume
 a fill on a day the stock did not trade.
 
-**A share cancellation no filing priced goes through unadjusted.**
-``capital_reduction.parquet`` starts on 2011-01-25 while prices start in 2005,
-and the vendor is subject to the same publication limit: 2357's 85 % reduction
-on 2010-06-24 has a vendor factor step of 1.0000, which leaves the raw 53.2 →
-240.5 jump in the adjusted series as a +351 % return. ``detect_unpriced_actions``
+**A share cancellation no filing priced goes through unadjusted.** A filing is
+not the only way one reaches the tape: 8101 stopped trading 2024-08-21 at 1.90,
+cancelled 80 % of its shares over a 90-day suspension, and resumed 2024-11-19 at
+10.45 with a vendor factor step of 1.0000, leaving a +450 % return across the
+gap. ``detect_unpriced_actions``
 finds those cancellations in the share count, and ``is_valid`` is False for every
 row before the last of them. The same flag carries series splices, where a ticker
 stops trading for years and comes back as a different listing, so
 ``invalid_reason`` names which of the four disqualified it.
 
-**A price is not a permission.** 4,632 sessions across 14 names print after the
-exchange ended the listing — 1107 is the largest at 1,151: the vendor ends
-2007-10-19 against a 2007-10-20 delisting and ``ohlcv/`` runs to 2012-06-06. The
+**A price is not a permission.** 1,134 in-window sessions across four names —
+1107, 2341, 2381 and 2396 — print after the exchange ended the listing. The
 boundary is the delisting table's date and not the session where the vendor's
 series stops, because a rebuilt name has no vendor series to stop: reading the
-stop found only the seven the vendor serves, and left the tails of seven of the
-38 rebuilt names holdable. A backtest holding any of them would be trading a
-book it could not have filled, which is why they carry ``is_valid`` False under
-``invalid_reason = 'post_delisting_emerging'``. On the seven the vendor serves
-the destination is visibly 興櫃, a negotiated market: ``open`` is the previous
-session's average rather than a trade, a quote depends on a recommending broker
-standing behind it, and median volume runs at 3.6-48 % of each name's own
-listed-era median. Across the rebuilt seven that signature does not hold — 1408,
-2407 and 2811 print at 71-336 % of their prior median — so the reason names which
-side of the delisting a row falls on rather than which market carried it, and it
-is the exchange's termination date that disqualifies it either way. Turnover that
-heavy is not negotiated trading, which raises the opposite possibility: that the
-three were demoted to another board rather than delisted, and their tails are
-sessions a study could have held. They were not. All three stop permanently
-within 10 sessions to 5 months and never trade again, where a name that changes
-boards goes on trading — 6446 is still quoted on the panel's last session. What
-they *are* is the terminal value: where a delisted name converges over the months
-after it leaves is a market observation, and the last exchange close is not one.
-That is the use the fill is for, and the flag is what keeps it to that use.
+stop found only the names the vendor serves, and all four of these are rebuilt.
+A backtest holding any of them would be trading a book it could not have filled,
+which is why they carry ``is_valid`` False under ``invalid_reason =
+'post_delisting_emerging'``. The destination is 興櫃, a negotiated market:
+``open`` is the previous session's average rather than a trade, a quote depends
+on a recommending broker standing behind it, and median volume runs at 3.0-49 %
+of each name's own listed-era median. Turnover that thin is not a demotion to
+another board, and none of the four goes on trading: all stop for good by
+2012-11, where a name that changes boards does not. What they *are* is the
+terminal value: where a delisted name converges over the months after it leaves
+is a market observation, and the last exchange close is not one. That is the use
+the fill is for, and the flag is what keeps it to that use.
 
-A name the vendor keeps pricing past that date did not leave. 6446 moved onto
-the exchange in 2024 and the table records the departure without the arrival, so
-its 224 later sessions stay holdable. 2301 and 2432 come back 791 and 5,385 days
-after theirs, which is a reused code rather than a return, and the break above
-cuts the earlier issuer's history off the later one's.
+A name the vendor keeps pricing past that date did not leave, and the carve-out
+below is for that case. It has no subject today: the 2026-08-17 refresh dropped
+the one board transfer the delisting table used to carry, and the two reused
+codes with it, so no name in the table is still quoted on the panel's last
+session. The rule stays because the table is re-collected, not because a name
+needs it now.
 
 That carve-out reads the vendor's coverage, and so has the blind spot the
 boundary above had: ``adj_covered`` is False across every rebuilt name, so a
@@ -154,6 +154,7 @@ import pandas as pd
 
 from . import adjust
 from .vendor_event_audit import defective_events
+from .window import COVERAGE_START, COVERAGE_END, clip
 
 ROOT = Path(__file__).resolve().parent
 OHLCV_DIR = ROOT / 'ohlcv'
@@ -163,13 +164,13 @@ DELISTED_PATH = ROOT / 'delisted_universe.parquet'
 
 # A listing that stops trading for two years and returns is not the same series.
 # Observed gap lengths are empty between 419 and 738 days, so every cut in that
-# range marks the same 17 splices; this is a materiality choice, not a tuned one.
+# range marks the same 10 splices; this is a materiality choice, not a tuned one.
 _BREAK_GAP_DAYS = 730
 
 # ``ohlcv/`` quotes every price to the cent, so a session reconstructed from the
 # vendor's adjusted row is rounded onto that grid rather than left carrying the
-# vendor's own rounding. It is not a tolerance: on the 418 make-up sessions with
-# an anchor on either side the two reconstructions differ by at most 3.4e-6 and
+# vendor's own rounding. It is not a tolerance: on the 209 make-up sessions with
+# an anchor on either side the two reconstructions differ by at most 1.3e-7 and
 # round to the same cent in every case.
 _PRICE_DECIMALS = 2
 
@@ -225,7 +226,12 @@ def _delisting_date(stock_id: str):
 def load_adjusted(stock_id: str,
                   ohlcv_dir: Path = OHLCV_DIR,
                   price_adj_dir: Path = PRICE_ADJ_DIR) -> pd.DataFrame:
-    """One stock's raw OHLCV plus its total-return adjusted close.
+    """One stock's raw OHLCV plus its total-return adjusted close, windowed.
+
+    Returns `COVERAGE_START..COVERAGE_END` only. The per-stock files are wider
+    on both sides — prices from 2005, and whatever `download.py --extend` last
+    reached — and the window is applied here rather than left to the caller,
+    because the derivations below are properties of the rows they were given.
 
     Added columns:
       ``tr_factor``      total-return back-adjustment factor, 1.0 on the last row
@@ -239,7 +245,7 @@ def load_adjusted(stock_id: str,
       ``adj_covered``    the *vendor* served this date — False across a rebuilt
                          stock and on a carried edge, so the survivorship hole
                          stays countable after it is filled
-      ``raw_covered``    ``ohlcv/`` served this date — False on the 600 make-up
+      ``raw_covered``    ``ohlcv/`` served this date — False on the 303 make-up
                          sessions reconstructed from the vendor's row, whose
                          fields are therefore derived rather than read
       ``is_valid``       this row is a position a study could have held
@@ -253,11 +259,13 @@ def load_adjusted(stock_id: str,
     tr_factor`` — which is what makes the factor rather than the adjusted close
     the primary output.
 
-    The factor is re-anchored to 1.0 on this slice's last priced session rather
+    The factor is re-anchored to 1.0 on the window's last priced session rather
     than left on the vendor's anchor, which is the latest session in FinMind's
     own database and therefore moves every time the download is repeated. Both
     anchors give identical returns; only this one gives identical *numbers* on a
-    re-download.
+    re-download — and only because the frame is windowed first. Anchored on the
+    file's last session instead, the numbers would move whenever the tree grew,
+    which is the drift the re-anchoring exists to remove.
 
     ``adj_close_tr`` is NaN on a session the stock did not trade and on any
     session nothing covers; ``adj_source`` separates the two. ``df.attrs``
@@ -277,6 +285,23 @@ def load_adjusted(stock_id: str,
                          f'to adjust (listed outside the download window?)')
     out['date'] = pd.to_datetime(out['date'])
     out = out.sort_values('date').reset_index(drop=True)
+    # Everything below derives from this frame, so the window is applied here
+    # rather than to the result. Two properties depend on it. The factor is
+    # anchored on the last priced session (below), so a frame running past the
+    # window would anchor on a session the package does not answer for and move
+    # every adjusted number the day the download is extended — which is the
+    # re-download stability the anchoring exists to provide, lost to the same
+    # cause it was written against. And every count quoted on this panel would
+    # otherwise be a count over the tree, which holds prices from 2005 and past
+    # the window's end, rather than over the window those counts are published
+    # on. Clipping before the derivations rather than after also keeps the
+    # break rule intact: a gap that straddles a window edge separates rows
+    # this frame does not contain from rows that are all on one side of it.
+    out = clip(out)
+    if not len(out):
+        raise ValueError(f'{stock_id}: no sessions inside '
+                         f'{COVERAGE_START.date()}..{COVERAGE_END.date()}, so '
+                         f'there is no series this package answers for')
 
     a = Path(price_adj_dir) / f'{stock_id}.parquet'
     if not a.exists():
@@ -291,6 +316,8 @@ def load_adjusted(stock_id: str,
     adj = pd.read_parquet(a)
     if len(adj):
         adj['date'] = pd.to_datetime(adj['date'])
+        adj = clip(adj)
+    if len(adj):
         out, vendor_only, recovered = _recover_make_up_sessions(
             str(stock_id), out, adj)
         adj = adj[['date', 'close']].rename(columns={'close': 'adj_close_tr'})
@@ -376,7 +403,7 @@ def load_adjusted(stock_id: str,
     # The other end. A vendor series that stops while ``ohlcv/`` keeps printing
     # stopped at a delisting: the name left the exchange and the quotes that
     # follow are 興櫃, which is a negotiated market — ``open`` is the previous
-    # session's average price rather than a trade, median volume runs at 3.6-48 %
+    # session's average price rather than a trade, median volume runs at 3.0-49 %
     # of the prior year's, and a quote depends on a recommending broker standing
     # behind it. Carrying the factor over those sessions makes the level
     # continuous, which is what the price is wanted for; it does not make the
@@ -386,12 +413,12 @@ def load_adjusted(stock_id: str,
     # and the last exchange close is not one.
     #
     # The boundary is the delisting table's date, not the session where the
-    # vendor's series stops. The two pick out the same 3,089 rows on the seven
-    # names the vendor serves, because the stop was only ever standing in for the
-    # date; but a rebuilt name has ``adj_covered`` False throughout and no stop to
-    # read, so the stand-in was silent on exactly the names the rebuild added —
-    # 1,524 sessions across seven of the 38, left tradable by a fix for the
-    # opposite bias.
+    # vendor's series stops, because the stop was only ever standing in for the
+    # date; a rebuilt name has ``adj_covered`` False throughout and no stop to
+    # read, so the stand-in was silent on exactly the names the rebuild added.
+    # Inside this window that is every one of them: all four names with sessions
+    # past a delisting are rebuilt, 1,134 rows the stop would have left tradable
+    # by a fix for the opposite bias.
     delisted_on = _delisting_date(stock_id)
     if delisted_on is not None:
         after = out['date'].to_numpy() > np.datetime64(delisted_on)
@@ -434,15 +461,15 @@ def _recover_make_up_sessions(stock_id: str, out: pd.DataFrame,
                               adj: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     """Put back the sessions ``price_adj/`` carries and ``ohlcv/`` has no row for.
 
-    All 600 of them across the panel are 補行交易日 — Saturdays worked to make up
+    All 303 of them across the panel are 補行交易日 — Saturdays worked to make up
     a holiday — and the damage is not the missing row. A gap in the calendar
-    makes the *next* session's return span two sessions instead of one, so 600
-    absent rows are 600 overstated returns, every one of them on a
+    makes the *next* session's return span two sessions instead of one, so 303
+    absent rows are 303 overstated returns, every one of them on a
     holiday-adjacent Saturday rather than anywhere at random.
 
     ``price_adj/`` carries the whole row, not just the close: ``open``, ``max``
     and ``min`` sit on the same factor as the close (worst relative departure
-    4.1e-5 over 7,674,204 shared ticker-days, which is the vendor's rounding),
+    5.9e-6 over 5,692,266 shared traded ticker-days, which is the vendor's rounding),
     and the three volume columns come across unadjusted. So the raw row is the
     vendor's row divided by the factor at an adjacent session —
 
@@ -455,16 +482,16 @@ def _recover_make_up_sessions(stock_id: str, out: pd.DataFrame,
     same guard the edge carry uses. Unlike that one it does not fire on this
     vintage: no make-up session in the panel has an event in its interval.
 
-    The check on the arithmetic is that 418 of the 419 traded sessions have a
-    usable anchor on *both* sides, and the two reconstructions agree to 6.9e-7 —
+    The check on the arithmetic is that 209 of the 210 traded sessions have a
+    usable anchor on *both* sides, and the two reconstructions agree to 1.8e-7 —
     two different sessions, opposite directions, one answer. The nearer earlier
     anchor is the one used, and 4167's 2012-12-22 is the single session with
     nothing usable behind it.
 
     A session the vendor reports no volume on is written the way ``ohlcv/``
-    writes one, as a zero row: across 151,304 zero-volume rows in that tree not
+    writes one, as a zero row: across 102,976 zero-volume rows in that tree not
     one carries a close, so a zero is what the raw file would have held. Those
-    181 rows land on ``invalid_reason = 'no_trade'`` with everything else that
+    93 rows land on ``invalid_reason = 'no_trade'`` with everything else that
     did not trade, and the return across them stays the one-session return it
     already was.
 
@@ -555,19 +582,20 @@ def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
     uncovered session next to it — not an interpolation but the same number, and
     the level is continuous by construction rather than by a splice.
 
-    Two edges need it. The vendor series begins one session after the raw one on
-    903 stocks, which costs each of them its **first return** rather than its
-    first price, and a first return is the whole observation in a listing study.
-    It ends before the raw one on 7, whose 3,089 later sessions this prices —
-    part of the 4,632 that follow a delisting, the rest belonging to names the
-    vendor never served and the rebuild supplies.
+    One edge needs it inside this window. The vendor series begins one traded
+    session after the raw one on 493 stocks, which costs each of them its
+    **first return** rather than its first price, and a first return is the whole
+    observation in a listing study. The other edge — a series ending before the
+    raw one, at a delisting ``ohlcv/`` kept printing through — has no in-window
+    instance: every such name delisted before the window, so the rebuild supplies
+    the whole of it and there is no covered session next to it to carry from.
 
     The condition is checked per row rather than assumed: every date the stock
     filed a 除權息 or a 減資 on, plus the share cancellations no filing explains,
     and a row whose gap to its anchor contains one of them is left NaN. That is
     not hypothetical — 4141's first print sits 376 days before the vendor's
     first session with a cancellation on that very session, and it is the one
-    row of the 903 this refuses.
+    row of the 493 this refuses.
 
     Returns the factor and the mask of rows it filled.
     """

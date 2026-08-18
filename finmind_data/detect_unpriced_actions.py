@@ -44,7 +44,7 @@ import numpy as np
 import pandas as pd
 
 from finmind_data.adjusted_loader import OHLCV_DIR, UNPRICED_PATH
-from finmind_data.window import COVERAGE_START
+from finmind_data.window import COVERAGE_START, COVERAGE_END, clip
 
 ROOT = Path(__file__).resolve().parent
 SHARES_DIR = ROOT / 'shares'
@@ -56,10 +56,6 @@ CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
 _MIN_SHARE_DROP = 0.05
 _MIN_SUSPENSION_DAYS = 5
 _EXPLAINED_WINDOW_DAYS = 30
-# capital_reduction.parquet's own first row, which is also where the package's
-# coverage starts and for this reason. Detections at or after it are the
-# calibration set; detections before it are outside the window entirely.
-_CAP_RED_COVERAGE_START = COVERAGE_START
 
 
 def _filed_events() -> pd.DataFrame:
@@ -98,7 +94,7 @@ def detect() -> pd.DataFrame:
             continue
         sid = p.stem
         s['date'] = pd.to_datetime(s['date'])
-        s = s.sort_values('date')
+        s = clip(s.sort_values('date'))
         s = s[s['NumberOfSharesIssued'] > 0]
         if len(s) < 2:
             continue
@@ -112,7 +108,11 @@ def detect() -> pd.DataFrame:
         px = pd.read_parquet(OHLCV_DIR / f'{sid}.parquet')
         if not len(px):
             continue
-        pdt = pd.to_datetime(px['date']).sort_values().to_numpy()
+        px['date'] = pd.to_datetime(px['date'])
+        px = clip(px)
+        if not len(px):
+            continue
+        pdt = px['date'].sort_values().to_numpy()
         known = by_stock.get(sid, np.empty(0, dtype='datetime64[ns]'))
         for i in material:
             d = sd[i + 1]
@@ -138,15 +138,17 @@ def calibrate(hits: pd.DataFrame) -> None:
     cr = pd.read_parquet(CAP_RED_PATH, columns=['stock_id', 'date'])
     cr['stock_id'] = cr['stock_id'].astype(str)
     cr['date'] = pd.to_datetime(cr['date'])
-    post = hits[hits['date'] >= _CAP_RED_COVERAGE_START]
-    found = {k: v['date'].to_numpy() for k, v in post.groupby('stock_id')}
+    # `detect` clips to the window, whose start is capital_reduction.parquet's
+    # own first row (see `window`), so every detection is already inside the
+    # span where the filings are the ground truth.
+    found = {k: v['date'].to_numpy() for k, v in hits.groupby('stock_id')}
     window = np.timedelta64(_EXPLAINED_WINDOW_DAYS, 'D')
     rec = sum(1 for sid, d in zip(cr['stock_id'], cr['date'].to_numpy())
               if sid in found and np.abs(found[sid] - d).min() <= window)
-    print(f'\ncalibration on {_CAP_RED_COVERAGE_START.date()}..2024, where the '
-          f'filed events are the ground truth')
-    print(f'  detections {len(post):,}   of them explained by a filing '
-          f'{100 * post["explained"].mean():.1f}%   (precision)')
+    print(f'\ncalibration on {COVERAGE_START.date()}..{COVERAGE_END.date()}, '
+          f'where the filed events are the ground truth')
+    print(f'  detections {len(hits):,}   of them explained by a filing '
+          f'{100 * hits["explained"].mean():.1f}%   (precision)')
     print(f'  filed 減資 {len(cr):,}   of them detected '
           f'{100 * rec / max(len(cr), 1):.1f}%   (recall)')
 
@@ -155,15 +157,11 @@ def main() -> None:
     hits = detect()
     hits.to_parquet(UNPRICED_PATH, index=False)
     un = hits[~hits['explained']]
-    pre = un[un['date'] < _CAP_RED_COVERAGE_START]
     print(f'share-count drops >= {_MIN_SHARE_DROP:.0%} straddling a '
           f'>= {_MIN_SUSPENSION_DAYS}-day suspension: {len(hits):,} '
           f'in {hits["stock_id"].nunique():,} stocks')
     print(f'  no filing explains them: {len(un):,} in '
           f'{un["stock_id"].nunique():,} stocks')
-    print(f'  of those, before {_CAP_RED_COVERAGE_START.date()} (the window the '
-          f'event file does not cover): {len(pre):,} in '
-          f'{pre["stock_id"].nunique():,} stocks')
     print(f'  → {UNPRICED_PATH}')
     if '--calibrate' in sys.argv:
         calibrate(hits)

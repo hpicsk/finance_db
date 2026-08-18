@@ -26,7 +26,7 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
-from finmind_data.window import COVERAGE_START, COVERAGE_END  # noqa: E402
+from finmind_data.window import COVERAGE_START, COVERAGE_END, clip  # noqa: E402
 
 # The study window every package's figures are quoted on. Duplicated in each
 # assertion file because the container holds no shared module to import it from;
@@ -48,12 +48,104 @@ assert WIN_START <= COVERAGE_START <= COVERAGE_END <= WIN_END, (
 POPULATIONS = Path(__file__).with_name("populations.json")
 
 
+def _tree(path, columns=None):
+    """One per-stock tree file, clipped to the window.
+
+    The trees are wider than the window on both sides — prices from 2005, and
+    whatever `download.py --extend` last reached — so an unclipped read counts
+    sessions the package does not answer for and reports the total as the
+    window's. Every figure below is quoted on the window, so every read of a
+    dated file goes through here; a frame carrying no `date` is returned as it
+    came. Reading through one helper rather than clipping at each call site is
+    also what keeps the next check that opens a tree from being the one that
+    forgets.
+    """
+    df = pd.read_parquet(path, columns=columns)
+    if not len(df) or "date" not in df.columns:
+        return df
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    return clip(df)
+
+
 class Skipped(Exception):
     """A prerequisite artifact is absent, so this check verified nothing.
 
     Distinct from a pass because it is: it used to print as one, which is the
     same confusion the population guard below exists to remove.
     """
+
+
+def _panel_ids():
+    """The stocks the panel is made of: `universe.parquet`, not the tree.
+
+    The tree carries 72 files the universe does not — names the universe filter
+    removes as instruments rather than common stock, Innovation Board listings
+    and TDRs among them. A panel-wide check that globs the tree reads them back
+    in, so this suite could assert that the universe excludes an instrument and
+    then report a panel total measured with it included. Thirty of the 72 still
+    hold in-window rows, so the two answers really do differ. The universe is
+    what the README's exclusion table describes, so it is what a panel figure is
+    counted over.
+    """
+    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    return sorted(u["stock_id"].astype(str))
+
+
+# ---- Taiwan: every reader of the trees goes through the window -------------
+def test_taiwan_tree_readers_import_the_window():
+    """`window`'s own docstring: every module that reads the trees imports it.
+
+    The trees hold sessions on both sides of `COVERAGE_START..COVERAGE_END`, so
+    a module that reads one without clipping does not fail — it measures a wider
+    panel than it reports, and that number is the kind that gets published. The
+    invariant was written in prose and nothing enforced it, which is the state
+    every figure in this suite was in before it was asserted.
+
+    Two files are excepted and both are named here rather than skipped by
+    pattern, so adding a third is a change to this list and not a silent one.
+    `window.py` defines the window, and `download.py` writes the trees — writing
+    them short is what the window is not for, since a wider tree costs nothing
+    and a narrower one cannot be widened without a re-download.
+
+    The import is what is checked, not the call, because that is what the
+    docstring claims and a module may legitimately hold the dates rather than
+    clip a frame (`build_universe` reads neither tree and does exactly that).
+    A reader that imports and then forgets to clip is caught by the population
+    guard instead: its count moves against `populations.json`.
+    """
+    src = sorted(glob.glob(str(REPO / "finmind_data/*.py")))
+    readers = []
+    for f in src:
+        text = Path(f).read_text()
+        if "ohlcv/" in text:
+            readers.append((os.path.basename(f), text))
+    assert readers, (
+        "no module in the package names `ohlcv/` at all, so this check has no "
+        "population — the trees moved, or the path spelling did, and the "
+        "invariant is unverified rather than held"
+    )
+    excepted = {"window.py", "download.py"}
+    names = {n for n, _ in readers}
+    assert excepted <= names, (
+        f"window.py's docstring excepts {sorted(excepted)} from the import "
+        f"rule; {sorted(excepted - names)} no longer names `ohlcv/`, so the "
+        f"exception is stale and the docstring names a file that is not there"
+    )
+    missing = sorted(n for n, t in readers
+                     if n not in excepted
+                     and "from .window import" not in t
+                     and "from finmind_data.window import" not in t)
+    assert not missing, (
+        f"window.py's docstring claims every module that reads the trees "
+        f"imports the window from it, `download.py` excepted; {missing} reads "
+        f"them and does not. An unclipped read measures the sessions outside "
+        f"2011-01-25..2024-12-31 into a figure the package publishes as being "
+        f"about the window"
+    )
+    return (f"{len(readers)} modules name the trees; "
+            f"{len(readers) - len(excepted)} of them import the window, "
+            f"{sorted(excepted)} excepted"), len(readers)
 
 
 # ---- Taiwan: one OHLCV file per universe id --------------------------------
@@ -160,12 +252,15 @@ def test_taiwan_price_adj_one_per_universe():
         f"{len(missing)} universe ids have no price_adj file "
         f"(first few: {sorted(missing)[:5]})"
     )
+    # "Served nothing" is judged on the window, the same test `load_adjusted`
+    # and the hole count apply: a series the vendor supplies only for years the
+    # package does not answer for is a name it serves nothing for here.
     empty = sum(1 for sid in uid
-                if not len(pd.read_parquet(
+                if not len(_tree(
                     REPO / f"finmind_data/price_adj/{sid}.parquet")))
-    assert empty == 72, (
-        f"README pins 72 empty adjusted series (50 of them in-window "
-        f"delistings, 1 pre-window, 21 names listed too recently to have an "
+    assert empty == 113, (
+        f"README pins 113 empty adjusted series (50 of them in-window "
+        f"delistings, 42 pre-window, 21 names listed too recently to have an "
         f"adjusted history); the tree now has {empty}. "
         f"A change here moves the survivorship hole the README quantifies"
     )
@@ -201,8 +296,8 @@ def test_taiwan_adjusted_survivorship_hole():
 
     hole = []
     for sid in sorted(set(inwin["sid"])):
-        raw = pd.read_parquet(REPO / f"finmind_data/ohlcv/{sid}.parquet")
-        adj = pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet")
+        raw = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
+        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
         if len(raw) and not len(adj):
             hole.append(sid)
 
@@ -228,11 +323,11 @@ def test_taiwan_adjusted_survivorship_hole():
 
 
 def test_taiwan_adjusted_coverage_decomposition():
-    """README, "The adjusted panel is survivorship-biased": 98.49 %, and why.
+    """README, "The adjusted panel is survivorship-biased": 98.92 %, and why.
 
     The figure has to be quoted against every traded session in `ohlcv/`. Drop
-    the 50 uncovered delistings from the denominator and the same files report
-    99.95 % — the coverage of a panel the survivorship bias has already been
+    the 54 uncovered stocks from the denominator and the same files report
+    99.99 % — the coverage of a panel the survivorship bias has already been
     taken out of, which is the one number a reader must not cite. This asserts
     the honest denominator and the split of what it misses, so the two cannot
     drift back into each other.
@@ -256,7 +351,7 @@ def test_taiwan_adjusted_coverage_decomposition():
         fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         if not fp.exists():
             continue
-        raw = pd.read_parquet(fp)
+        raw = _tree(fp)
         if not len(raw):
             continue
         tr = raw[raw["close"] > 0].copy()
@@ -264,7 +359,7 @@ def test_taiwan_adjusted_coverage_decomposition():
         tr = tr.sort_values("date").reset_index(drop=True)
         traded += len(tr)
 
-        adj = pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet")
+        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
         if not len(adj):
             hole += len(tr)
             continue
@@ -289,7 +384,7 @@ def test_taiwan_adjusted_coverage_decomposition():
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
         inner = miss & (tr["date"] <= adj_dates.max())
         # The reverse gap runs both ways, and only one direction was known. The
-        # 600 sessions below are Saturday 補行交易日 the vendor prices and the raw
+        # 303 sessions below are Saturday 補行交易日 the vendor prices and the raw
         # endpoint has no row for; these 11 are the same Saturdays traded in
         # `ohlcv/` and absent from the vendor series. One stock, and the panel
         # marks every one of them `adj_covered=False` rather than carrying a
@@ -304,23 +399,23 @@ def test_taiwan_adjusted_coverage_decomposition():
             f"and is not what the carry fills"
         )
 
-    assert (traded, covered) == (7611589, 7496857), (
-        f"README pins adjusted coverage at 7,496,857 of the 7,611,589 traded "
-        f"sessions in ohlcv/ (98.49 %); this tree gives {covered:,} of "
+    assert (traded, covered) == (5754275, 5692266), (
+        f"README pins adjusted coverage at 5,692,266 of the 5,754,275 traded "
+        f"sessions in ohlcv/ (98.92 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first, makeup) == (110732, 3089, 900, 11), (
-        f"README splits the {traded - covered:,} missing sessions into 110,732 "
-        f"in the 50 delistings with no adjusted series, 3,089 past the end of a "
-        f"vendor series that stopped at a delisting, 900 first sessions and 11 "
+    assert (hole, tail, first, makeup) == (61505, 0, 493, 11), (
+        f"README splits the {traded - covered:,} missing sessions into 61,505 "
+        f"in the 54 stocks with no adjusted series, none past the end of a "
+        f"vendor series that stopped at a delisting, 493 first sessions and 11 "
         f"Saturday make-up sessions; this tree gives {hole:,} / {tail:,} / "
         f"{first:,} / {makeup}. The first number is the survivorship hole — if "
         f"it moved, so did the bias"
     )
 
     vo = pd.DataFrame(vendor_only, columns=["stock_id", "date", "lead", "trail"])
-    assert (len(vo), vo["stock_id"].nunique(), vo["date"].nunique()) == (600, 159, 22), (
-        f"README puts the reverse gap at 600 sessions in 159 stocks on 22 dates; "
+    assert (len(vo), vo["stock_id"].nunique(), vo["date"].nunique()) == (303, 96, 14), (
+        f"README puts the reverse gap at 303 sessions in 96 stocks on 14 dates; "
         f"this tree gives {len(vo):,} in {vo['stock_id'].nunique()} on "
         f"{vo['date'].nunique()}. These are sessions `ohlcv/` has no row for, so "
         f"unlike the missing adjusted ones they cannot be filled from the panel"
@@ -330,7 +425,7 @@ def test_taiwan_adjusted_coverage_decomposition():
     # each and drops the row for a few dozen. An ordinary weekday appearing here
     # would be a different defect wearing the same count.
     assert set(vo["date"].dt.dayofweek) == {5}, (
-        f"README calls all 600 make-up Saturdays; this tree has vendor-only "
+        f"README calls all 303 make-up Saturdays; this tree has vendor-only "
         f"sessions on {sorted(set(vo['date'].dt.day_name()))}"
     )
     assert not vo["lead"].any() and not vo["trail"].any(), (
@@ -393,13 +488,13 @@ def test_taiwan_adj_covered_survives_concat():
     from finmind_data.adjusted_loader import load_adjusted
 
     full = load_adjusted("2330")       # vendor covers every session
-    hole = load_adjusted("1204")       # one of the 38, covered nowhere
+    hole = load_adjusted("1566")       # delisted in-window, covered nowhere
     assert full.attrs["adj_coverage"] == 1.0 and hole.attrs["adj_coverage"] == 0.0, (
-        f"2330/1204 chosen as the covered/uncovered pair; they now report "
+        f"2330/1566 chosen as the covered/uncovered pair; they now report "
         f"{full.attrs['adj_coverage']} and {hole.attrs['adj_coverage']}"
     )
     assert hole["adj_covered"].any() is not True and not hole["adj_covered"].any(), (
-        "1204 has no adjusted series, so no row may be marked adj_covered"
+        "1566 has no adjusted series, so no row may be marked adj_covered"
     )
     assert full["adj_covered"].all(), "2330 is fully covered; every row should say so"
 
@@ -437,12 +532,13 @@ def test_taiwan_open_outside_session_range():
     import pyarrow.parquet as pq
 
     bad = tot = stocks = bad_close = 0
-    for p in sorted(glob.glob(str(REPO / "finmind_data/ohlcv/*.parquet"))):
-        # 13 files hold no rows and carry no schema, so a column-projected read
-        # would fail on them; the row count comes from the footer instead.
+    for sid in _panel_ids():
+        p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        # Some files hold no rows and carry no schema, so a column-projected
+        # read would fail on them; the row count comes from the footer instead.
         if pq.ParquetFile(p).metadata.num_rows == 0:
             continue
-        r = pd.read_parquet(p, columns=["open", "max", "min", "close"])
+        r = _tree(p, columns=["date", "open", "max", "min", "close"])
         r = r[r["close"] > 0]
         tot += len(r)
         n = int(((r["open"] > r["max"]) | (r["open"] < r["min"])).sum())
@@ -455,8 +551,8 @@ def test_taiwan_open_outside_session_range():
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
-    assert (bad, stocks) == (173056, 859), (
-        f"README caveat 10 pins 173,056 rows across 859 stocks with open "
+    assert (bad, stocks) == (125114, 669), (
+        f"README caveat 10 pins 125,114 rows across 669 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
@@ -968,7 +1064,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     `AnnouncementDate`, which is what makes the others' silence a gap rather
     than a convention of the source.
     """
-    fin = pd.read_parquet(REPO / "finmind_data/fin_is/2330.parquet")
+    fin = _tree(REPO / "finmind_data/fin_is/2330.parquet")
     ends = set(pd.to_datetime(fin["date"]).dt.strftime("%m-%d"))
     assert ends <= {"03-31", "06-30", "09-30", "12-31"}, (
         f"README caveat 9 says fin_is dates are fiscal quarter ends; 2330 also "
@@ -982,45 +1078,130 @@ def test_taiwan_fundamentals_are_fiscal_dated():
             f"on it can be aligned point-in-time"
         )
 
-    # `create_time` is not an announcement date and this is what rules it out.
-    # It was empty on every row until the 2026-08-17 pull, which brought back 644
-    # stamped rows across 21 stocks — and every one of them carries the identical
-    # value, on revenue months from 2005-01 through 2024-12. A single value
-    # spanning two decades of periods is the vendor's ingest time for rows it
-    # rewrote that day, so reading it as a release date would date a 2005 revenue
-    # figure to 2026. The assertion is on the shape that says so: one distinct
-    # value, not one per period.
-    tot = blank = 0
-    stamps = set()
+    # `create_time` carries no announcement date for anything this package
+    # answers about, and where its values fall is what rules it out. Read
+    # unclipped on purpose: the claim is about the stamps landing outside the
+    # window, and a clipped read would find none and asserting that zero would
+    # verify nothing.
+    #
+    # The stamps are two different things either side of the window. On the
+    # 2005-2010 backfill the lag from a period to its stamp runs to twenty
+    # years, which is an ingest time for rows the vendor rewrote rather than a
+    # release date. On the 2026 rows it is about ten days, which is what a
+    # release date looks like under Taiwan's monthly-revenue deadline — so the
+    # column is not uniformly meaningless, it is uniformly absent here. Neither
+    # kind reaches the window, and that is the caveat: a signal built on
+    # in-window monthly revenue has no announcement date to align to.
+    tot = stamped = inwin_stamped = 0
+    backfill_lag = []
     for p in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet")))[:200]:
         m = pd.read_parquet(p)
         if not len(m):
             continue
         tot += len(m)
         st = m["create_time"].astype(str).str.strip()
-        blank += int((st == "").sum())
-        stamps.update(st[st != ""].unique())
-    assert (tot, tot - blank) == (40449, 61), (
-        f"README caveat 9 says 61 of the 40,449 rows over the first 200 "
-        f"month_rev files carry a create_time; this tree gives {tot - blank:,} "
-        f"of {tot:,}"
+        d = pd.to_datetime(m["date"], errors="coerce")
+        hit = st != ""
+        stamped += int(hit.sum())
+        inwin_stamped += int((hit & d.between(COVERAGE_START, COVERAGE_END)).sum())
+        back = hit & (d < COVERAGE_START)
+        if back.any():
+            lag = (pd.to_datetime(st[back], errors="coerce") - d[back]).dt.days
+            backfill_lag += list(lag.dropna())
+    assert stamped, (
+        "README caveat 9 argues from where create_time's values fall that it is "
+        "not a release date for this window; no row in the tree carries one at "
+        "all, so the argument has no population and the caveat is unsupported "
+        "rather than confirmed"
     )
-    assert stamps == {"2026-05-19"}, (
-        f"README caveat 9 rests on every stamped row carrying one ingest "
-        f"timestamp rather than a per-period release date; create_time now "
-        f"takes {len(stamps)} values ({sorted(stamps)[:4]}). More than one, and "
-        f"it may be a real announcement date — which would make monthly revenue "
-        f"the second dataset alignable point-in-time"
+    assert inwin_stamped == 0, (
+        f"README caveat 9 says no in-window row carries a create_time, which is "
+        f"what makes the look-ahead limit a fact about the window rather than "
+        f"about the column; {inwin_stamped:,} of the {stamped:,} stamped rows "
+        f"now fall inside it, so monthly revenue may be alignable point-in-time"
+    )
+    assert backfill_lag and min(backfill_lag) > 365, (
+        f"README caveat 9 reads the pre-window stamps as the vendor's ingest "
+        f"time because they post-date their own periods by years; the smallest "
+        f"such lag is now {min(backfill_lag) if backfill_lag else None} days, "
+        f"which is a release date's distance, not an ingest one"
     )
 
-    div = pd.read_parquet(REPO / "finmind_data/dividend/1101.parquet")
+    div = _tree(REPO / "finmind_data/dividend/1101.parquet")
     assert "AnnouncementDate" in div.columns, (
         "README caveat 9 names dividend/ as the one dataset carrying "
         "AnnouncementDate; it no longer does"
     )
     return (f"fin_* dated on quarter ends with no announcement column; "
-            f"month_rev create_time blank {blank:,}/{tot:,}, the rest one "
-            f"ingest stamp {sorted(stamps)}; dividend has it"), tot
+            f"month_rev create_time on {stamped:,} of {tot:,} rows and none of "
+            f"them in-window, pre-window lag from {min(backfill_lag):,}d; "
+            f"dividend has it"), tot
+
+
+# ---- Taiwan: the holes with no event are checked against more than one source
+def test_taiwan_no_event_holes_are_event_free_in_three_sources():
+    """README, "The survivorship hole": none of the 17 has an event anywhere.
+
+    `adjust.py` decides a hole has no corporate action from `div_result/` and
+    `capital_reduction.parquet` — the two chains it would build a factor from —
+    so re-reading those two would only restate the code. The claim the README
+    makes is wider: the same names have no declaration in `dividend/` and no row
+    in `exright_reference.parquet` either, and those two are independent of the
+    factor path. A name with a dividend nobody filed a reference price for is a
+    flat factor that should not be flat, and it is the one way a `rebuilt_noevent`
+    stock can be wrong without any code here disagreeing with itself.
+
+    The hole set is derived the way the decomposition derives it — raw prices in
+    the window, no adjusted row in it — rather than listed, so a name that joins
+    the hole arrives in this check too.
+    """
+    holes = []
+    for sid in _panel_ids():
+        raw = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        if not raw.exists() or not len(_tree(raw)):
+            continue
+        if not len(_tree(REPO / f"finmind_data/price_adj/{sid}.parquet")):
+            holes.append(sid)
+    assert len(holes) == 54, (
+        f"README counts 54 stocks with raw prices and no adjusted series in the "
+        f"window; this tree has {len(holes)}. The split below is over that set"
+    )
+
+    cr = _tree(REPO / "finmind_data/capital_reduction.parquet")
+    cr_ids = set(cr["stock_id"].astype(str))
+    er = _tree(REPO / "finmind_data/exright_reference.parquet")
+    er_ids = set(er["stock_id"].astype(str))
+
+    noevent, offending = [], {}
+    for sid in holes:
+        dr = _tree(REPO / f"finmind_data/div_result/{sid}.parquet")
+        if len(dr) or sid in cr_ids:
+            continue                       # the factor path found an event
+        noevent.append(sid)
+        other = []
+        dv = REPO / f"finmind_data/dividend/{sid}.parquet"
+        if dv.exists() and len(_tree(dv)):
+            other.append("dividend")
+        if sid in er_ids:
+            other.append("exright_reference")
+        if other:
+            offending[sid] = other
+
+    assert len(noevent) == 17, (
+        f"README splits the 54 holes into 37 with a factor chain and 17 with no "
+        f"corporate action in window; the two event chains the factor is built "
+        f"from leave {len(noevent)} without one"
+    )
+    assert not offending, (
+        f"README says none of the 17 no-event holes has a declaration in "
+        f"dividend/ or a row in exright_reference.parquet; {offending} does. A "
+        f"distribution with no reference price behind it is a factor left flat "
+        f"across an event that happened, and nothing in the factor path can see "
+        f"it — both sources here are outside that path"
+    )
+    return (f"{len(noevent)} of {len(holes)} holes carry no event in "
+            f"div_result/ or capital_reduction, and none of them in dividend/ "
+            f"or exright_reference either"), len(holes)
 
 
 # ---- consolidate_capred delivered artifact ---------------------------------
@@ -1048,7 +1229,7 @@ def test_taiwan_ohlcv_is_raw():
 
     frames = []
     for p in sorted(glob.glob(str(REPO / "finmind_data/div_result/*.parquet"))):
-        d = pd.read_parquet(p)
+        d = _tree(p)
         if len(d):
             frames.append(d[["stock_id", "date", "before_price"]])
     assert frames, "div_result/ is empty — nothing to check ohlcv/ against"
@@ -1062,10 +1243,9 @@ def test_taiwan_ohlcv_is_raw():
         fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         if not fp.exists():
             continue
-        px = pd.read_parquet(fp)
+        px = _tree(fp)
         if not len(px):
             continue
-        px["date"] = pd.to_datetime(px["date"])
         px = px.sort_values("date")
         dt, cl = px["date"].to_numpy(), px["close"].to_numpy(dtype=float)
         # -1 = the cum session, the last one before the event repriced it.
@@ -1082,7 +1262,7 @@ def test_taiwan_ohlcv_is_raw():
     frac = hit / max(tot, 1)
     assert frac >= 0.995, (
         f"README calls ohlcv/close 'raw/unadjusted' on the strength of it "
-        f"matching the exchange's pre-event before_price on 99.82 % of 除權息 "
+        f"matching the exchange's pre-event before_price on 99.84 % of 除權息 "
         f"events; it now matches {100 * frac:.2f} % of {tot:,}. A fall here "
         f"means the raw series is no longer raw, and price_adj/ would "
         f"double-count against it"
@@ -1113,7 +1293,7 @@ def test_taiwan_adjusted_series():
     # exactly on most events and closely on the rest.
     rel, cash = [], []
     for sid in ("2330", "2317", "1101", "2412", "1216", "2002"):
-        ev = pd.read_parquet(REPO / f"finmind_data/div_result/{sid}.parquet")
+        ev = _tree(REPO / f"finmind_data/div_result/{sid}.parquet")
         ev = ev[(ev["before_price"] > 0) & (ev["after_price"] > 0)]
         d = load_adjusted(sid)
         f = d["tr_factor"].to_numpy(dtype=float)
@@ -1144,9 +1324,9 @@ def test_taiwan_adjusted_series():
     # test is the step's *distance* from 1 on those events, not its agreement
     # with the exchange, which the bound above already covers: an agreement rate
     # is silent about which convention both sides agree on.
-    assert (n_cash, float(cash_dev.min() > 1e-3)) == (89, 1.0), (
+    assert (n_cash, float(cash_dev.min() > 1e-3)) == (82, 1.0), (
         f"README calls price_adj/ a total-return series, which means every one "
-        f"of the 89 cash-only 除權息 across these six names steps the factor off "
+        f"of the 82 cash-only 除權息 across these six names steps the factor off "
         f"1; {n_cash} were found and the smallest step is "
         f"{cash_dev.min():.2e} from 1. Under price return every one would be 0"
     )
@@ -1156,14 +1336,14 @@ def test_taiwan_adjusted_series():
     # one, so the row must hold no adjusted close.
     d = load_adjusted("8934")
     z = d["close"] == 0
-    vendor = pd.read_parquet(REPO / "finmind_data/price_adj/8934.parquet")
+    vendor = _tree(REPO / "finmind_data/price_adj/8934.parquet")
     n_filled = int((vendor["close"] > 0).sum() - (d["close"] > 0).sum())
     # 8934 is the example because it barely trades: its zero-close rows are the
     # majority of its file. Both counts are pinned rather than tested for
     # presence — a single surviving zero-close row would satisfy `> 0` while the
     # encoding this check exists for had changed underneath it.
-    assert (int(z.sum()), n_filled) == (2441, 2441), (
-        f"8934 is chosen for having 2,441 zero-close sessions, every one of "
+    assert (int(z.sum()), n_filled) == (1321, 1321), (
+        f"8934 is chosen for having 1,321 zero-close sessions, every one of "
         f"which the vendor prices anyway; this tree has {int(z.sum())} and the "
         f"vendor fills {n_filled}. Either the raw zero encoding or the vendor's "
         f"carry changed, and the NaN rule below is written against both"
@@ -1176,21 +1356,20 @@ def test_taiwan_adjusted_series():
 
     # (3) 2357 華碩 2010-06-24: an 85 % share cancellation six months before the
     # 減資 endpoint's first row. Nothing prices it — the vendor least of all —
-    # so the history behind it is marked instead of carrying the jump.
+    # and the history behind it was marked rather than carrying the jump. That
+    # break is the case `COVERAGE_START` exists for, and the window now excludes
+    # every row it invalidates. What is asserted is that the *window* is what
+    # cleans 2357, not a marking that quietly stopped firing: move
+    # `COVERAGE_START` back past the break and the first of these fails.
     d = load_adjusted("2357")
     brk = pd.Timestamp("2010-06-24")
-    i = int(d.index[d["date"] == brk][0])
-    step = d["tr_factor"].iloc[i] / d["tr_factor"].iloc[i - 1]
-    assert abs(step - 1.0) < 1e-6, (
-        f"README claims the vendor carries 2357's pre-2011 reduction through "
-        f"at a factor step of exactly 1; the step is now {step:.6f}, so the "
-        f"vendor has started pricing it and is_valid may be over-marking"
+    assert brk < COVERAGE_START <= d["date"].iloc[0], (
+        f"2357's unpriced cancellation on {brk.date()} is excluded by a window "
+        f"opening {COVERAGE_START.date()}; the panel now starts "
+        f"{d['date'].iloc[0].date()}, so the break is inside it again and the "
+        f"history behind it is unpriced rather than absent"
     )
-    assert not d.loc[d["date"] < brk, "is_valid"].any(), (
-        "README claims 2357's pre-2010-06-24 history is marked is_valid=False "
-        "(unpriced capital reduction); some of it is still flagged valid"
-    )
-    assert d.loc[d["date"] >= brk, "is_valid"].all(), (
+    assert d["is_valid"].all(), (
         "README claims is_valid is False only *behind* the last break; 2357 "
         "has invalid rows on or after 2010-06-24"
     )
@@ -1214,8 +1393,8 @@ def test_taiwan_adjusted_series():
 def test_taiwan_vendor_event_audit_is_current():
     """README, "Two conventions in one panel": the committed grade is this tree's.
 
-    `vendor_event_audit.parquet` is what the README's 83.3 % / 99.5 % and the
-    seven patched events are quoted from, and `adjusted_loader` patches off it.
+    `vendor_event_audit.parquet` is what the README's 84.2 % / 99.5 % and the
+    one patched event are quoted from, and `adjusted_loader` patches off it.
     A committed copy that no longer matches what the generator produces would
     publish an older run's grade while the loader patches a different set, so
     the file is regenerated here and compared rather than merely read.
@@ -1234,66 +1413,58 @@ def test_taiwan_vendor_event_audit_is_current():
         check_exact=True, obj="vendor_event_audit.parquet")
 
     ck = committed[committed["checkable"]]
-    assert (len(committed), len(ck)) == (22627, 22366), (
-        f"README pins 22,627 filed 除權息 of which 22,366 are graded against "
+    assert (len(committed), len(ck)) == (18277, 18087), (
+        f"README pins 18,277 filed 除權息 of which 18,087 are graded against "
         f"the exchange; this tree gives {len(committed):,} / {len(ck):,}"
     )
     # The two counts are one file and a column, not a filter that moved between
     # runs. Pin what the 34-row difference is made of so it stays that way.
     nc = committed[~committed["checkable"]]
     served = {p.stem for p in (REPO / "finmind_data/price_adj").glob("*.parquet")
-              if len(pd.read_parquet(p))}
+              if len(_tree(p))}
     unserved = int((~nc["stock_id"].astype(str).isin(served)).sum())
-    assert (len(nc), unserved) == (261, 239), (
-        f"the 261 ungradable events should be 239 in stocks the vendor serves "
-        f"nothing for and 22 with no adjacent bracketing session; this tree "
+    assert (len(nc), unserved) == (190, 174), (
+        f"the 190 ungradable events should be 174 in stocks the vendor serves "
+        f"nothing for and 16 with no adjacent bracketing session; this tree "
         f"gives {len(nc)} ungradable of which {unserved} are unserved"
     )
     w6, w3 = float((ck["rel"] < 1e-6).mean()), float((ck["rel"] < 1e-3).mean())
-    assert abs(w6 - 0.8328) < 5e-4 and abs(w3 - 0.9946) < 5e-4, (
+    assert abs(w6 - 0.8425) < 5e-4 and abs(w3 - 0.9951) < 5e-4, (
         f"README claims the vendor step matches the exchange's published "
-        f"before_price/after_price to 1e-6 on 83.3 % of graded events and to "
+        f"before_price/after_price to 1e-6 on 84.2 % of graded events and to "
         f"1e-3 on 99.5 %; this tree gives {100 * w6:.2f} % / {100 * w3:.2f} %. "
         f"A move here changes what the two conventions in the panel differ by"
     )
     defects = committed[committed["defect"] != ""].groupby("defect").size().to_dict()
-    assert defects == {"malformed_twin": 1, "nonpositive_leg": 1, "sign_flip": 6}, (
-        f"README claims 6 sign-flipped events, 1 malformed-twin filing and 1 "
-        f"non-positive reference leg; this tree grades {defects}. If sign_flip "
-        f"shrank the vendor has fixed them and the patch is now a no-op; if it "
-        f"grew the patched set in adjusted_loader is short"
+    assert defects == {"malformed_twin": 1, "nonpositive_leg": 1}, (
+        f"README claims 1 malformed-twin filing and 1 non-positive reference "
+        f"leg inside the window, and no sign flip — the vendor's flips are all "
+        f"2005-2008; this tree grades {defects}. A sign_flip appearing here is "
+        f"the defect era reaching into the window and the patched set in "
+        f"adjusted_loader is short"
     )
 
-    # The defect is an era, not a rate. Every flip is 2005-2008 and every upward
-    # reprice after the last of them is exact, which is what makes the next
-    # search of this kind cheap — and what makes a rate measured on the
-    # 2005-2007 delisting sample the wrong thing to extrapolate.
+    # The defect is an era, not a rate: every flip the vendor makes is
+    # 2005-2008, so the window opens after the last of them and holds none. The
+    # era claim is about years this package does not answer for and is not
+    # re-derived here; what is assertable inside the window is that the upward
+    # reprices — the shape a flip takes — are all exact.
     up = ck[ck["exchange_step"] < 1.0]
-    flipped = up[up["defect"] == "sign_flip"]["date"]
-    clean = up[up["defect"] != "sign_flip"]["date"]
-    assert len(up) == 24 and len(flipped) == 6, (
-        f"the sign-flip class is defined against the {len(up)} upward reprices "
-        f"in the graded set, of which {len(flipped)} are flipped; the module "
-        f"docstring says 24 and 6"
+    flipped = up[up["defect"] == "sign_flip"]
+    assert (len(up), len(flipped)) == (14, 0), (
+        f"the window holds {len(up)} upward reprices and the vendor's sign-flip "
+        f"era ends in 2008, so none of them should be flipped; this tree flips "
+        f"{len(flipped)}. A flip inside the window is the defect class returning "
+        f"in years the loader's patch set was not built against"
     )
-    assert flipped.max() == pd.Timestamp("2008-09-16"), (
-        f"the docstring localises every flip to 2005-2008, last on 2008-09-16; "
-        f"this tree flips one on {flipped.max().date()}"
-    )
-    assert (clean > flipped.max()).sum() == 16, (
-        f"the docstring counts 16 exact upward reprices after the last flip, "
-        f"and 2 more inside the defective window; this tree has "
-        f"{int((clean > flipped.max()).sum())} after it"
-    )
-    assert not ((up["date"] > flipped.max()) & (up["defect"] != "")).any(), (
-        f"the docstring claims every upward reprice after 2008-09-16 is exact, "
-        f"so a defect past it means the vendor's pipeline was not fixed and the "
-        f"search window has to reopen"
+    assert not (up["defect"] != "").any(), (
+        f"the docstring claims every upward reprice after the 2008 flips is "
+        f"exact, and the window starts well past them, so a defect on one here "
+        f"means the vendor's pipeline was not fixed and the search has to reopen"
     )
     return (f"{len(ck):,}/{len(committed):,} events graded; vendor == exchange "
             f"{100 * w6:.2f} % at 1e-6, {100 * w3:.2f} % at 1e-3; defects "
-            f"{defects}, every flip in {flipped.min().date()}.."
-            f"{flipped.max().date()}"), len(committed)
+            f"{defects}, no sign flip in the window"), len(committed)
 
 
 def test_taiwan_vendor_defects_are_patched():
@@ -1301,8 +1472,8 @@ def test_taiwan_vendor_defects_are_patched():
 
     Each patched event should leave the loader's factor stepping by the
     exchange's published before_price/after_price across it, not the vendor's.
-    Six of the seven reverse the direction of the move, so an unpatched panel
-    puts a return of the wrong sign on those sessions.
+    The one inside the window moves the ex-date return from +4.19 % to +1.19 %,
+    so an unpatched panel overstates that session by a factor of three.
     """
     sys.path.insert(0, str(REPO))
     import numpy as np
@@ -1311,9 +1482,11 @@ def test_taiwan_vendor_defects_are_patched():
     from finmind_data.vendor_event_audit import defective_events
 
     d = defective_events()
-    assert len(d) == 7, (
-        f"README claims 7 vendor events are replaced with the exchange's step; "
-        f"the audit now marks {len(d)}"
+    assert len(d) == 1, (
+        f"README claims 1 vendor event is replaced with the exchange's step; "
+        f"the audit now marks {len(d)}. The sign-flip class the patch was built "
+        f"for is confined to 2005-2008 and so falls outside the window entirely; "
+        f"what is left inside it is 3454's malformed twin"
     )
     moved, spans = [], []
     for sid, g in d.groupby(d["stock_id"].astype(str)):
@@ -1354,27 +1527,33 @@ def test_taiwan_vendor_defects_are_patched():
         )
         spans.append(int(lab.sum()))
 
-    assert sum(spans) == 3641, (
-        f"README claims the seven patches rescale 3,641 rows between them; "
+    assert sum(spans) == 120, (
+        f"README claims the patch rescales 120 rows behind it; "
         f"this tree labels {sum(spans):,}"
     )
-    return (f"7 events patched to the exchange's step; the patch moves the "
+    return (f"{len(d)} event patched to the exchange's step; the patch moves the "
             f"ex-date factor by {100 * min(moved):.2f}-{100 * max(moved):.2f} % "
             f"and rescales {sum(spans):,} rows behind them"), sum(spans)
 
 
 def test_taiwan_vendor_edges_are_carried():
-    """README, "The two edges of the vendor series": 906 first sessions and
-    3,089 post-delisting ones carry the adjacent factor, and one is refused.
+    """README, "The edge of the vendor series": 492 first sessions carry the
+    adjacent factor, and one is refused.
 
     A back-adjustment factor moves only on an ex date, so carrying it across a
     gap with no filing in it is exact rather than an interpolation — which is
-    what makes these two fills safe where a splice would not be. The guard is
+    what makes the fill safe where a splice would not be. The guard is
     the part worth asserting: it is checked per row against every filed 除權息
     and 減資 plus the cancellations no filing explains, and it refuses 4141,
     whose first print sits 376 days before the vendor's first session with a
     cancellation on that session. A guard that never fires is indistinguishable
     from no guard.
+
+    Only one edge is carried inside the window. The other — a name still quoted
+    after its delisting — needs the vendor's series to stop before the raw one
+    does, and no in-window name has that shape: the four names quoted past their
+    delisting all left the market before `COVERAGE_START`, so the vendor never
+    served them here and the rebuild does instead.
     """
     sys.path.insert(0, str(REPO))
     import numpy as np
@@ -1384,8 +1563,13 @@ def test_taiwan_vendor_edges_are_carried():
 
     head = tail = 0
     refused = []
-    for sid in ("1580", "3271", "3454", "1107", "2381", "2396", "2341",
-                "3142", "2479", "3053", "4141", "2330"):
+    # 3271, 3142, 2479 and 3053 left this list when the window started being
+    # enforced: their last quote is 2005-2008, so the package has no series for
+    # them and `load_adjusted` refuses them rather than returning one. 1240
+    # replaces the head carry they supplied — it listed inside the window, which
+    # is now the only way a first session comes to be carried.
+    for sid in ("1580", "3454", "1107", "2381", "2396", "2341", "1240",
+                "4141", "2330"):
         df = load_adjusted(sid)
         s = df["adj_source"].to_numpy()
         carried = np.nonzero(s == "vendor_carried")[0]
@@ -1420,13 +1604,14 @@ def test_taiwan_vendor_edges_are_carried():
         f"the carry guard should refuse exactly 4141's 2011-04-14 stub print "
         f"among these stocks; it refused {refused}"
     )
-    assert (head, tail) == (3, 3089), (
-        f"these stocks hold 3 of the 906 carried first sessions and all 3,089 "
-        f"post-delisting ones; this tree carries {head} / {tail}"
+    assert (head, tail) == (1, 0), (
+        f"these stocks hold 1 of the 492 carried first sessions, and no session "
+        f"after a delisting is carried anywhere in the panel; this tree carries "
+        f"{head} / {tail}"
     )
-    return (f"{head} first sessions and {tail} post-delisting sessions carried "
-            f"from the adjacent factor with no filing in the gap; "
-            f"4141 2011-04-14 refused"), head + tail
+    return (f"{head} first session carried from the adjacent factor with no "
+            f"filing in the gap, {tail} after a delisting; "
+            f"4141 2011-04-14 refused"), head + len(refused)
 
 
 def test_taiwan_post_delisting_sessions_are_marked():
@@ -1476,9 +1661,9 @@ def test_taiwan_post_delisting_sessions_are_marked():
         f = REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet"
         if not f.exists():
             continue
-        c = pd.read_parquet(f)
+        c = _tree(f)
         if len(c):
-            last[str(r.stock_id)] = pd.to_datetime(c["date"]).max()
+            last[str(r.stock_id)] = c["date"].max()
     # Over the whole panel, not over `last`. Every name in `last` has left, so
     # the maximum among them belongs to whichever left last, which then equals
     # `panel_end` by construction and reads as never having left. It gave the
@@ -1486,11 +1671,14 @@ def test_taiwan_post_delisting_sessions_are_marked():
     # delisted after the download stopped, whose quotes run to the true edge —
     # an accident of the table's contents, not a property of the measurement.
     # `delisting_sign._panel_last_session` is the same anchor and had the same
-    # drift; the fix is one fixed point, read the same way in both places.
-    panel_end = max(
-        pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]).max()
-        for f in sorted((REPO / "finmind_data/ohlcv").glob("*.parquet"))
-        if "date" in pq.read_schema(f).names)
+    # drift; the fix is one fixed point, read the same way in both places — so
+    # this reads it from there rather than recomputing it. A second copy of the
+    # scan is what let the two answer differently in the first place, and the
+    # window makes that sharper: the trees now run past `COVERAGE_END`, so an
+    # unclipped scan answers with a session no check here is quoted on.
+    from finmind_data.delisting_sign import _panel_last_session
+
+    panel_end = _panel_last_session()
 
     marked = transferred = 0
     names = []
@@ -1560,8 +1748,8 @@ def test_taiwan_post_delisting_sessions_are_marked():
         marked += int(post.sum())
         names.append(sid)
 
-    assert (len(names), marked) == (14, 4_632), (
-        f"README claims 4,632 post-delisting sessions across 14 names; this "
+    assert (len(names), marked) == (4, 1_134), (
+        f"README claims 1,134 post-delisting sessions across 4 names; this "
         f"tree marks {marked:,} across {len(names)}")
     # Sorted, because the loop takes the delisting table's row order and a
     # re-collect that reorders it would fail this on nothing.
@@ -1589,7 +1777,7 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     delisted. A backtest filtering on the flag alone would have assumed a fill.
 
     Two things are asserted, and they fail on different mistakes. The counts pin
-    *this* reason: dropping the mask leaves the 172,774 rows valid with no reason
+    *this* reason: dropping the mask leaves the 125,055 rows valid with no reason
     at all, which the reason split below catches and the closure below does not,
     because a row that is valid and unnamed is consistent. The closure pins the
     *next* one: every False row carries a reason and every True row carries none,
@@ -1612,13 +1800,14 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     by_reason: dict[str, int] = {}
     no_trade_stocks = set()
     empty = []
-    for p in sorted(glob.glob(str(REPO / "finmind_data/ohlcv/*.parquet"))):
-        sid = Path(p).stem
+    for sid in _panel_ids():
         try:
             df = load_adjusted(sid)
         except ValueError:
-            # The 13 stocks whose OHLCV file holds no rows at all; a 14th would
-            # push the count past the assertion below rather than pass quietly.
+            # The 59 stocks with no in-window sessions to load — one whose OHLCV
+            # file holds no rows at all and 58 quoted only outside the window; a
+            # 60th would push the count past the assertion below rather than
+            # pass quietly.
             empty.append(sid)
             continue
         z = df["close"].to_numpy(dtype=float) == 0.0
@@ -1641,27 +1830,27 @@ def test_taiwan_no_trade_rows_are_not_holdable():
                 f"{int((~z[nt]).sum())}/{int(df.loc[nt, 'adj_close_tr'].notna().sum())}"
                 f"/{int(valid[nt].sum())} of {int(nt.sum())} break one of those")
 
-    assert len(empty) == 24, (
-        f"README says 24 stocks have a zero-row OHLCV file and load_adjusted "
-        f"raises on them; {len(empty)} raised here, so this pass covered a "
+    assert len(empty) == 59, (
+        f"README says load_adjusted refuses 59 of the universe's names — 1 whose "
+        f"OHLCV file holds no rows at all and 58 quoted only outside the window; "
+        f"{len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
-    assert (rows, zero, zero_stocks) == (7_835_489, 185_612, 1_375), (
-        f"README quotes 185,612 no-trade sessions in 1,375 stocks over a "
-        f"7,835,489-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+    assert (rows, zero, zero_stocks) == (5_882_323, 127_838, 1_150), (
+        f"README quotes 127,838 no-trade sessions in 1,150 stocks over a "
+        f"5,882,323-row panel; this tree has {zero:,} in {zero_stocks:,} over "
         f"{rows:,}. Every count below is a share of that population")
     assert mismatched == 0, (
         f"README claims is_valid alone is now enough — every False row carries "
         f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
         f"rows break that, so invalid_reason no longer accounts for is_valid")
-    assert by_reason == {"no_trade": 172_774,
-                         "post_delisting_emerging": 19,
-                         "series_break": 3_314,
-                         "unpriced_cancellation": 9_505}, (
-        f"README claims 172,774 no-trade sessions take the new reason and the "
-        f"12,838 behind a segment reason keep it; the split here is {by_reason}")
-    assert len(no_trade_stocks) == 1_359, (
-        f"README claims the 172,774 no_trade rows fall in 1,359 stocks — the "
-        f"1,375 with a zero close, less the 16 whose zero closes all sit behind "
+    assert by_reason == {"no_trade": 125_055,
+                         "series_break": 1_931,
+                         "unpriced_cancellation": 852}, (
+        f"README claims 125,055 no-trade sessions take the new reason and the "
+        f"2,783 behind a segment reason keep it; the split here is {by_reason}")
+    assert len(no_trade_stocks) == 1_141, (
+        f"README claims the 125,055 no_trade rows fall in 1,141 stocks — the "
+        f"1,150 with a zero close, less the 9 whose zero closes all sit behind "
         f"a break; {len(no_trade_stocks):,} carry one here")
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
             f"{len(no_trade_stocks):,} stocks marked invalid, "
@@ -1672,11 +1861,11 @@ def test_taiwan_no_trade_rows_are_not_holdable():
 
 # ---- Taiwan: the make-up sessions ohlcv/ dropped ---------------------------
 def test_taiwan_make_up_sessions_are_recovered():
-    """README, "The gap that runs the other way": 600 sessions, and 600 returns.
+    """README, "The gap that runs the other way": 303 sessions, and 303 returns.
 
     The cost of a dropped session is not the row. It is that the *next* session's
-    return spans two sessions instead of one, so the 600 sessions `ohlcv/` has no
-    row for were 600 overstated returns — and not scattered, but clustered on 22
+    return spans two sessions instead of one, so the 303 sessions `ohlcv/` has no
+    row for were 303 overstated returns — and not scattered, but clustered on 14
     holiday-adjacent Saturdays, which is the shape a study would read as an
     effect. That contamination is invisible to the coverage decomposition, which
     counts rows and not the gaps between them, so it is asserted here.
@@ -1700,10 +1889,9 @@ def test_taiwan_make_up_sessions_are_recovered():
     # files, so the expensive pass runs on the 159 that can fail rather than the
     # 2,103 that cannot.
     want = {}
-    for p in sorted(glob.glob(str(REPO / "finmind_data/ohlcv/*.parquet"))):
-        sid = Path(p).stem
-        raw = pd.read_parquet(p)
-        adj = pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet")
+    for sid in _panel_ids():
+        raw = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
+        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
         if not len(raw) or not len(adj):
             continue
         only = set(pd.to_datetime(adj["date"])) - set(pd.to_datetime(raw["date"]))
@@ -1757,12 +1945,12 @@ def test_taiwan_make_up_sessions_are_recovered():
                 f = priced[d8[i]] / float(df["close"].to_numpy()[i])
                 dev.append(abs(priced[r["date"]] / f / r["close"] - 1.0))
 
-    assert (len(want), n_traded + n_flat, n_traded) == (159, 600, 419), (
-        f"README claims 600 make-up sessions in 159 stocks, 419 of them traded; "
+    assert (len(want), n_traded + n_flat, n_traded) == (96, 303, 210), (
+        f"README claims 303 make-up sessions in 96 stocks, 210 of them traded; "
         f"this tree recovers {n_traded + n_flat} in {len(want)}, {n_traded} traded")
     dev = np.array(dev)
-    assert (len(dev), n_both) == (837, 418) and dev.max() < 1e-5, (
-        f"418 of the 419 traded make-up sessions have a usable anchor on both "
+    assert (len(dev), n_both) == (419, 209) and dev.max() < 1e-5, (
+        f"209 of the 210 traded make-up sessions have a usable anchor on both "
         f"sides, and the price the loader wrote has to be reproducible from "
         f"either — a disagreement is a factor that moved inside the interval the "
         f"carry assumes it did not. {len(dev)} reconstructions were run over "
@@ -1776,7 +1964,7 @@ def test_taiwan_make_up_sessions_are_recovered():
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
-    """README, "The survivorship hole is filled": 50 stocks, 110,732 sessions.
+    """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
 
     The universe carries a 57-name overlay of in-window delistings FinMind's
     live registry dropped, and `TaiwanStockPriceAdj` drops 50 of them too. A
@@ -1794,8 +1982,8 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     either — the overlay reinstates in-window delistings only. What is left is
     one reissued code: 4415's first occupant traded 2005-01-03 to 2011-11-07
     and 台原藥 took the code over after a 1,249-day gap, so the earlier
-    company's 1,471 traded sessions carry `series_break` and straddle the
-    window start.
+    company's 192 in-window traded sessions carry `series_break`, the tail of a
+    history that straddles the window start.
     """
     sys.path.insert(0, str(REPO))
     from finmind_data.adjusted_loader import load_adjusted
@@ -1809,9 +1997,12 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     inwin = d[(d["date"] >= COVERAGE_START) & (d["date"] <= COVERAGE_END)
               & d["sid"].isin(uid)]
 
+    # A hole is raw prices with no adjusted series *inside the window*. Read
+    # unclipped, a name whose whole history predates `COVERAGE_START` counts as
+    # one, and `load_adjusted` below then raises on it rather than measuring it.
     holes = [sid for sid in sorted(set(inwin["sid"]))
-             if len(pd.read_parquet(REPO / f"finmind_data/ohlcv/{sid}.parquet"))
-             and not len(pd.read_parquet(REPO / f"finmind_data/price_adj/{sid}.parquet"))]
+             if len(_tree(REPO / f"finmind_data/ohlcv/{sid}.parquet"))
+             and not len(_tree(REPO / f"finmind_data/price_adj/{sid}.parquet"))]
     traded = priced = 0
     kinds = {}
     invalid = {}
@@ -1832,20 +2023,20 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         for k, c in df.loc[t & ~df["is_valid"], "invalid_reason"].value_counts().items():
             invalid[k] = invalid.get(k, 0) + int(c)
 
-    assert (len(holes), traded, priced) == (50, 110732, 110732), (
+    assert (len(holes), traded, priced) == (50, 60371, 60371), (
         f"README claims all 50 vendor holes come back priced across their "
-        f"110,732 traded sessions; this tree gives {len(holes)} stocks, "
+        f"60,371 traded sessions; this tree gives {len(holes)} stocks, "
         f"{traded:,} traded, {priced:,} priced. An unpriced session here is a "
         f"survivorship hole the panel build will drop"
     )
-    assert kinds == {"rebuilt_factored": 38, "rebuilt_noevent": 12}, (
-        f"README splits the 50 into 38 with a factor chain and 12 with no "
+    assert kinds == {"rebuilt_factored": 37, "rebuilt_noevent": 13}, (
+        f"README splits the 50 into 37 with a factor chain and 13 with no "
         f"corporate action in window; this tree gives {kinds}. The split is "
         f"what isolates the cumulative-product path from the flat one"
     )
-    assert invalid == {"series_break": 1_471}, (
+    assert invalid == {"series_break": 192}, (
         f"README claims one of the 50 carries invalid traded sessions — 4415's "
-        f"1,471 under the code's earlier occupant — and that the rebuild "
+        f"192 under the code's earlier occupant — and that the rebuild "
         f"leaves every other traded session holdable; this tree gives "
         f"{invalid}. A reason returning here is a hole the panel build will "
         f"drop rows from after paying to fill it"
@@ -1899,13 +2090,13 @@ def test_taiwan_rebuild_matches_vendor():
         ok6 += int((diff < 1e-6).sum())
         ok3 += int((diff < 1e-3).sum())
 
-    assert (stocks, n) == (116, 299785), (
+    assert (stocks, n) == (116, 203671), (
         f"README quotes the gate on 116 covered in-window delistings and "
-        f"299,785 daily adjusted returns; this tree gives {stocks} / {n:,}"
+        f"203,671 daily adjusted returns; this tree gives {stocks} / {n:,}"
     )
     assert ok6 / n >= 0.9991 and ok3 / n >= 0.9999, (
-        f"README claims the rebuild reproduces the vendor on 99.91 % of daily "
-        f"adjusted returns to 1e-6 and 99.996 % to 1e-3; this tree gives "
+        f"README claims the rebuild reproduces the vendor on 99.954 % of daily "
+        f"adjusted returns to 1e-6 and 99.998 % to 1e-3; this tree gives "
         f"{100 * ok6 / n:.3f} % / {100 * ok3 / n:.3f} %. Below that the 50 "
         f"rebuilt names are no longer validated by anything"
     )
@@ -1927,7 +2118,11 @@ def test_taiwan_adj_source_partitions_the_panel():
 
     seen = set()
     rows = 0
-    for sid in ("2330", "8934", "2396", "2822", "1207", "2357"):
+    # 2822 and 1207 last traded in 2006 and 2007, so the package has no series
+    # for them; 1566 and 1240 replace the rebuilt_factored and vendor_carried
+    # values they supplied, and 3454 carries the one patched event left in the
+    # window.
+    for sid in ("2330", "8934", "2396", "2357", "1566", "1240", "3454"):
         df = load_adjusted(sid)
         rows += len(df)
         has_px = df["adj_close_tr"].notna()
@@ -1964,15 +2159,15 @@ def test_taiwan_filing_deadline_table_covers_the_data():
     from finmind_data.available_date import available_date, with_available_date
 
     resolved = 0
-    for sub, kind, n_ends in (("fin_is", "financial_statement", 80),
+    for sub, kind, n_ends in (("fin_is", "financial_statement", 56),
                               ("fin_bs", "financial_statement", 53),
-                              ("fin_cf", "financial_statement", 65),
-                              ("month_rev", "monthly_revenue", 240)):
+                              ("fin_cf", "financial_statement", 56),
+                              ("month_rev", "monthly_revenue", 167)):
         ends = set()
         for f in sorted(glob.glob(str(REPO / f"finmind_data/{sub}/*.parquet"))):
             if not pq.ParquetFile(f).metadata.num_rows:
                 continue
-            ends |= set(pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]))
+            ends |= set(_tree(f, columns=["date"])["date"])
         # The count, not merely presence: this test's whole subject is that the
         # deadline table spans the tree, and a tree that had shrunk to one
         # period end would be spanned by any table at all.
@@ -2003,7 +2198,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
         )
 
     # The lag is a research parameter, and `date` is never overwritten.
-    d = pd.read_parquet(REPO / "finmind_data/fin_is/2330.parquet")
+    d = _tree(REPO / "finmind_data/fin_is/2330.parquet")
     a = with_available_date(d)
     b = with_available_date(d, extra_days=15)
     assert (a["date"] == d["date"]).all() and (b["date"] == d["date"]).all(), (
@@ -2031,7 +2226,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
     for f in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet"))):
         if not pq.ParquetFile(f).metadata.num_rows:
             continue
-        d = pd.read_parquet(f, columns=["date", "revenue_month", "revenue_year"])
+        d = _tree(f, columns=["date", "revenue_month", "revenue_year"])
         dt = pd.to_datetime(d["date"])
         per = pd.to_datetime(dict(year=d["revenue_year"], month=d["revenue_month"],
                                   day=1))
@@ -2049,6 +2244,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
 
 
 CHECKS = [
+    test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_universe_excludes_the_instruments_it_claims_to,
     test_taiwan_price_adj_one_per_universe,
@@ -2075,6 +2271,7 @@ CHECKS = [
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,
+    test_taiwan_no_event_holes_are_event_free_in_three_sources,
     test_capital_reduction_artifact_exists,
     test_taiwan_ohlcv_is_raw,
     test_taiwan_adjusted_series,

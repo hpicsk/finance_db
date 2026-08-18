@@ -3,17 +3,19 @@
 This is not a second adjusted series. ``price_adj/`` is the panel;
 ``adjusted_loader`` is the only caller and the only public entry point. What
 this module supplies is the part of that panel the vendor does not serve — the
-38 stocks with raw prices and an empty adjusted file, every one a 2005-2007
-delisting dropped from FinMind's live registry, which is exactly the
-survivorship overlay the universe was patched to keep.
+54 stocks with raw prices and an empty adjusted file inside the window. Fifty
+are 2012-2020 delistings dropped from FinMind's live registry, which is exactly
+the survivorship overlay the universe was patched to keep; the other four
+delisted before the window and were still being quoted inside it, so the vendor
+covers none of their in-window sessions either.
 
 The rebuild is possible because ``ohlcv/close`` is raw: it equals the exchange's
-published pre-event ``before_price`` on 99.82 % of 除權息 events, so nothing has
+published pre-event ``before_price`` on 99.84 % of 除權息 events, so nothing has
 been removed from it and the reference prices can be applied directly. Both
 event chains are the exchange's own numbers rather than a redistribution of a
 declared dividend — ``div_result/`` for 除權息 and ``capital_reduction.parquet``
-for 減資 — and they never share a ``(stock_id, date)``: 0 overlaps across 22,370
-and 627 filings, so the two chains multiply without double counting.
+for 減資 — and they never share a ``(stock_id, date)``: 0 overlaps across 18,277
+and 636 filings, so the two chains multiply without double counting.
 ``_assert_disjoint`` re-checks it per stock rather than trusting that.
 
 **Only total return is built.** A price-return convention needs the cash leg of
@@ -27,7 +29,8 @@ looks like it should. The company cancels a fraction ``r`` of the shares and
 refunds par for them, ``C = 10r`` per share, and the exchange prices
 ``after = (before - C)/(1 - r)``. That reference price is value-conserving
 *including the refund* — ``(1 - r) * after + C == before`` holds to 2.8e-14 on
-all 275 filings where both legs are published — so the step below leaves the
+all 195 filings where both legs are published and ``after != 10`` — so the step
+below leaves the
 adjusted series flat across the event, which is what reinvesting the refund
 means. Taking the refund out again is a price-return operation, not a
 total-return one.
@@ -60,6 +63,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from .window import clip
 
 ROOT = Path(__file__).resolve().parent
 OHLCV_DIR = ROOT / 'ohlcv'
@@ -284,7 +289,7 @@ if __name__ == '__main__':
     for sid in ('2822', '1204', '1207'):
         px = pd.read_parquet(OHLCV_DIR / f'{sid}.parquet')
         px['date'] = pd.to_datetime(px['date'])
-        px = px.sort_values('date').reset_index(drop=True)
+        px = clip(px.sort_values('date'))
         f, diag = rebuild_tr_factor(sid, px)
         print(f'{sid}: {len(px):,} sessions '
               f'{px["date"].min().date()}..{px["date"].max().date()}  '
