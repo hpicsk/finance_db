@@ -194,6 +194,13 @@ with it as `type=NaN` commons.
 Per-stock parquet files for delisted tickers end on their delisting date,
 so you should filter by `date` rather than assume uniform coverage.
 
+**This completeness is about prices, and does not reach the filings.** The
+164 names are all here with a return series, but `fin_is/` carries a
+statement for 63 of them and `fin_bs/` for 82, because the endpoints serving
+company filings answer for a company that still reports rather than for a
+code that once listed. A fundamentals study on this panel is therefore still
+survivorship-biased where a price study is not; caveat 10 measures it.
+
 ## Directory layout
 
 ```
@@ -1045,7 +1052,50 @@ ohlcv_all = pd.concat(
     one granted a 不可抗力 extension, published after the date computed here.
     Closing that needs the announcement dates in 公開資訊觀測站 filings, which
     no FinMind endpoint mirrors (caveat 8).
-10. **`open` is not inside `[min, max]` on 2.2 % of rows.** 125,114 traded rows
+10. **The statement trees drop old delistings; the exchange's daily trees keep
+    them.** The overlay puts every delisted name back in the universe and the
+    rebuild gives each one an adjusted return series, but that completeness
+    stops at the price. Of the **164** commons delisted inside the window,
+    `fin_is/` carries rows for **63**, `fin_cf/` for 61, `fin_bs/` for 82 and
+    `shares/` for 107. The rest are not short files, they are **empty** ones —
+    zero rows before any clipping — so the gap is absence at the source rather
+    than a window artifact: 90 of the missing names lived through eight or more
+    in-window quarters and not one of them carries a single statement row.
+    `download.py` asks for them on every pass and the endpoint returns nothing,
+    which `download.log` records as `fin_is=ok(0)`.
+
+    What the vendor retains is the **company**, not the listing. Twelve of the
+    sixteen pre-break delistings that do carry statements are names that kept
+    filing after they left the board — 5854 left in 2011 and its income
+    statement runs to 2026-03-31 — and the other four sit within months of the
+    break. The break itself is sharp and one-sided: every one of the **47**
+    names delisted after **2020-11-20** has an income statement, against 16 of
+    the 117 delisted on or before it. `fin_cf/` breaks on the same date,
+    `shares/` three days earlier, `fin_bs/` on 2019-03-29, and `month_rev/` on
+    2020-08-25 — where the loss is partial rather than total, since 139 of the
+    164 keep a file but only 3 of the 117 pre-break names keep the full span
+    against 29 of the 47 after it. The daily series the exchange publishes show
+    no break at all: `per_pbr/` covers 162 of the 164 and `instflow/` 156.
+
+    So **a fundamental signal on this panel is still survivorship-biased even
+    though the price panel is not**, and the two are not separable by care in
+    the join: the names that left are exactly the names whose statements are
+    gone, so a value or quality sort formed before 2021 ranks survivors. This
+    is not caveat 9 in another guise — that one is about when a figure became
+    public, this one about whether it is here at all — and dating the data
+    differently does not reach it. The bias runs the ordinary way for a
+    fundamentals study: the failures are the missing rows.
+
+    Whether the break is fixed or rolls forward with the pull date cannot be
+    read off a single pull, and the difference decides whether a fresh clone
+    reproduces this panel or a smaller one.
+    `test_taiwan_statement_trees_drop_old_delistings` pins today's break so the
+    next refresh answers it. The committed files are safe either way: a
+    non-empty file is never emptied by a re-pull — `download.py` resumes from
+    its last row and writes nothing when the fetch comes back empty — and an
+    empty file is re-pulled whole, so the gap closes by itself if the vendor
+    ever backfills.
+11. **`open` is not inside `[min, max]` on 2.2 % of rows.** 125,114 traded rows
     across 669 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
     beyond the bar is small on most of them — median 0.75 %, and 59 % sit within

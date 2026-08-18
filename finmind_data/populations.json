@@ -99,6 +99,10 @@
     "bound": "exact",
     "n": 9
   },
+  "test_taiwan_statement_trees_drop_old_delistings": {
+    "bound": "exact",
+    "n": 164
+  },
   "test_taiwan_survivorship_hole_is_rebuilt": {
     "bound": "exact",
     "n": 60371

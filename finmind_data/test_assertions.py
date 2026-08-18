@@ -523,7 +523,7 @@ def test_taiwan_adj_covered_survives_concat():
 
 # ---- Taiwan: the open field disagrees with its own session bar -------------
 def test_taiwan_open_outside_session_range():
-    """README caveat 10: `open` sits outside [min, max] on 2.2 % of rows.
+    """README caveat 11: `open` sits outside [min, max] on 2.2 % of rows.
 
     `close` never does, which is what makes this a property of the `open` field
     rather than of the sessions. Asserted because the caveat is the only thing
@@ -547,12 +547,12 @@ def test_taiwan_open_outside_session_range():
         bad_close += int(((r["close"] > r["max"]) | (r["close"] < r["min"])).sum())
 
     assert bad_close == 0, (
-        f"README caveat 10 rests on close being consistent with its own session "
+        f"README caveat 11 rests on close being consistent with its own session "
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
     assert (bad, stocks) == (125114, 669), (
-        f"README caveat 10 pins 125,114 rows across 669 stocks with open "
+        f"README caveat 11 pins 125,114 rows across 669 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
@@ -563,10 +563,11 @@ def test_taiwan_open_outside_session_range():
 def test_taiwan_delisting_table_has_no_reason():
     """README caveat 8: the delisting table dates the exit and says nothing else.
 
-    The universe overlay built from this table removes survivorship bias — the
-    names are all present. It cannot touch delisting-return bias, because
-    nothing here separates a bankruptcy from a merger and no column records what
-    a holder was paid. This asserts the absence, so that a vendor backfill
+    The universe overlay built from this table removes survivorship bias from
+    the price panel — the names are all present, and caveat 10 is where that
+    stops. It cannot touch delisting-return bias either, because nothing here
+    separates a bankruptcy from a merger and no column records what a holder
+    was paid. This asserts the absence, so that a vendor backfill
     retires the caveat instead of leaving it to contradict the data quietly.
     """
     d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
@@ -1136,6 +1137,115 @@ def test_taiwan_fundamentals_are_fiscal_dated():
             f"month_rev create_time on {stamped:,} of {tot:,} rows and none of "
             f"them in-window, pre-window lag from {min(backfill_lag):,}d; "
             f"dividend has it"), tot
+
+
+# ---- Taiwan: the statement trees are survivorship-incomplete ---------------
+# Measured, not chosen: the latest delisting date whose income statement the
+# vendor no longer serves. Every name that left after it has one, so the value
+# is a property of the pull rather than a cut this file picked, and a refresh
+# that moves it is the evidence that the retention rolls forward with the pull
+# date (README caveat 10).
+_STATEMENT_BREAK = pd.Timestamp("2020-11-20")
+
+
+def test_taiwan_statement_trees_drop_old_delistings():
+    """README caveat 10: prices keep the delisted names, statements do not.
+
+    The universe overlay and the rebuild together make the *price* panel
+    survivorship-complete, and a reader who stops there will assume the whole
+    package is. It is not: the endpoints serving company filings answer for a
+    company that still reports, so a name that failed a decade ago has prices
+    and no income statement, and the missing names are exactly the failures a
+    fundamentals study must not drop.
+
+    Every number below is checked the way the caveat states it. The gap is
+    absence at the source rather than clipping, so the file is read unclipped
+    too and asserted empty. The break is one-sided, so the assertion is on the
+    later side being whole rather than on a rate. And the contrast that
+    localises it to the filing endpoints — the exchange's own daily series
+    keeping the same names — is read from `per_pbr/`, which no part of the
+    statement path touches.
+    """
+    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    uid = set(u["stock_id"].astype(str))
+    d = d.copy()
+    d["date"] = pd.to_datetime(d["date"])
+    d["sid"] = d["stock_id"].astype(str)
+    inwin = d[(d["date"] >= COVERAGE_START) & (d["date"] <= COVERAGE_END)
+              & d["sid"].isin(uid)]
+    delist = dict(zip(inwin["sid"], inwin["date"]))
+    assert len(delist) == 164, (
+        f"README caveat 10 reports the statement coverage against 164 commons "
+        f"delisted inside the window; the table now dates {len(delist)}"
+    )
+
+    have, empty_file, stale_only, last_row = [], 0, [], {}
+    for sid in sorted(delist):
+        whole = pd.read_parquet(REPO / f"finmind_data/fin_is/{sid}.parquet")
+        clipped = _tree(REPO / f"finmind_data/fin_is/{sid}.parquet")
+        if len(clipped):
+            have.append(sid)
+            last_row[sid] = pd.to_datetime(whole["date"]).max()
+        elif len(whole):
+            stale_only.append(sid)
+        else:
+            empty_file += 1
+    assert len(have) == 63, (
+        f"README caveat 10 says fin_is/ carries rows for 63 of the 164; it "
+        f"now carries them for {len(have)}"
+    )
+    assert not stale_only, (
+        f"README caveat 10 says the missing files are empty rather than "
+        f"out-of-window, which is what makes this absence at the source and "
+        f"not a window artifact; {len(stale_only)} now hold rows the window "
+        f"excludes, so the caveat's argument no longer holds: {stale_only[:5]}"
+    )
+    assert empty_file == 101, (
+        f"README caveat 10 pins 101 empty fin_is files; there are {empty_file}"
+    )
+
+    after = [s for s in delist if delist[s] > _STATEMENT_BREAK]
+    before = [s for s in delist if delist[s] <= _STATEMENT_BREAK]
+    kept_after = [s for s in after if s in last_row]
+    kept_before = [s for s in before if s in last_row]
+    assert len(after) == 47 and len(kept_after) == 47, (
+        f"README caveat 10 rests on the break being one-sided — all "
+        f"{len(after)} names delisted after {_STATEMENT_BREAK.date()} carry a "
+        f"statement — and {len(after) - len(kept_after)} no longer do, so the "
+        f"date is not where the retention ends any more"
+    )
+    assert (len(before), len(kept_before)) == (117, 16), (
+        f"README caveat 10 says 16 of the 117 delisted on or before "
+        f"{_STATEMENT_BREAK.date()} keep a statement; now "
+        f"{len(kept_before)} of {len(before)}"
+    )
+
+    # The cut is a year and does no work: the names that kept filing after
+    # leaving the board run 2,060 days past their delisting at the shortest,
+    # and the ones that stopped run 48 days past it at the longest.
+    still_filing = [s for s in kept_before
+                    if (last_row[s] - delist[s]).days > 365]
+    assert len(still_filing) == 12, (
+        f"README caveat 10 explains the 16 as the vendor keeping the company "
+        f"rather than the listing — 12 of them still filing long after they "
+        f"left the board — and {len(still_filing)} now are, so the "
+        f"explanation has lost the evidence it was read off"
+    )
+
+    daily = sum(bool(len(_tree(REPO / f"finmind_data/per_pbr/{s}.parquet")))
+                for s in delist)
+    assert daily == 162, (
+        f"README caveat 10 localises the loss to the filing endpoints by "
+        f"contrast with the exchange's daily series, which covers 162 of the "
+        f"164; per_pbr/ now covers {daily}, and without the contrast the loss "
+        f"could be a property of the delisted names themselves"
+    )
+    return (f"fin_is/ covers {len(have)}/{len(delist)} in-window delistings, "
+            f"{empty_file} files empty at the source; all {len(kept_after)} "
+            f"delisted after {_STATEMENT_BREAK.date()} kept against "
+            f"{len(kept_before)}/{len(before)} before it ({len(still_filing)} "
+            f"still filing); per_pbr/ keeps {daily}"), len(delist)
 
 
 # ---- Taiwan: the holes with no event are checked against more than one source
@@ -2269,6 +2379,7 @@ CHECKS = [
     test_taiwan_delisting_substitute_is_biased_low,
     test_taiwan_cash_payouts_land_outside_the_band,
     test_taiwan_fundamentals_are_fiscal_dated,
+    test_taiwan_statement_trees_drop_old_delistings,
     test_taiwan_filing_deadline_table_covers_the_data,
     test_taiwan_month_rev_date_is_the_following_month,
     test_taiwan_no_event_holes_are_event_free_in_three_sources,
