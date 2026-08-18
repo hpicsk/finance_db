@@ -30,7 +30,7 @@ Parameters (see CLAUDE.md §6.1):
             dated by different endpoints and disagree by days, not weeks.
 
 Calibrated against the years where ``capital_reduction.parquet`` *is* the ground
-truth (2011-01-25 onward): 92.7 % of detections match a filed event and 91.9 % of
+truth (2011-01-25 onward): 92.6 % of detections match a filed event and 92.0 % of
 filed events are detected. ``--calibrate`` reprints that table. Precision is flat
 at ~92 % across drop thresholds once the suspension condition is on, so the 5 %
 floor sets recall, not the pass mark.
@@ -44,6 +44,7 @@ import numpy as np
 import pandas as pd
 
 from finmind_data.adjusted_loader import OHLCV_DIR, UNPRICED_PATH
+from finmind_data.window import COVERAGE_START
 
 ROOT = Path(__file__).resolve().parent
 SHARES_DIR = ROOT / 'shares'
@@ -55,9 +56,10 @@ CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
 _MIN_SHARE_DROP = 0.05
 _MIN_SUSPENSION_DAYS = 5
 _EXPLAINED_WINDOW_DAYS = 30
-# capital_reduction.parquet's own first row. Detections at or after it are the
-# calibration set; detections before it are the window the chain cannot see.
-_CAP_RED_COVERAGE_START = pd.Timestamp('2011-01-25')
+# capital_reduction.parquet's own first row, which is also where the package's
+# coverage starts and for this reason. Detections at or after it are the
+# calibration set; detections before it are outside the window entirely.
+_CAP_RED_COVERAGE_START = COVERAGE_START
 
 
 def _filed_events() -> pd.DataFrame:

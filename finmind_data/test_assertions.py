@@ -25,11 +25,23 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+from finmind_data.window import COVERAGE_START, COVERAGE_END  # noqa: E402
+
 # The study window every package's figures are quoted on. Duplicated in each
 # assertion file because the container holds no shared module to import it from;
 # `run_assertions.sh` fails if the copies ever disagree.
 WIN_START = pd.Timestamp("2005-01-01")
 WIN_END = pd.Timestamp("2024-12-31")
+# This package answers questions about less of it than the others do, for a
+# reason `window.py` states: the event log a price series has to be read
+# against does not exist before 2011-01-25 and cannot be made to. Every check
+# below is quoted on `COVERAGE_START`..`COVERAGE_END`, and the study window is
+# here to be the thing that contains it.
+assert WIN_START <= COVERAGE_START <= COVERAGE_END <= WIN_END, (
+    f"the package's coverage {COVERAGE_START.date()}..{COVERAGE_END.date()} "
+    f"is not inside the study window {WIN_START.date()}..{WIN_END.date()}"
+)
 # Each check's population, recorded so a tree that lost rows fails rather
 # than passing on a smaller one. Per package, not per repo: the root is a
 # container and holds no package's numbers.
@@ -57,7 +69,7 @@ def _tw_ids():
 def test_taiwan_ohlcv_one_per_universe():
     u, _, uid, files = _tw_ids()
     missing = uid - files
-    assert len(u) == 2121, f"Taiwan universe = {len(u)}, README pins 2,121"
+    assert len(u) == 2158, f"Taiwan universe = {len(u)}, README pins 2,158"
     assert not missing, f"{len(missing)} universe ids have no OHLCV file"
     return f"Taiwan universe = {len(u)}; all have OHLCV", len(u)
 
@@ -65,10 +77,13 @@ def test_taiwan_ohlcv_one_per_universe():
 # TWSE appends this to the abbreviated name of an Innovation Board listing.
 _INNOVATION_BOARD_SUFFIX = r"-(?:KY)?創$"
 
-# 4-digit codes that delisted inside the window and are not common stock:
-# 福雷電, 東亞科, 萬宇科, 旺旺, each still carried by taiwan_stock_info under its
-# delisting-day name as 存託憑證. See test_taiwan_overlay_covers_2005_2014.
-_INWINDOW_TDRS = {"9101", "9102", "9104", "9151"}
+# A 4-digit code is not by itself a common stock. Taiwan assigns its ETFs the
+# 00xx block and its depositary receipts the 91xx block, and both are among the
+# instruments README "Universe" excludes; every 00xx and every 91xx code in
+# `taiwan_stock_info` carries ETF or 存託憑證 respectively, with no common stock
+# in either. The 2026-08-17 delisting refresh puts 11 of them inside the window,
+# where a four-name exception list used to be enough.
+_NON_COMMON_CODE_BLOCK = r"(?:00|91)\d\d"
 
 # The instrument types README "Universe" excludes, as `taiwan_stock_info`
 # spells them. Kept in step with `build_universe.exclude_industries`.
@@ -148,9 +163,10 @@ def test_taiwan_price_adj_one_per_universe():
     empty = sum(1 for sid in uid
                 if not len(pd.read_parquet(
                     REPO / f"finmind_data/price_adj/{sid}.parquet")))
-    assert empty == 49, (
-        f"README pins 49 empty adjusted series (38 of them 2005-2007 "
-        f"delistings, 11 post-window listings); the tree now has {empty}. "
+    assert empty == 72, (
+        f"README pins 72 empty adjusted series (50 of them in-window "
+        f"delistings, 1 pre-window, 21 names listed too recently to have an "
+        f"adjusted history); the tree now has {empty}. "
         f"A change here moves the survivorship hole the README quantifies"
     )
     return (f"all {len(uid)} ids fetched; {empty} empty, {len(uid) - empty} "
@@ -158,14 +174,21 @@ def test_taiwan_price_adj_one_per_universe():
 
 
 def test_taiwan_adjusted_survivorship_hole():
-    """README, "The adjusted panel is survivorship-biased": 38 of 169.
+    """README, "The adjusted panel is survivorship-biased": 50 of 164.
 
-    The universe carries a 39-name overlay of 2005-2007 delistings that
+    The universe carries a 57-name overlay of in-window delistings that
     FinMind's live `taiwan_stock_info` no longer returns (see
-    `test_taiwan_overlay_covers_2005_2014`). `TaiwanStockPriceAdj` drops the
+    `test_taiwan_overlay_covers_the_window`). `TaiwanStockPriceAdj` drops the
     same names, so the raw panel is survivorship-free and the adjusted one is
     not. This asserts the size of that hole, because a panel built by dropping
     NaN reinstates the bias without saying so.
+
+    The hole used to read as an edge — 38 names, every one delisted 2005-2007,
+    which invited the reading that the vendor's history simply starts later than
+    the raw one. It is not an edge. Correcting the universe on 2026-08-17 put
+    the missing names in, and they delisted 2012-2020: the vendor drops
+    delistings scattered through the middle of the window, and the earlier shape
+    was the biased overlay describing itself.
     """
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
     d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
@@ -173,7 +196,8 @@ def test_taiwan_adjusted_survivorship_hole():
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
     d["sid"] = d["stock_id"].astype(str)
-    inwin = d[(d["date"] >= WIN_START) & (d["date"] <= WIN_END) & d["sid"].isin(uid)]
+    inwin = d[(d["date"] >= COVERAGE_START) & (d["date"] <= COVERAGE_END)
+              & d["sid"].isin(uid)]
 
     hole = []
     for sid in sorted(set(inwin["sid"])):
@@ -182,35 +206,42 @@ def test_taiwan_adjusted_survivorship_hole():
         if len(raw) and not len(adj):
             hole.append(sid)
 
-    assert len(inwin["sid"].unique()) == 169, (
-        f"README counts 169 in-window universe delistings; found "
+    assert len(inwin["sid"].unique()) == 164, (
+        f"README counts 164 in-window universe delistings; found "
         f"{len(inwin['sid'].unique())}"
     )
-    assert len(hole) == 38, (
-        f"README claims 38 of the 169 in-window delistings have raw prices and "
+    assert len(hole) == 50, (
+        f"README claims 50 of the 164 in-window delistings have raw prices and "
         f"no adjusted series; found {len(hole)}. If this shrank the vendor has "
         f"backfilled and the caveat is overstated; if it grew the hole is wider "
         f"than the paragraph says"
     )
     yrs = inwin.set_index("sid").loc[hole, "date"].dt.year
-    assert yrs.max() <= 2007, (
-        f"README claims every one of them delisted in 2005-2007, which is what "
-        f"makes the hole an edge rather than a scatter; the latest is {yrs.max()}"
+    assert (yrs.min(), yrs.max()) == (2012, 2020), (
+        f"README claims the hole runs 2012-2020, scattered through the window "
+        f"rather than sitting at its start; this tree gives "
+        f"{yrs.min()}-{yrs.max()}"
     )
-    return (f"{len(hole)} of 169 in-window delistings have raw prices and no "
-            f"adjusted series, all delisted {yrs.min()}-{yrs.max()}"
+    return (f"{len(hole)} of 164 in-window delistings have raw prices and no "
+            f"adjusted series, delisted {yrs.min()}-{yrs.max()}"
             ), len(inwin["sid"].unique())
 
 
 def test_taiwan_adjusted_coverage_decomposition():
-    """README, "The adjusted panel is survivorship-biased": 99.80 %, and why.
+    """README, "The adjusted panel is survivorship-biased": 98.49 %, and why.
 
     The figure has to be quoted against every traded session in `ohlcv/`. Drop
-    the 38 uncovered delistings from the denominator and the same files report
+    the 50 uncovered delistings from the denominator and the same files report
     99.95 % — the coverage of a panel the survivorship bias has already been
     taken out of, which is the one number a reader must not cite. This asserts
     the honest denominator and the split of what it misses, so the two cannot
     drift back into each other.
+
+    Both figures moved when the universe was corrected on 2026-08-17, and only
+    the honest one moved much: 99.80 % → 98.49 % against 99.95 % → 99.95 %. The
+    old denominator was itself survivorship-biased — the 57 delistings the live
+    endpoint had dropped were absent from the universe, so the sessions the
+    vendor does not cover were absent from the count of what it does not cover.
 
     Coverage has two directions and only one of them is repairable. The
     sessions `price_adj/` is short of are filled from `ohlcv/`; the sessions
@@ -219,7 +250,7 @@ def test_taiwan_adjusted_coverage_decomposition():
     nobody sums.
     """
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
-    traded = covered = hole = tail = first = 0
+    traded = covered = hole = tail = first = makeup = 0
     vendor_only = []
     for sid in sorted(set(u["stock_id"].astype(str))):
         fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
@@ -256,25 +287,35 @@ def test_taiwan_adjusted_coverage_decomposition():
         # no-trade row the vendor still carries a price for; what it never does
         # is open before the raw file does, which the `lead` count below pins.
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
-        first += int((miss & (tr["date"] <= adj_dates.max())).sum())
-        assert not (miss & (tr["date"] <= adj_dates.max())
-                    & (tr.index > 0)).any(), (
+        inner = miss & (tr["date"] <= adj_dates.max())
+        # The reverse gap runs both ways, and only one direction was known. The
+        # 600 sessions below are Saturday 補行交易日 the vendor prices and the raw
+        # endpoint has no row for; these 11 are the same Saturdays traded in
+        # `ohlcv/` and absent from the vendor series. One stock, and the panel
+        # marks every one of them `adj_covered=False` rather than carrying a
+        # price across, so they are a disclosed hole and counted as one.
+        mk = inner & (tr["date"].dt.dayofweek == 5) & (tr.index > 0)
+        makeup += int(mk.sum())
+        first += int((inner & ~mk).sum())
+        assert not (inner & ~mk & (tr.index > 0)).any(), (
             f"{sid}: a session other than the first is missing from the vendor "
-            f"series inside its own date range, which is a hole rather than the "
-            f"documented offset and is not what the carry fills"
+            f"series inside its own date range, and is not a Saturday make-up "
+            f"session either, so it is a hole rather than the documented offset "
+            f"and is not what the carry fills"
         )
 
-    assert (traded, covered) == (7483951, 7468985), (
-        f"README pins adjusted coverage at 7,468,985 of the 7,483,951 traded "
-        f"sessions in ohlcv/ (99.80 %); this tree gives {covered:,} of "
+    assert (traded, covered) == (7611589, 7496857), (
+        f"README pins adjusted coverage at 7,496,857 of the 7,611,589 traded "
+        f"sessions in ohlcv/ (98.49 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first) == (10981, 3089, 896), (
-        f"README splits the {traded - covered:,} missing sessions into 10,981 "
-        f"in the 38 delistings with no adjusted series, 3,089 past the end of a "
-        f"vendor series that stopped at a delisting, and 896 first sessions; "
-        f"this tree gives {hole:,} / {tail:,} / {first:,}. The first number is "
-        f"the survivorship hole — if it moved, so did the bias"
+    assert (hole, tail, first, makeup) == (110732, 3089, 900, 11), (
+        f"README splits the {traded - covered:,} missing sessions into 110,732 "
+        f"in the 50 delistings with no adjusted series, 3,089 past the end of a "
+        f"vendor series that stopped at a delisting, 900 first sessions and 11 "
+        f"Saturday make-up sessions; this tree gives {hole:,} / {tail:,} / "
+        f"{first:,} / {makeup}. The first number is the survivorship hole — if "
+        f"it moved, so did the bias"
     )
 
     vo = pd.DataFrame(vendor_only, columns=["stock_id", "date", "lead", "trail"])
@@ -305,42 +346,35 @@ def test_taiwan_adjusted_coverage_decomposition():
             ), traded
 
 
-def test_taiwan_overlay_covers_2005_2014():
+def test_taiwan_overlay_covers_the_window():
     """Survivorship invariant.
 
-    The 39-name overlay must cover every 2005-2014 4-digit common delisting
-    FinMind purged. Codes are restricted to 4-digit numeric (the universe's own
-    filter); pre-2005 names never trade in-window. The naive "all delisted ids
-    have OHLCV" form was a false alarm.
+    Every in-window 4-digit common delisting must be in `universe.parquet`,
+    whether or not FinMind's live `taiwan_stock_info` still serves it. The
+    naive "all delisted ids have OHLCV" form was a false alarm.
 
-    4-digit numeric was taken to mean common stock, and for four names it does
-    not: `_INWINDOW_TDRS` delisted inside the window carrying a 9xxx code, and
-    the endpoint still lists each under its delisting-day name as 存託憑證. They
-    are the instrument the README "Universe" excludes, so their absence is the
-    filter working. They are named rather than derived because nothing offline
-    can tell them from a common stock — `delisted_universe.parquet` carries no
-    industry — and the count is asserted so a fifth cannot join them silently.
+    The overlay used to stop at 2014, on the premise that the endpoint keeps
+    every name delisted from 2015 on. The 2026-08-17 refresh of the delisting
+    table falsifies it — 46 of the names it adds delisted in 2015 or later and
+    the endpoint has no row for any of them — so the gate is now the window,
+    and what this checks is the whole of it rather than its first decade.
     """
     u, d, uid, _ = _tw_ids()
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
     d["sid"] = d["stock_id"].astype(str)
     d4 = d[d["sid"].str.fullmatch(r"\d{4}")]
-    in_2005_2014 = d4[(d4["date"] >= WIN_START) & (d4["date"] <= pd.Timestamp("2014-12-31"))]
-    commons = set(in_2005_2014["sid"]) - _INWINDOW_TDRS
-    assert len(in_2005_2014["sid"].unique()) - len(commons) == len(_INWINDOW_TDRS), (
-        f"a 2005-2014 delisting named in _INWINDOW_TDRS is no longer in the "
-        f"table, so the exception now excuses a name that is not there"
-    )
+    inwin = d4[(d4["date"] >= COVERAGE_START) & (d4["date"] <= COVERAGE_END)]
+    commons = set(inwin["sid"][~inwin["sid"].str.fullmatch(_NON_COMMON_CODE_BLOCK)])
     missing = sorted(commons - uid)
     assert not missing, (
-        f"{len(missing)} 2005-2014 4-digit common delistings absent from "
+        f"{len(missing)} in-window 4-digit common delistings absent from "
         f"universe.parquet (overlay gap): {missing}"
     )
     n_overlay = int(u[u["type"].isna()]["stock_id"].astype(str).str.fullmatch(r"\d{4}").sum())
-    assert n_overlay == 39, f"4-digit type=NaN overlay ids = {n_overlay}, expected 39"
-    return ("2005-2014 commons fully covered; 39-name overlay present",
-            len(in_2005_2014))
+    assert n_overlay == 57, f"4-digit type=NaN overlay ids = {n_overlay}, expected 57"
+    return ("in-window commons fully covered; 57-name overlay present",
+            len(inwin))
 
 
 # ---- Taiwan: the coverage flag has to survive a panel build -----------------
@@ -421,8 +455,8 @@ def test_taiwan_open_outside_session_range():
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
-    assert (bad, stocks) == (167930, 836), (
-        f"README caveat 10 pins 167,930 rows across 836 stocks with open "
+    assert (bad, stocks) == (173056, 859), (
+        f"README caveat 10 pins 173,056 rows across 859 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
@@ -474,19 +508,16 @@ def test_taiwan_delisting_sign_sample_is_preregistered():
 
     f = features()
     exited = len(f)
-    # `features()` reads `delisted_universe.parquet` under its own 4-digit
-    # filter, so it is a slightly wider set than the analysis universe: it
-    # keeps 9101/9102/9104/9151, the four in-window TDR delistings the universe
-    # excludes as instruments (`test_taiwan_overlay_covers_2005_2014`). None of
-    # the four is labelled or in the undecided band, so the pre-registered
-    # sample is drawn from the same names it always was, and 172 is left alone
-    # rather than redrawn at 168 — a sample redrawn after the labels are in is
-    # not the sample that was committed. The 169 in
-    # `test_taiwan_adjusted_survivorship_hole` is the universe-side count of
-    # the same delistings, and the gap to 172 is those four plus 6446, which
-    # changed boards and goes on trading, so it has no outcome to classify.
-    assert exited == 172, (
-        f"README's delisting-sign section counts 172 in-window delistings that "
+    # This used to be three wider than the universe-side count, because
+    # `features()` selected on a 4-digit code and so kept the in-window TDR
+    # delistings the universe excludes as instruments, plus 6446, which changed
+    # boards rather than exiting. It now selects on the universe itself, which
+    # is where common stock is decided, and the two counts are the same set read
+    # from two sides — so `test_taiwan_adjusted_survivorship_hole`'s 164 and this
+    # 164 are the same delistings, and a divergence is a real disagreement
+    # rather than a documented offset.
+    assert exited == 164, (
+        f"README's delisting-sign section counts 164 in-window delistings that "
         f"exited the market; features() now returns {exited}"
     )
 
@@ -546,8 +577,8 @@ def test_taiwan_delisting_sign_accuracy():
     )
 
     r = accuracy(f, labels, verbose=False)
-    assert r["n_scored"] == 18, (
-        f"the rate rests on 18 labelled names that carry a verdict; "
+    assert r["n_scored"] == 15, (
+        f"the rate rests on 15 labelled names that carry a verdict; "
         f"{r['n_scored']} do now. The estimate is weighted by stratum, so a "
         f"change in which names are decided changes what the 99 % is over"
     )
@@ -556,17 +587,17 @@ def test_taiwan_delisting_sign_accuracy():
         f"for non-filing that never collapsed; the misses are now "
         f"{r['missed']}. The described error mode no longer matches the data"
     )
-    assert math.isclose(r["accuracy"], 0.993, abs_tol=0.005), (
+    assert math.isclose(r["accuracy"], 0.987, abs_tol=0.005), (
         f"README caveat 8 claims the shape is right on 99 % of the names "
         f"carrying a verdict; the weighted rate is now {r['accuracy']:.1%}"
     )
-    assert math.isclose(r["n_verdict"], 140, abs_tol=3), (
-        f"README caveat 8 puts 140 names under a verdict (41 + 99); the "
+    assert math.isclose(r["n_verdict"], 126, abs_tol=3), (
+        f"README caveat 8 puts 127 names under a verdict (29 + 98); the "
         f"stratum-weighted estimate is {r['n_verdict']:.0f}, so the sample no "
         f"longer reconstructs the population it is weighted to"
     )
-    assert math.isclose(r["n_ambiguous_merger"], 18, abs_tol=3), (
-        f"README caveat 8 says ~18 of the ~32 undecided names are payouts; "
+    assert math.isclose(r["n_ambiguous_merger"], 22, abs_tol=3), (
+        f"README caveat 8 says ~22 of the ~38 undecided names are payouts; "
         f"the weighted estimate is now {r['n_ambiguous_merger']:.0f}"
     )
     return (f"{r['accuracy']:.1%} of {r['n_verdict']:.0f} verdicts correct "
@@ -580,12 +611,19 @@ def test_taiwan_single_cut_is_registered_unscored():
     """The cut that would close the undecided band, pinned before its labels exist.
 
     The labelled band suggests one cut near 0.50 would decide most of what the
-    two cuts leave open, but it suggests that on the 20 band names already
-    looked up, so those 20 cannot also test it. The 12 that were never looked up
+    two cuts leave open, but it suggests that on the 28 band names already
+    looked up, so those 28 cannot also test it. The 9 that were never looked up
     can, they are the only ones that ever will, and their labels arrive as a
     byproduct of the payout work — an announcement names its own reason. Hence
     the ordering this check exists to freeze: the calls are committed while no
     label exists, and the gate is written down with them.
+
+    Nine is one short of `_GATE_MIN_LABELS`, so the gate is unreadable on the
+    band that exists: the re-registration on the corrected frame drew two of the
+    old twelve into the measured sample and put three others outside the window,
+    and the null it has to beat rose from 0.55 to 0.571 at the same time. That is
+    reported rather than repaired — the repair is a wider held-out set, and
+    lowering the bar to fit nine names is the move this check exists to stop.
 
     Editing `_DD_SINGLE` afterwards moves a call and fails here, which is what
     makes the registration a property of the repo rather than a claim about
@@ -598,8 +636,8 @@ def test_taiwan_single_cut_is_registered_unscored():
     null or to alpha cannot leave a minimum behind that no longer matches them.
 
     What this catches is an edit that changes a call, which is not the same as
-    any edit: the held-out names' suspensions run 3, 14, 14, 70 days and then
-    past 150, so `_LONG_SUSPENSION_DAYS` can be moved anywhere inside 15..69
+    any edit: the held-out names' suspensions run 3, 14, 14 days and then past
+    200, so `_LONG_SUSPENSION_DAYS` can be moved anywhere inside 15..217
     without moving a call, and that move passes here. The claim is bounded to
     what it can see, and the alternative — asserting the constants themselves —
     would only restate them.
@@ -643,16 +681,17 @@ def test_taiwan_single_cut_is_registered_unscored():
     )
 
     # Why the halt rule is registered rather than dismissed: on the labelled
-    # band it is a point behind 0.50, which at n=20 is no distance at all.
+    # band it is now five ahead of 0.50, having been a point behind on the
+    # smaller frame. Neither figure is a held-out score.
     scored = f.merge(labels[["stock_id", "label"]], on="stock_id")
     scored = scored[scored["sign"] == "ambiguous"]
     dd50 = int(((scored["drawdown"] > _DD_SINGLE).map(
         {True: "merger", False: "distress"}) == scored["label"]).sum())
     halt = int(((scored["has_tail"] | scored["long_suspension"]).map(
         {True: "distress", False: "merger"}) == scored["label"]).sum())
-    assert (dd50, halt) == (17, 16), (
-        f"README caveat 8 says the halt rule is right 16 times on the 20 "
-        f"labelled band names against 0.50's 17, which is why both are "
+    assert (dd50, halt) == (19, 24), (
+        f"README caveat 8 says the halt rule is right 24 times on the 28 "
+        f"labelled band names against 0.50's 19, which is why both are "
         f"registered; they now score {dd50} and {halt} of {len(scored)}"
     )
 
@@ -694,10 +733,12 @@ def test_taiwan_delisting_substitute_is_biased_low():
     assertion pins; the size splits by deal type and the split is the finding,
     because it decides which lookups are worth doing.
 
-    Six deals is few, and the direction is the part that survives that. It is
-    also not a sample that can be grown cheaply: it is what the labelling
-    happened to record in a form free of ratio conventions, and any addition to
-    `delisting_consideration.csv` moves these numbers on purpose.
+    Four deals is few, and the direction is the part that survives that. Two of
+    the original six delisted before the coverage start and left the frame with
+    the window; they stay in `delisting_consideration.csv` as the record of what
+    was read. The sample can be grown — the re-registered draw added 23 payout
+    labels whose `source` already states a price or a ratio — and any addition
+    to that file moves these numbers on purpose.
 
     The `overlap` assertion is the one that will fire on such an addition, and
     it should. Zero acquirer sessions before the target's last trade is what
@@ -742,8 +783,8 @@ def test_taiwan_delisting_substitute_is_biased_low():
     sign = f.set_index("stock_id")["sign"]
     in_band = int((e.loc[e["kind"] == "swap", "stock_id"].map(sign)
                    == "ambiguous").sum())
-    assert in_band == 3, (
-        f"README caveat 8 says three of the four swaps are band names, so the "
+    assert in_band == 1, (
+        f"README caveat 8 says one of the two swaps is a band name, so the "
         f"+11 % is measured on a mix rather than on classifier-confirmed "
         f"payouts alone; {in_band} are now undecided by the cuts"
     )
@@ -782,9 +823,9 @@ def test_taiwan_delisting_substitute_is_biased_low():
     )
 
     # A label outranks the shape, so the undecided rows are exactly the band
-    # names nobody has looked up — the same twelve the single cut is registered
+    # names nobody has looked up — the same nine the single cut is registered
     # against. Read off the label file rather than off a count, because a count
-    # would still pass if the twelve were a different twelve.
+    # would still pass if the nine were a different nine.
     labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
                          dtype={"stock_id": str})
     labels = labels[labels["label"].fillna("") != ""]
@@ -798,15 +839,15 @@ def test_taiwan_delisting_substitute_is_biased_low():
         f"own label instead"
     )
     band = int((f["sign"] == "ambiguous").sum())
-    assert (band, len(undecided)) == (32, 12), (
-        f"README caveat 8 says the 38 labels empty 20 of the 32 band names and "
-        f"leave 12 without a terminal value; the cuts now leave {band} open and "
+    assert (band, len(undecided)) == (37, 9), (
+        f"README caveat 8 says the labels empty 28 of the 37 band names and "
+        f"leave 9 without a terminal value; the cuts now leave {band} open and "
         f"{len(undecided)} survive the labels. An emptied label file lands here"
     )
     assert set(undecided["stock_id"]) == set(
         band_holdout(f, labels)["stock_id"]), (
-        "README caveat 8 says the twelve names left without a terminal value "
-        "are the twelve the single cut is registered against; they have come "
+        "README caveat 8 says the nine names left without a terminal value "
+        "are the nine the single cut is registered against; they have come "
         "apart, so the band a study is told to resolve is no longer the band "
         "`delisting_band.csv` froze"
     )
@@ -819,25 +860,32 @@ def test_taiwan_delisting_substitute_is_biased_low():
 
 
 def test_taiwan_cash_payouts_land_outside_the_band():
-    """README caveat 8: every labelled cash deal sits above the band.
+    """README caveat 8: the cash-deal clustering reading, and its refutation.
 
-    The substitute bias is measured on four share exchanges and two cash offers,
-    and three of the four exchanges are band names — which invites the reading
-    that a conversion's discount is what drags a payout into the band. The
-    reading is checkable past those six because the `form` column records what
-    the label's own `source` text states, across all eighteen labelled payouts.
+    This check was written around a zero. On the 18 payouts labelled before the
+    2026-08-17 re-registration, nine of nine stated forms inside the band were
+    share exchanges and no cash deal had ever been labelled there, which invited
+    the reading that a conversion's discount is what drags a payout into the
+    band. The reading came with a mechanism: a cash offer at a premium stops
+    near its own high, so it should land above the band's upper cut. The check
+    was written so that a cash deal arriving in the band would be the finding
+    rather than a regression.
 
-    What it buys is a comparison object for later, not a result now. Nine of
-    nine stated forms inside the band are exchanges, against a base rate of
-    fourteen of sixteen, and the exact test on that table returns 0.175 — a
-    reading, and asserted as one. The load-bearing half is the zero: no cash
-    deal has ever been labelled inside the band, and the twelve band names
-    nobody has looked up are where that can fail. This check is how it would
-    fail, so a cash deal arriving among the twelve is the finding, not a
-    regression.
+    It arrived. The corrected frame and the re-registered draw take the stated
+    forms to 26, and four of the nine cash deals sit inside the band — 4965,
+    8913, 6211 and 8266, at drawdowns of 0.56 to 0.63. The mechanism is what was
+    wrong: the drawdown is measured against a trailing-year peak, and a cash
+    offer at a premium to the *recent* price is routinely far below the price a
+    year earlier. 商店街市集 was bought in at NT$44 after falling most of the way
+    there from its own high; the offer was a premium and the drawdown was 0.56.
 
-    `form` is deliberately blank where the source names a merger without saying
-    what was paid. Reading a form into those two would be inventing the very
+    So the zero is gone and the association with it: 12 of the 16 stated forms in
+    the band are exchanges against 17 of 26 overall, and Fisher exact two-sided
+    returns 0.234. What this now asserts is the refutation, so that a later
+    re-registration cannot quietly restore the original reading.
+
+    `form` is blank wherever the source names a merger without saying what was
+    paid; there are none left in the frame, and reading one in would invent the
     fact the column exists to count.
     """
     from finmind_data.delisting_sign import _DD_MERGER, features
@@ -859,42 +907,56 @@ def test_taiwan_cash_payouts_land_outside_the_band():
     # exists to catch.
     form = m["form"].fillna("unstated")
     in_band = m["sign"] == "ambiguous"
-    cash_in_band = m.loc[in_band & (form == "cash"), "stock_id"].tolist()
-    assert not cash_in_band, (
-        f"README caveat 8 says both labelled cash deals sit outside the band, "
-        f"which is what makes a cash deal among the twelve held-out names a "
-        f"live test of the clustering reading; {cash_in_band} is inside it. "
-        f"That is the test coming back, not a broken assertion"
+    cash_in_band = sorted(m.loc[in_band & (form == "cash"), "stock_id"])
+    assert cash_in_band == ["4965", "6211", "8266", "8913"], (
+        f"README caveat 8 records four labelled cash deals inside the band, "
+        f"which is what refutes the clustering reading the earlier label set "
+        f"supported; the band now holds {cash_in_band}. If this went back to "
+        f"empty the refutation went with it and the paragraph has to be re-read"
     )
-    assert m.loc[form == "cash", "drawdown"].min() > _DD_MERGER, (
-        f"README caveat 8 explains the split mechanically — a cash offer at a "
-        f"premium stops near its own high, above the band's upper cut of "
-        f"{_DD_MERGER} — but the lowest labelled cash deal is at "
+    assert m.loc[form == "cash", "drawdown"].min() < _DD_MERGER, (
+        f"README caveat 8 retired the mechanical account — a cash offer at a "
+        f"premium was said to stop near its own high, above the band's upper "
+        f"cut of {_DD_MERGER}, and four cash deals sit below it because the "
+        f"drawdown is measured against a trailing-year peak. The lowest "
+        f"labelled cash deal is now at "
         f"{m.loc[form == 'cash', 'drawdown'].min():.3f}"
     )
 
     counts = form.value_counts().to_dict()
     assert (len(m), counts.get("swap"), counts.get("cash"),
-            counts.get("unstated")) == (18, 14, 2, 2), (
-        f"README caveat 8 says 18 labelled payouts split 14 share exchanges, 2 "
-        f"cash and 2 that do not say; the label file now gives {len(m)} and "
-        f"{counts}. A label arriving for one of the twelve lands here, and the "
-        f"paragraph is what has to be re-read against the new table"
+            counts.get("unstated")) == (26, 17, 9, None), (
+        f"README caveat 8 says 26 labelled payouts in the frame split 17 share "
+        f"exchanges and 9 cash, with none left unstated; the label file now "
+        f"gives {len(m)} and {counts}. A label arriving for one of the nine "
+        f"held-out names lands here, and the paragraph is what has to be "
+        f"re-read against the new table"
     )
 
-    # Fisher exact on the stated forms, two-sided. Every other 2x2 with a cash
-    # cell is likelier than the observed one, so the tail is the single term.
+    # Fisher exact on the stated forms, two-sided: sum every table at least as
+    # extreme as the observed one. The single-term shortcut the old zero allowed
+    # is gone with the zero.
     band_n = int((in_band & (form != "unstated")).sum())
     swap_n, stated_n = counts["swap"], counts["swap"] + counts["cash"]
-    p = math.comb(swap_n, band_n) / math.comb(stated_n, band_n)
-    assert math.isclose(p, 0.175, abs_tol=5e-4), (
-        f"README caveat 8 says 9 of 9 in the band is 'what chance gives 0.175 "
-        f"of the time' and reads it as a reading rather than a finding; the "
-        f"exact test now returns {p:.3f}"
+    band_swap = int((in_band & (form == "swap")).sum())
+
+    def _hyper(k):
+        return (math.comb(swap_n, k) * math.comb(stated_n - swap_n, band_n - k)
+                / math.comb(stated_n, band_n))
+
+    obs = _hyper(band_swap)
+    p = sum(_hyper(k) for k in range(max(0, band_n - (stated_n - swap_n)),
+                                     min(band_n, swap_n) + 1)
+            if _hyper(k) <= obs + 1e-12)
+    assert math.isclose(p, 0.234, abs_tol=5e-4), (
+        f"README caveat 8 reports Fisher exact two-sided at 0.234 on the "
+        f"form-by-band table and reads it as no association; the exact test now "
+        f"returns {p:.3f}"
     )
-    return (f"{counts['cash']} labelled cash payouts, both above the band's "
-            f"{_DD_MERGER} cut; {band_n} of {band_n} stated forms inside it are "
-            f"share exchanges against {swap_n}/{stated_n} overall, p={p:.3f}",
+    return (f"{counts['cash']} labelled cash payouts, {len(cash_in_band)} of "
+            f"them inside the band's {_DD_MERGER} cut; {band_swap} of {band_n} "
+            f"stated forms inside it are share exchanges against "
+            f"{swap_n}/{stated_n} overall, p={p:.3f}",
             len(m))
 
 
@@ -920,18 +982,35 @@ def test_taiwan_fundamentals_are_fiscal_dated():
             f"on it can be aligned point-in-time"
         )
 
+    # `create_time` is not an announcement date and this is what rules it out.
+    # It was empty on every row until the 2026-08-17 pull, which brought back 644
+    # stamped rows across 21 stocks — and every one of them carries the identical
+    # value, on revenue months from 2005-01 through 2024-12. A single value
+    # spanning two decades of periods is the vendor's ingest time for rows it
+    # rewrote that day, so reading it as a release date would date a 2005 revenue
+    # figure to 2026. The assertion is on the shape that says so: one distinct
+    # value, not one per period.
     tot = blank = 0
+    stamps = set()
     for p in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet")))[:200]:
         m = pd.read_parquet(p)
         if not len(m):
             continue
         tot += len(m)
-        blank += int((m["create_time"].astype(str).str.strip() == "").sum())
-    assert tot and blank == tot, (
-        f"README caveat 9 says month_rev's create_time is empty on every row "
-        f"(40,735 of 40,735 over the first 200 files); {tot - blank:,} of "
-        f"{tot:,} now carry a stamp, which would make monthly revenue the "
-        f"second dataset alignable point-in-time"
+        st = m["create_time"].astype(str).str.strip()
+        blank += int((st == "").sum())
+        stamps.update(st[st != ""].unique())
+    assert (tot, tot - blank) == (40449, 61), (
+        f"README caveat 9 says 61 of the 40,449 rows over the first 200 "
+        f"month_rev files carry a create_time; this tree gives {tot - blank:,} "
+        f"of {tot:,}"
+    )
+    assert stamps == {"2026-05-19"}, (
+        f"README caveat 9 rests on every stamped row carrying one ingest "
+        f"timestamp rather than a per-period release date; create_time now "
+        f"takes {len(stamps)} values ({sorted(stamps)[:4]}). More than one, and "
+        f"it may be a real announcement date — which would make monthly revenue "
+        f"the second dataset alignable point-in-time"
     )
 
     div = pd.read_parquet(REPO / "finmind_data/dividend/1101.parquet")
@@ -940,8 +1019,8 @@ def test_taiwan_fundamentals_are_fiscal_dated():
         "AnnouncementDate; it no longer does"
     )
     return (f"fin_* dated on quarter ends with no announcement column; "
-            f"month_rev create_time blank {blank:,}/{tot:,}; dividend has it"
-            ), tot
+            f"month_rev create_time blank {blank:,}/{tot:,}, the rest one "
+            f"ingest stamp {sorted(stamps)}; dividend has it"), tot
 
 
 # ---- consolidate_capred delivered artifact ---------------------------------
@@ -1155,8 +1234,8 @@ def test_taiwan_vendor_event_audit_is_current():
         check_exact=True, obj="vendor_event_audit.parquet")
 
     ck = committed[committed["checkable"]]
-    assert (len(committed), len(ck)) == (22370, 22336), (
-        f"README pins 22,370 filed 除權息 of which 22,336 are graded against "
+    assert (len(committed), len(ck)) == (22627, 22366), (
+        f"README pins 22,627 filed 除權息 of which 22,366 are graded against "
         f"the exchange; this tree gives {len(committed):,} / {len(ck):,}"
     )
     # The two counts are one file and a column, not a filter that moved between
@@ -1165,8 +1244,8 @@ def test_taiwan_vendor_event_audit_is_current():
     served = {p.stem for p in (REPO / "finmind_data/price_adj").glob("*.parquet")
               if len(pd.read_parquet(p))}
     unserved = int((~nc["stock_id"].astype(str).isin(served)).sum())
-    assert (len(nc), unserved) == (34, 12), (
-        f"the 34 ungradable events should be 12 in stocks the vendor serves "
+    assert (len(nc), unserved) == (261, 239), (
+        f"the 261 ungradable events should be 239 in stocks the vendor serves "
         f"nothing for and 22 with no adjacent bracketing session; this tree "
         f"gives {len(nc)} ungradable of which {unserved} are unserved"
     )
@@ -1285,7 +1364,7 @@ def test_taiwan_vendor_defects_are_patched():
 
 
 def test_taiwan_vendor_edges_are_carried():
-    """README, "The two edges of the vendor series": 902 first sessions and
+    """README, "The two edges of the vendor series": 906 first sessions and
     3,089 post-delisting ones carry the adjacent factor, and one is refused.
 
     A back-adjustment factor moves only on an ex date, so carrying it across a
@@ -1342,7 +1421,7 @@ def test_taiwan_vendor_edges_are_carried():
         f"among these stocks; it refused {refused}"
     )
     assert (head, tail) == (3, 3089), (
-        f"these stocks hold 3 of the 902 carried first sessions and all 3,089 "
+        f"these stocks hold 3 of the 906 carried first sessions and all 3,089 "
         f"post-delisting ones; this tree carries {head} / {tail}"
     )
     return (f"{head} first sessions and {tail} post-delisting sessions carried "
@@ -1378,6 +1457,7 @@ def test_taiwan_post_delisting_sessions_are_marked():
     """
     sys.path.insert(0, str(REPO))
     import numpy as np
+    import pyarrow.parquet as pq
 
     from finmind_data.adjusted_loader import _BREAK_GAP_DAYS, load_adjusted
 
@@ -1399,7 +1479,18 @@ def test_taiwan_post_delisting_sessions_are_marked():
         c = pd.read_parquet(f)
         if len(c):
             last[str(r.stock_id)] = pd.to_datetime(c["date"]).max()
-    panel_end = max(last.values())
+    # Over the whole panel, not over `last`. Every name in `last` has left, so
+    # the maximum among them belongs to whichever left last, which then equals
+    # `panel_end` by construction and reads as never having left. It gave the
+    # right answer here only because the delisting table carries names that
+    # delisted after the download stopped, whose quotes run to the true edge —
+    # an accident of the table's contents, not a property of the measurement.
+    # `delisting_sign._panel_last_session` is the same anchor and had the same
+    # drift; the fix is one fixed point, read the same way in both places.
+    panel_end = max(
+        pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]).max()
+        for f in sorted((REPO / "finmind_data/ohlcv").glob("*.parquet"))
+        if "date" in pq.read_schema(f).names)
 
     marked = transferred = 0
     names = []
@@ -1474,16 +1565,16 @@ def test_taiwan_post_delisting_sessions_are_marked():
         f"tree marks {marked:,} across {len(names)}")
     # Sorted, because the loop takes the delisting table's row order and a
     # re-collect that reorders it would fail this on nothing.
-    assert (sorted(moved), sorted(reissued)) == (["6446"], ["2301", "2432"]), (
-        f"README names 6446 as the one delisting that is a board transfer and "
-        f"2301 and 2432 as the two reused codes; this tree finds {moved} and "
-        f"{reissued}. A new transfer is a name whose exit the table records and "
-        f"whose arrival it does not, so a delisting return computed for it "
-        f"would be a loss it never took")
+    assert (sorted(moved), sorted(reissued)) == ([], []), (
+        f"README says the 2026-08-17 refresh left no board transfer and no "
+        f"reused code in the table; this tree finds {moved} and {reissued}. A "
+        f"new transfer is a name whose exit the table records and whose arrival "
+        f"it does not, so a delisting return computed for it would be a loss it "
+        f"never took")
     return (f"{marked:,} post-delisting sessions priced and marked invalid "
-            f"across {len(names)} names; {transferred} sessions of {moved[0]}'s "
-            f"board transfer left holdable, {len(reissued)} reused codes cut "
-            f"behind their reissue"), marked + transferred
+            f"across {len(names)} names; {len(moved)} board transfers and "
+            f"{len(reissued)} reused codes, {transferred} transferred sessions "
+            f"left holdable"), marked + transferred
 
 
 # ---- Taiwan: no-trade sessions, and the closure of is_valid ----------------
@@ -1498,7 +1589,7 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     delisted. A backtest filtering on the flag alone would have assumed a fill.
 
     Two things are asserted, and they fail on different mistakes. The counts pin
-    *this* reason: dropping the mask leaves the 167,162 rows valid with no reason
+    *this* reason: dropping the mask leaves the 172,774 rows valid with no reason
     at all, which the reason split below catches and the closure below does not,
     because a row that is valid and unnamed is consistent. The closure pins the
     *next* one: every False row carries a reason and every True row carries none,
@@ -1550,27 +1641,27 @@ def test_taiwan_no_trade_rows_are_not_holdable():
                 f"{int((~z[nt]).sum())}/{int(df.loc[nt, 'adj_close_tr'].notna().sum())}"
                 f"/{int(valid[nt].sum())} of {int(nt.sum())} break one of those")
 
-    assert len(empty) == 13, (
-        f"README says 13 stocks have a zero-row OHLCV file and load_adjusted "
+    assert len(empty) == 24, (
+        f"README says 24 stocks have a zero-row OHLCV file and load_adjusted "
         f"raises on them; {len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
-    assert (rows, zero, zero_stocks) == (7_689_904, 179_930, 1_325), (
-        f"README quotes 179,930 no-trade sessions in 1,325 stocks over a "
-        f"7,689,904-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+    assert (rows, zero, zero_stocks) == (7_835_489, 185_612, 1_375), (
+        f"README quotes 185,612 no-trade sessions in 1,375 stocks over a "
+        f"7,835,489-row panel; this tree has {zero:,} in {zero_stocks:,} over "
         f"{rows:,}. Every count below is a share of that population")
     assert mismatched == 0, (
         f"README claims is_valid alone is now enough — every False row carries "
         f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
         f"rows break that, so invalid_reason no longer accounts for is_valid")
-    assert by_reason == {"no_trade": 167_162,
+    assert by_reason == {"no_trade": 172_774,
                          "post_delisting_emerging": 19,
-                         "series_break": 3_244,
+                         "series_break": 3_314,
                          "unpriced_cancellation": 9_505}, (
-        f"README claims 167,162 no-trade sessions take the new reason and the "
-        f"12,768 behind a segment reason keep it; the split here is {by_reason}")
-    assert len(no_trade_stocks) == 1_309, (
-        f"README claims the 167,162 no_trade rows fall in 1,309 stocks — the "
-        f"1,325 with a zero close, less the 16 whose zero closes all sit behind "
+        f"README claims 172,774 no-trade sessions take the new reason and the "
+        f"12,838 behind a segment reason keep it; the split here is {by_reason}")
+    assert len(no_trade_stocks) == 1_359, (
+        f"README claims the 172,774 no_trade rows fall in 1,359 stocks — the "
+        f"1,375 with a zero close, less the 16 whose zero closes all sit behind "
         f"a break; {len(no_trade_stocks):,} carry one here")
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
             f"{len(no_trade_stocks):,} stocks marked invalid, "
@@ -1685,14 +1776,26 @@ def test_taiwan_make_up_sessions_are_recovered():
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
-    """README, "The survivorship hole is filled": 38 stocks, 10,981 sessions.
+    """README, "The survivorship hole is filled": 50 stocks, 110,732 sessions.
 
-    The universe carries a 39-name overlay of 2005-2007 delistings FinMind's
-    live registry dropped, and `TaiwanStockPriceAdj` drops 38 of them too. A
+    The universe carries a 57-name overlay of in-window delistings FinMind's
+    live registry dropped, and `TaiwanStockPriceAdj` drops 50 of them too. A
     panel built by concatenating `load_adjusted` and dropping NaN used to
     reinstate the bias silently; it no longer can, but only while every one of
-    the 38 comes back with a price. `adj_covered` stays False across them so
+    the 50 comes back with a price. `adj_covered` stays False across them so
     the hole remains countable after it is filled.
+
+    The invalid-reason split is what the rebuild is scored on, and moving the
+    window start to 2011-01-25 emptied two of its three reasons. Both belonged
+    entirely to holes that delisted in 2005-2007: 970 sessions behind an
+    unpriced cancellation across 1207, 1462, 2544 and 2811, and 1,524 past a
+    delisting across 1408, 1462, 1807, 2326, 2407, 2410 and 2811. None of those
+    nine names is inside the window any more, and none is in the universe
+    either — the overlay reinstates in-window delistings only. What is left is
+    one reissued code: 4415's first occupant traded 2005-01-03 to 2011-11-07
+    and 台原藥 took the code over after a 1,249-day gap, so the earlier
+    company's 1,471 traded sessions carry `series_break` and straddle the
+    window start.
     """
     sys.path.insert(0, str(REPO))
     from finmind_data.adjusted_loader import load_adjusted
@@ -1703,7 +1806,8 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
     d["sid"] = d["stock_id"].astype(str)
-    inwin = d[(d["date"] >= WIN_START) & (d["date"] <= WIN_END) & d["sid"].isin(uid)]
+    inwin = d[(d["date"] >= COVERAGE_START) & (d["date"] <= COVERAGE_END)
+              & d["sid"].isin(uid)]
 
     holes = [sid for sid in sorted(set(inwin["sid"]))
              if len(pd.read_parquet(REPO / f"finmind_data/ohlcv/{sid}.parquet"))
@@ -1717,7 +1821,7 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         traded += int(t.sum())
         priced += int((t & df["adj_close_tr"].notna()).sum())
         assert not df["adj_covered"].any(), (
-            f"{sid} is one of the 38 the vendor serves nothing for, but "
+            f"{sid} is one of the 50 the vendor serves nothing for, but "
             f"adj_covered is True somewhere — the hole is no longer countable"
         )
         for k in df.loc[df["adj_source"] != "", "adj_source"].unique():
@@ -1728,36 +1832,33 @@ def test_taiwan_survivorship_hole_is_rebuilt():
         for k, c in df.loc[t & ~df["is_valid"], "invalid_reason"].value_counts().items():
             invalid[k] = invalid.get(k, 0) + int(c)
 
-    assert (len(holes), traded, priced) == (38, 10981, 10981), (
-        f"README claims all 38 vendor holes come back priced across their "
-        f"10,981 traded sessions; this tree gives {len(holes)} stocks, "
+    assert (len(holes), traded, priced) == (50, 110732, 110732), (
+        f"README claims all 50 vendor holes come back priced across their "
+        f"110,732 traded sessions; this tree gives {len(holes)} stocks, "
         f"{traded:,} traded, {priced:,} priced. An unpriced session here is a "
         f"survivorship hole the panel build will drop"
     )
-    assert kinds == {"rebuilt_factored": 11, "rebuilt_noevent": 27}, (
-        f"README splits the 38 into 11 with a factor chain and 27 with no "
+    assert kinds == {"rebuilt_factored": 38, "rebuilt_noevent": 12}, (
+        f"README splits the 50 into 38 with a factor chain and 12 with no "
         f"corporate action in window; this tree gives {kinds}. The split is "
         f"what isolates the cumulative-product path from the flat one"
     )
-    assert invalid == {"unpriced_cancellation": 970,
-                       "post_delisting_emerging": 1_524}, (
-        f"README claims 970 of those sessions sit behind an unpriced share "
-        f"cancellation in 4 of the 38, and 1,524 follow a delisting in 7 of "
-        f"them; this tree gives {invalid}. The second number is the one the "
-        f"rebuild itself created: these stocks have no vendor series, so the "
-        f"delisting boundary had nothing to read until it was moved onto the "
-        f"delisting table"
+    assert invalid == {"series_break": 1_471}, (
+        f"README claims one of the 50 carries invalid traded sessions — 4415's "
+        f"1,471 under the code's earlier occupant — and that the rebuild "
+        f"leaves every other traded session holdable; this tree gives "
+        f"{invalid}. A reason returning here is a hole the panel build will "
+        f"drop rows from after paying to fill it"
     )
     return (f"{len(holes)} holes rebuilt over {priced:,} traded sessions "
-            f"({kinds}); {invalid['unpriced_cancellation']:,} behind an "
-            f"unpriced cancellation, "
-            f"{invalid['post_delisting_emerging']:,} past a delisting"), traded
+            f"({kinds}); {invalid['series_break']:,} invalid, all one "
+            f"reissued code's earlier occupant"), traded
 
 
 def test_taiwan_rebuild_matches_vendor():
-    """README, "Validated on the 134 covered in-window delistings".
+    """README, "Validated on the 116 covered in-window delistings".
 
-    The rebuild is only trustworthy on the 38 if the same code path reproduces
+    The rebuild is only trustworthy on the 50 if the same code path reproduces
     the vendor where the vendor exists. The gate set is the in-window
     delistings the vendor *does* cover — same era, same situation — and the
     statistic is the one research consumes: the daily adjusted return.
@@ -1770,8 +1871,8 @@ def test_taiwan_rebuild_matches_vendor():
 
     d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
-    ids = sorted(set(d[(d["date"] >= WIN_START)
-                       & (d["date"] <= WIN_END)]["stock_id"].astype(str)))
+    ids = sorted(set(d[(d["date"] >= COVERAGE_START)
+                       & (d["date"] <= COVERAGE_END)]["stock_id"].astype(str)))
     n = ok6 = ok3 = stocks = 0
     for sid in ids:
         try:
@@ -1798,14 +1899,14 @@ def test_taiwan_rebuild_matches_vendor():
         ok6 += int((diff < 1e-6).sum())
         ok3 += int((diff < 1e-3).sum())
 
-    assert (stocks, n) == (134, 268503), (
-        f"README quotes the gate on 134 covered in-window delistings and "
-        f"268,503 daily adjusted returns; this tree gives {stocks} / {n:,}"
+    assert (stocks, n) == (116, 299785), (
+        f"README quotes the gate on 116 covered in-window delistings and "
+        f"299,785 daily adjusted returns; this tree gives {stocks} / {n:,}"
     )
-    assert ok6 / n >= 0.9993 and ok3 / n >= 0.9999, (
-        f"README claims the rebuild reproduces the vendor on 99.93 % of daily "
-        f"adjusted returns to 1e-6 and 99.997 % to 1e-3; this tree gives "
-        f"{100 * ok6 / n:.3f} % / {100 * ok3 / n:.3f} %. Below that the 38 "
+    assert ok6 / n >= 0.9991 and ok3 / n >= 0.9999, (
+        f"README claims the rebuild reproduces the vendor on 99.91 % of daily "
+        f"adjusted returns to 1e-6 and 99.996 % to 1e-3; this tree gives "
+        f"{100 * ok6 / n:.3f} % / {100 * ok3 / n:.3f} %. Below that the 50 "
         f"rebuilt names are no longer validated by anything"
     )
     return (f"{stocks} stocks, {n:,} returns: {100 * ok6 / n:.3f} % match to "
@@ -1951,7 +2052,7 @@ CHECKS = [
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_universe_excludes_the_instruments_it_claims_to,
     test_taiwan_price_adj_one_per_universe,
-    test_taiwan_overlay_covers_2005_2014,
+    test_taiwan_overlay_covers_the_window,
     test_taiwan_adjusted_survivorship_hole,
     test_taiwan_adjusted_coverage_decomposition,
     test_taiwan_vendor_event_audit_is_current,
@@ -1997,8 +2098,17 @@ if __name__ == "__main__":
     # cannot legitimately move at all, while one open past the window grows every
     # time the vendor is re-pulled — a single rule would either fail every
     # refresh or catch nothing.
+    # Re-seeding is the documented path after a refresh, and it was unreachable:
+    # a legitimately moved population fails its own guard, which counts as a
+    # failure, which makes the re-seed refuse — so the path existed only while it
+    # was not needed. Under `--write-populations` the recorded numbers are being
+    # replaced on purpose, so the comparison against them is reported and not
+    # enforced. Every other assertion still has to pass, which is what stops a
+    # broken tree from being written down as the expectation.
+    reseed = "--write-populations" in sys.argv[1:]
     baseline = json.loads(POPULATIONS.read_text()) if POPULATIONS.exists() else {}
     observed = {}
+    drift = []
     failures = skipped = 0
     for fn in CHECKS:
         try:
@@ -2018,6 +2128,9 @@ if __name__ == "__main__":
             if want:
                 moved = (n != want["n"] if want["bound"] == "exact"
                          else n < want["n"])
+                if moved and reseed:
+                    drift.append(f"{fn.__name__} {want['n']:,} -> {n:,}")
+                    moved = False
                 assert not moved, (
                     f"examined {n:,} where {POPULATIONS.name} records "
                     f"{want['n']:,} ({want['bound']}). A shrink means the check "
@@ -2046,10 +2159,11 @@ if __name__ == "__main__":
     if unseeded:
         print(f"NOTE  {len(unseeded)} check(s) absent from {POPULATIONS.name}, so "
               f"their population is unbounded above zero: {', '.join(unseeded)}")
-    if "--write-populations" in sys.argv[1:]:
-        # Re-seeding is the maintenance path after a refresh, so it takes its
-        # numbers only from a run that passed — a baseline written from a broken
-        # tree records the breakage as the expectation.
+    if reseed:
+        # Re-seeding takes its numbers only from a run that passed — a baseline
+        # written from a broken tree records the breakage as the expectation.
+        for d in drift:
+            print(f"MOVED {d}")
         if failures or skipped:
             print("REFUSED to re-seed from a run that did not pass every check")
             failures += 1

@@ -5,8 +5,9 @@ It does not record *why*, and the two whys have opposite signs: a company that
 failed is a total loss, one that was acquired or folded into a holding company
 pays out at something near its last price. A study that drops delisted names
 loses both; one that marks them all -100 % is wrong on the larger half. The
-exchange publishes the reason only for TPEx names delisted from 2021 (7 of the
-173 priced in-window delistings), so the reason has to be read off the panel
+exchange publishes the reason only for TPEx names delisted from 2021 — 46 of
+the 164 priced in-window delistings are dated 2021 or later, and only the TPEx
+ones among them are covered — so the reason has to be read off the panel
 instead.
 
 It is legible there because the price paths differ in shape. An acquisition is
@@ -15,7 +16,7 @@ stops at its own high. A failure collapses. The ratio of the last traded close
 to the highest close of the preceding year separates them without needing the
 level, the currency, or any adjustment — raw and adjusted closes give the same
 ratio to four decimals (median |log difference| 0.0000, correlation 0.984), so
-this runs on every name with a price history rather than the 135 the vendor's
+this runs on every name with a price history rather than the 114 the vendor's
 adjusted series covers.
 
 **The cuts below were fixed before any label was collected, and this file is
@@ -24,23 +25,26 @@ measured at a cut chosen after seeing the answers is an accuracy of the choosing
 ``delisting_labels.csv`` is drawn here, filled in by hand from the exchange and
 the filings, and read back by this same script to report how often the shape was
 right. The labels are in, and at the cuts as committed the shape is right on
-99 % of the 140 names carrying a verdict — an estimate from 18 labelled
+98.7 % of the 126 names carrying a verdict — an estimate from 15 labelled
 verdicts, weighted by stratum, turning on the single miss 1613.
 
-They also show the cuts are placed conservatively: inside the undecided band the
-truth turns over near a drawdown of 0.50, where one cut would decide most of
-what two leave open. That boundary was read off the same labels any rate at it
-would be scored against, so it is not adopted here — it is *registered* here,
-which is the second half of this file.
+The cut inside the band was registered on the frame this package answered about
+before 2026-08-17, on the reading that the truth turns over near a drawdown of
+0.50. That boundary was read off the same labels any rate at it would be scored
+against, so it was never adopted here — it is *registered* here, which is the
+second half of this file. On the corrected frame the reading has weakened and
+the alternative registered beside it has overtaken it: 0.50 is right on 19 of
+the 28 labelled band names and the free halt rule on 24.
 
 ``_DD_SINGLE`` and the gate below are committed before the labels that will test
-them exist, exactly as the two cuts were. Twenty of the 32 undecided names are
-already labelled and are what suggested 0.50, so they cannot test it; the other
-twelve have never been looked up, and ``delisting_band.csv`` records what 0.50
-calls each of them while that is still true — beside the call of the free rule
-it has to beat, registered on the same terms so the comparison is not assembled
-afterwards. Those twelve are the whole test set, and they are as many as there
-will ever be, because the band does not grow. The work that would produce
+them exist, exactly as the two cuts were. Twenty-eight of the 37 undecided names
+are already labelled and are what suggested 0.50, so they cannot test it; the
+other nine have never been looked up, and ``delisting_band.csv`` records what
+0.50 calls each of them while that is still true — beside the call of the free
+rule it has to beat, registered on the same terms so the comparison is not
+assembled afterwards. Those nine are the whole test set, and they are as many as
+there will ever be, because the band does not grow — which is also why the gate
+can no longer be read at all: ``_GATE_MIN_LABELS`` is ten. The work that would produce
 their labels is the payout lookup — an announcement states its own reason, so a
 name looked up for its consideration returns a reason for free — which is why
 this is committed first. Registered after that work begins, it would be
@@ -75,34 +79,36 @@ Parameters, per the repo's degrees-of-freedom convention:
     is what ties the sample to them.
 ``_DD_SINGLE``
     CHOSEN, pre-registered, unscored. One cut proposed to replace the undecided
-    band, read off the 20 band names already labelled and therefore testable
-    only on the 12 that are not.
+    band, read off the band names already labelled and therefore testable only
+    on the nine that are not.
 ``_GATE_NULL``
-    MEASURED, by this script, from those same 20: the larger label class is 11
-    of 20. It is what a reader gets inside the band for free by calling every
+    MEASURED, by this script, from the labelled band: the larger label class is
+    16 of 28. It is what a reader gets inside the band for free by calling every
     name a payout, so it is the rate 0.50 has to beat rather than 0.50 %.
 ``_GATE_ALPHA``, ``_GATE_MIN_LABELS``
-    CHOSEN, pre-registered. The second is not free: below nine labels the
-    criterion can only be met by a perfect score, and a perfect score of eight
-    has a 27 % chance of arriving even if 0.50 is right at the rate the 20
-    suggest. ``_gate_threshold`` derives it, and the assertion re-derives it, so
-    it moves if the other two do.
+    CHOSEN, pre-registered; the second DERIVED from the first two rather than
+    picked. Below ten labels the criterion can only be met by a perfect score,
+    which is not a test of a rule but of whether it ever errs; ten is the
+    smallest sample at which nine of ten clears the null. ``_gate_threshold``
+    derives it, and the assertion re-derives it, so it moves if the other two
+    do. On this frame the held-out set is nine, one short, which is why the
+    gate reports itself unreadable instead of returning a threshold.
 ``_SAMPLE_SEED``, ``_ALLOCATION``
     CHOSEN, pre-registered. Stratified because a uniform draw would spend most
     of its labels in the ``clear`` band where the shape is least in doubt; the
     strata are sized so the boundaries and the undecided middle carry the
     labels, and weighted back up by stratum size to recover a panel-wide rate.
-    Also stratified by era: the composition moves hard across the window (25 of
-    the 65 names delisted 2005-2008 are distress-shaped against 0 of the 22
-    delisted 2011-2014), so a sample drawn only from recent names would measure
-    the wrong mix.
+    The seed is the one committed with the first draw and is not re-rolled here:
+    the frame changed underneath it, which changes the draw on its own, and a
+    fresh seed on top would be a second thing moved at the same time.
 
 BASELINE: price-shape classification | obvious alternative: the exchange's own
-stated reason, which exists for 7 of the 173 | discharge: the reason was read by
-hand for 38 names and the shape agrees with it on all but one, so the objection
-is answered by measurement rather than by argument. The 7 TPEx names are in the
-draw on the same footing as the rest and carry no special weight; 7 labels could
-not have settled this alone, which is why the other 31 were bought.
+stated reason, published for TPEx names from 2021 | discharge: the reason was
+read by hand for 41 names in the frame and the shape agrees with it on all but
+one, so the objection is answered by measurement rather than by argument. The
+names the exchange does state a reason for are in the draw on the same footing
+as the rest and carry no special weight, since they cover neither the TWSE side
+nor anything before 2021.
 
 Not every row of the delisting table is an exit. A name that changes boards is
 recorded as leaving the one it left and goes on trading, so it has no sign to
@@ -135,9 +141,10 @@ A single missing value covering the last two would say a number is absent
 without saying which of two very different things would supply it.
 
 Two things this file deliberately does not use. Balance-sheet equity, because
-the vendor's statement history begins 2012-03-31 and 80 of the 173 delisted
-before 2011 — the coverage is absent by construction rather than by non-filing,
-and where it exists it is a quarter stale by the time the failure lands. And a
+the vendor's statement history begins 2012-03-31 and nine of the 164 delisted
+before it — the coverage is absent by construction rather than by non-filing
+for those, and where it exists it is a quarter stale by the time the failure
+lands. And a
 shared delisting date, which marks a correlated event but not its direction:
 2018-04-30 retires 日月光 and 矽品 into one holding company while 2007-04-11 and
 2007-06-20 retire three names of the 力霸 group into bankruptcy. It is recorded
@@ -152,20 +159,22 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 from .adjusted_loader import _BREAK_GAP_DAYS
+from .window import COVERAGE_START, COVERAGE_END
 
 HERE = Path(__file__).resolve().parent
 
-# The research window; outside it the delisted table is not price-backed.
-_WIN_START, _WIN_END = pd.Timestamp("2005-01-01"), pd.Timestamp("2024-12-31")
+# The research window, declared once for the package in `window.py`.
+_WIN_START, _WIN_END = COVERAGE_START, COVERAGE_END
 
 _PEAK_WINDOW_DAYS = 365
 _DD_DISTRESS = 0.30
 _DD_MERGER = 0.70
 _LONG_SUSPENSION_DAYS = 30
 
-# Stratum edges on the drawdown, and how many labels each stratum gets per era.
+# Stratum edges on the drawdown, and how many labels each stratum gets.
 # The edges are *derived from the cuts* rather than written out, and that is what
 # makes the pre-registration enforceable instead of merely stated: a cut moved
 # after the labels are in moves the stratum boundaries, moves which names were
@@ -179,24 +188,29 @@ _STRATA = [
     ("edge_hi", _DD_MERGER - _STRATUM_BRACKET, _DD_MERGER + _STRATUM_BRACKET),
     ("clear", _DD_MERGER + _STRATUM_BRACKET, 1.01),
 ]
-_EARLY_ERA_END = 2010
-_ALLOCATION = {          # stratum: (labels from <=2010, labels from >2010)
-    "deep": (2, 2),
-    "edge_lo": (6, 2),
-    "mid": (4, 6),
-    "edge_hi": (1, 4),
-    "clear": (3, 3),
-}
+# The draw was stratified by era as well, on the ground that the composition
+# moved hard across the window — 25 of the 65 names delisted 2005-2008 were
+# distress-shaped against 0 of the 22 delisted 2011-2014 — so a sample drawn
+# only from recent names would have measured the wrong mix. The window now
+# starts in 2011 and every name in the frame is a recent one, which leaves the
+# era dimension one non-empty cell and nothing to balance. The per-stratum
+# totals are the old design's two cells added together, so what is retired is
+# the split and not the shape.
+_ALLOCATION = {"deep": 4, "edge_lo": 8, "mid": 10, "edge_hi": 5, "clear": 6}
 _SAMPLE_SEED = 20260817
 
 # The single cut that would close the undecided band, and the gate it has to
 # clear before it may. Registered unscored: the labels that can test it do not
-# exist yet, and the twelve names that can supply them are listed in
+# exist yet, and the nine names that can supply them are listed in
 # `delisting_band.csv` with 0.50's call on each already committed.
 _DD_SINGLE = 0.50
-_GATE_NULL = 0.55            # 11 of the 20 labelled band names are payouts
+_GATE_NULL = 0.571           # 16 of the 28 labelled band names are payouts
 _GATE_ALPHA = 0.05
-_GATE_MIN_LABELS = 9
+# Derived from the null and alpha, not chosen: the smallest sample at which
+# something short of a perfect score clears. The band holds nine, one below it,
+# so the gate cannot be read on the held-out set that exists — see the note in
+# `single_cut_gate`.
+_GATE_MIN_LABELS = 10
 
 _LABEL_FILE = HERE / "delisting_labels.csv"
 _BAND_FILE = HERE / "delisting_band.csv"
@@ -218,14 +232,42 @@ def _price(stock_id: str) -> pd.DataFrame | None:
     return p if len(p) else None
 
 
+def _panel_last_session() -> pd.Timestamp:
+    """The last session anywhere in the price panel.
+
+    Read across the whole panel rather than the delisted frame, and rather than
+    taken from `COVERAGE_END`: this is the measurement `features()` compares a
+    name's last quote against, so it has to be a session the panel really has,
+    not the date the download was asked to stop on.
+
+    Stocks the endpoint returned nothing for are written as zero-row files with
+    no schema at all, so the column projection is guarded instead of pushed down
+    blind — same guard `_price` applies after its read.
+    """
+    last = None
+    for f in sorted(HERE.glob("ohlcv/*.parquet")):
+        if "date" not in pq.read_schema(f).names:
+            continue
+        m = pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"]).max()
+        last = m if last is None or m > last else last
+    assert last is not None, "no priced sessions in ohlcv/"
+    return last
+
+
 def features() -> pd.DataFrame:
     """One row per in-window delisted common stock with a price history."""
     d = pd.read_parquet(HERE / "delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
     d["stock_id"] = d["stock_id"].astype(str)
     d = d[(d["date"] >= _WIN_START) & (d["date"] <= _WIN_END)]
-    # 6-digit codes are ETFs, ETNs and foreign issues; the target is common stock.
-    d = d[d["stock_id"].str.fullmatch(r"[0-9]{4}")]
+    # The target is common stock, and the universe is where that is decided. A
+    # 4-digit code was standing in for it and is not the same test: Taiwan
+    # numbers its ETFs 00xx and its depositary receipts 91xx, and the refreshed
+    # delisting table carries 11 of them inside the window. Under the regex all
+    # 11 entered the frame and left it again for want of a price file, which is
+    # the right answer for a reason that expires the day the file is downloaded.
+    u = set(pd.read_parquet(HERE / "universe.parquet")["stock_id"].astype(str))
+    d = d[d["stock_id"].isin(u)]
 
     rows = []
     for r in d.itertuples():
@@ -258,7 +300,17 @@ def features() -> pd.DataFrame:
     # classify, and it leaves the population. A long one means the 4-digit code
     # was reissued to a different company, whose sessions are in the same file:
     # the original did exit and keeps its row, with a tail of zero.
-    panel_end = f["quoted_through"].max()
+    #
+    # The last session is the panel's, and reading it off this frame instead was
+    # a rule that deleted its own most recent case. Every name here has left,
+    # so the latest quote among them belongs to whichever left last: that name
+    # matches `panel_end` by construction, is read as never having left, and —
+    # having no tail — is dropped as a board transfer. It stayed hidden because
+    # the frame held 6446, which the vendor dated as a delisting and never
+    # delisted, so its quotes ran to the true panel end and pinned the maximum
+    # there. The 2026-08-17 refresh retracts that row, and the rule immediately
+    # ate 8420, the last exit in the window.
+    panel_end = _panel_last_session()
     still_quoted = f["quoted_through"] == panel_end
     transferred = still_quoted & (f["resume_gap"] <= _BREAK_GAP_DAYS)
     f.loc[still_quoted & ~transferred, "tail_sessions"] = 0
@@ -276,7 +328,6 @@ def features() -> pd.DataFrame:
     f["corroborated"] = f["has_tail"] | f["long_suspension"] | f["shared_date"]
     f["needs_lookup"] = (f["sign"] == "ambiguous") & ~f["corroborated"]
 
-    f["era"] = np.where(f["delist_date"].dt.year <= _EARLY_ERA_END, "early", "late")
     f["stratum"] = pd.cut(f["drawdown"],
                           [e[1] for e in _STRATA] + [_STRATA[-1][2]],
                           labels=[e[0] for e in _STRATA], include_lowest=True)
@@ -287,13 +338,12 @@ def draw_sample(f: pd.DataFrame) -> pd.DataFrame:
     """The stratified label draw, fixed by ``_SAMPLE_SEED``."""
     rng = np.random.default_rng(_SAMPLE_SEED)
     picked = []
-    for stratum, (n_early, n_late) in _ALLOCATION.items():
-        for era, want in (("early", n_early), ("late", n_late)):
-            pool = f[(f["stratum"] == stratum) & (f["era"] == era)]
-            take = min(want, len(pool))
-            if take:
-                picked.extend(rng.choice(pool["stock_id"].to_numpy(),
-                                         take, replace=False))
+    for stratum, want in _ALLOCATION.items():
+        pool = f[f["stratum"] == stratum]
+        take = min(want, len(pool))
+        if take:
+            picked.extend(rng.choice(pool["stock_id"].to_numpy(),
+                                     take, replace=False))
     s = f[f["stock_id"].isin(picked)].copy()
     s["purpose"] = "measure"
     return s
@@ -308,11 +358,16 @@ def band_holdout(f: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFrame:
 
     Two calls, not one. ``halt_call`` is the rule a reader gets without the
     drawdown at all — a name whose quotation stopped a month before the formal
-    date, or that went on trading after it, failed — and on the 20 labelled band
-    names it is right 16 times against 0.50's 17, which is no difference at that
-    size. It was read off the same 20, so it is registered on the same footing
-    rather than offered as a foil, and it disagrees with 0.50 on half the
-    held-out names: whatever the labels say, they say it about both.
+    date, or that went on trading after it, failed — and on the 28 labelled band
+    names it is right 24 times against 0.50's 19. It was read off the same 28, so
+    it is registered on the same footing rather than offered as a foil, and it
+    disagrees with 0.50 on three of the nine held-out names: whatever the labels
+    say, they say it about both.
+
+    The two were level when the band was scored on 20 labelled names drawn from
+    a frame that was missing 57 delistings; on the corrected frame the free rule
+    is five ahead. Neither number was measured on held-out labels, so what this
+    licenses is registering both, which is what happens here — not a ranking.
     """
     labelled = set(labels.loc[labels["label"].fillna("") != "", "stock_id"])
     b = f[(f["sign"] == "ambiguous") & ~f["stock_id"].isin(labelled)].copy()
@@ -351,7 +406,14 @@ def single_cut_gate(band: pd.DataFrame) -> dict:
     ``halt`` asks whether the drawdown earned its place against the free rule
     that reads the halt instead — the one comparison that says whether the price
     path is doing the work, and the reason the labels are worth collecting even
-    if 0.50 fails.
+    if 0.50 fails. On the labelled band that comparison has now gone the other
+    way, which is what registering the alternative was for.
+
+    The gate is unreadable as things stand and the arithmetic says so rather than
+    the prose: nine names are held out and ``_GATE_MIN_LABELS`` is ten, so
+    ``need`` is ``None`` however many of the nine get labelled. Closing the band
+    on the registered cut is not available on this frame, and the way back is a
+    larger held-out set, not a lower bar.
     """
     scored = band[band["label"].fillna("") != ""]
     n = len(scored)
@@ -372,15 +434,29 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     be applied to are here — cash per share, and swaps quoted as a number of
     successor shares. A ratio written ``2.45:1`` has two readings, and picking
     the reading that lands nearer the last close would measure the picking.
-    Those deals are excluded rather than resolved by inspection; four of the 18
-    payout labels go that way.
+    Those deals are excluded rather than resolved by inspection.
 
     A swap is worth the successor's price, so it is priced on the panel at the
     delisting date rather than taken from the filing.
+
+    Four of the 34 payout labels are recorded here, and that is a transcription
+    backlog rather than a property of the deals: the file was built against the
+    38 labels the package held before the 2026-08-17 refresh, and the
+    re-registered draw added 23 payout labels whose ``source`` already names a
+    per-share price or a share ratio. Reading them across would take the two
+    conventions from n=2 and n=2 to roughly n=8 and n=15 and is the single
+    cheapest thing that would sharpen the bias below.
     """
     c = pd.read_csv(_CONSIDERATION_FILE,
                     dtype={"stock_id": str, "successor": str})
     c["delist_date"] = pd.to_datetime(c["delist_date"])
+    # Two of the six were looked up when the package still answered about 2005
+    # onward and delisted before `COVERAGE_START`. They stay in the file as the
+    # record of what was read, and are dropped here because the frame no longer
+    # reaches them. Only that reason is allowed to drop a row: a name inside the
+    # window that is not one priced exit is still the assertion below.
+    outside = c["delist_date"] < _WIN_START
+    c = c[~outside]
     rows = []
     for r in c.itertuples():
         assert (f["stock_id"] == r.stock_id).sum() == 1, \
@@ -415,19 +491,19 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     the acquirer while the target no longer trades, so a longer gap should carry
     a larger error, and the gap would then price the bias on a name whose
     acquirer cannot be identified. It does not, twice over. The gap barely
-    varies: 13, 13, 13, 14 days across the swaps against a residual spread of
-    +3 % to +13 %, and 77 % of the 99 payout-shaped names sit in 7-14 days,
+    varies: 13 and 14 days across the swaps against a residual spread of
+    +9.9 % to +12.5 %, and 87 % of the 98 payout-shaped names sit in 7-14 days,
     because the gap is the settlement calendar rather than anything about the
     deal. And the mechanism cannot have run at all — ``overlap`` counts the
     successor's sessions on or before the target's last trade and it is zero on
-    every swap here, so there was no acquirer price to drift. All four are
+    every swap here, so there was no acquirer price to drift. Both are
     holding-company conversions, whose successor first trades on the day the
     target leaves. That is a property of the selection above and not a
     coincidence: a share exchange stated 1:1 or as a flat share count is what a
     conversion looks like, while a third-party acquisition for stock is the case
     that carries the odd ratio excluded here — so the staleness account is
     untested rather than refuted, and it is untestable on the deals in hand.
-    Across all six the rank correlation with the gap is 0.76, which is the cash
+    Across the four the rank correlation with the gap is 0.80, which is the cash
     deals settling in 1 and 7 days against the swaps' 13 and 14: the gap standing
     in for the deal form, reported under its own name.
 
@@ -451,7 +527,7 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
 
     A hand-read filing outranks a price shape wherever one exists, so a label
     settles the sign and the classifier fills the rest. That is not a courtesy
-    to the labels: 20 of the 32 undecided names already carry one, and booking
+    to the labels: 28 of the 37 undecided names already carry one, and booking
     NaN for them would refuse an answer this package has already bought. It
     also overturns one verdict outside the band, 1613, which is the single
     disagreement ``accuracy`` reports and is left to stand there — the rate the
@@ -526,7 +602,7 @@ def main() -> None:
                 purpose="resolve"),
         ])[["stock_id", "stock_name", "delist_date", "drawdown",
             "suspension_days", "tail_sessions", "shared_date", "sign",
-            "stratum", "era", "purpose"]]
+            "stratum", "purpose"]]
         out = out.sort_values(["purpose", "stratum", "delist_date"])
         out["label"] = ""        # merger | distress — filled in by hand
         # swap | cash, and blank wherever `source` names a merger without saying
@@ -544,7 +620,10 @@ def main() -> None:
           f"{(f['sign'] == 'merger').sum()}")
     print(f"  ambiguous: {(f['sign'] == 'ambiguous').sum()}, of which "
           f"{len(lookup)} carry no corroborating feature")
-    print(f"  label sample: {len(sample)} to measure, {len(lookup)} to resolve")
+    # The residue only — a name that needs looking up and was also drawn is
+    # already a `measure` row, and counting it twice overstated the file.
+    residue = int((~lookup["stock_id"].isin(sample["stock_id"])).sum())
+    print(f"  label sample: {len(sample)} to measure, {residue} to resolve")
     print(f"  wrote {_OUT_FILE.name}")
 
     labels = pd.read_csv(_LABEL_FILE, dtype={"stock_id": str})

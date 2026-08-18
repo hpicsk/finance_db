@@ -1,10 +1,20 @@
 """Filter Taiwan stock universe to common equities on TWSE + TPEx.
 
-Merges in pre-2015 delistings from `delisted_universe.parquet` that
-FinMind's live `taiwan_stock_info` endpoint no longer returns. This is
-required for symmetry with fnguide's "all codes" filter on the Korean
-side — without these names, the Taiwan panel is survivorship-biased
-against pre-2015 delistings while fnguide is not.
+Merges in delistings from `delisted_universe.parquet` that FinMind's live
+`taiwan_stock_info` endpoint no longer returns. This is required for symmetry
+with fnguide's "all codes" filter on the Korean side — without these names,
+the Taiwan panel is survivorship-biased against delistings while fnguide is
+not.
+
+The re-add used to be gated at `date < 2015-01-01`, on the premise that the
+live endpoint keeps every name that delisted from 2015 on. It does not, and
+the gate was never evidence for it: the delisting table the premise was
+checked against held 315 rows and simply did not know about the names that
+would have falsified it. The 2026-08-17 refresh brings the table to 723, and
+46 of the names it adds delisted in 2015 or later with no row in the live
+endpoint at all. The gate is now the window itself, and the test of whether a
+name needs re-adding is the one the gate stood in for — whether the endpoint
+still serves it.
 
 `taiwan_stock_info` returns one row per (market, industry) a stock has been
 classified under, not one row per stock: 835 of 2,162 four-digit TWSE/TPEx
@@ -23,7 +33,9 @@ from FinMind.data import DataLoader
 import pandas as pd
 from pathlib import Path
 
-OUT = Path("/home/st/research/finance_db/finmind_data")
+from .window import COVERAGE_START, COVERAGE_END
+
+OUT = Path(__file__).resolve().parent
 
 dl = DataLoader()
 raw = dl.taiwan_stock_info()
@@ -69,9 +81,9 @@ assert not (set(info["stock_id"]) & excluded_ids), (
     "the filter is dropping rows where it must drop stocks"
 )
 
-# Merge in pre-2015 4-digit common-stock delistings that the live
-# taiwan_stock_info endpoint has dropped. These are needed for the
-# 2005+ window to mirror fnguide root-level "all codes" coverage.
+# Merge in in-window 4-digit common-stock delistings that the live
+# taiwan_stock_info endpoint has dropped. These are needed to mirror fnguide
+# root-level "all codes" coverage.
 #
 # What has to be absent is the *company*, not the code. Testing the code
 # against `info` re-admitted the four TDRs 9101/9102/9104/9151 for years: the
@@ -83,16 +95,21 @@ assert not (set(info["stock_id"]) & excluded_ids), (
 # delisting was recorded under: those four are still listed under their own,
 # and 2432 is not.
 delisted = pd.read_parquet(OUT / "delisted_universe.parquet")
-pre2015 = delisted[(delisted["date"] >= "2005-01-01")
-                   & (delisted["date"] < "2015-01-01")].copy()
-pre2015 = pre2015[pre2015["stock_id"].str.fullmatch(r"\d{4}")]
+exits = delisted[delisted["date"] >= str(COVERAGE_START.date())].copy()
+exits = exits[exits["stock_id"].str.fullmatch(r"\d{4}")]
 live_names = raw.groupby("stock_id")["stock_name"].apply(set)
 same_company = pd.Series(
     [nm in live_names.get(sid, set())
-     for sid, nm in zip(pre2015["stock_id"], pre2015["stock_name"])],
-    index=pre2015.index)
-missing = pre2015[~pre2015["stock_id"].isin(info["stock_id"])
-                  & ~same_company].copy()
+     for sid, nm in zip(exits["stock_id"], exits["stock_name"])],
+    index=exits.index)
+# A 4-digit code is not by itself a common stock: Taiwan numbers its ETFs
+# 00xx and its depositary receipts 91xx, so the regex above admits both. They
+# are excluded here by the criterion rather than by the accident that
+# `same_company` also catches them today — the endpoint still serves all 11 of
+# them under their own names, and would stop doing so the day one is purged.
+missing = exits[~exits["stock_id"].isin(info["stock_id"])
+                & ~exits["stock_id"].isin(excluded_ids)
+                & ~same_company].copy()
 missing = pd.DataFrame({
     "industry_category": pd.Series([None] * len(missing), dtype="object"),
     "stock_id": missing["stock_id"].astype(str).values,
@@ -101,16 +118,17 @@ missing = pd.DataFrame({
     # date column = first-known date; for delistings we use delisting date.
     "date": missing["date"].astype(str).values,
 })
-print(f"Adding {len(missing)} pre-2015 delistings missing from live "
+print(f"Adding {len(missing)} in-window delistings missing from live "
       f"taiwan_stock_info.")
 info = pd.concat([info, missing], ignore_index=True)
 
 assert info["stock_id"].is_unique, "duplicate stock_id in the built universe"
 
-print(f"Universe size: {len(info)}")
+print(f"Universe size: {len(info)}  "
+      f"({COVERAGE_START.date()}..{COVERAGE_END.date()})")
 print(f"  TWSE: {(info['type']=='twse').sum()}")
 print(f"  TPEx: {(info['type']=='tpex').sum()}")
-print(f"  pre-2015 delistings (type unknown): "
+print(f"  delistings the endpoint dropped (type unknown): "
       f"{info['type'].isna().sum()}")
 print(f"Excluded by instrument type: {len(excluded_ids)}")
 print("\nTop industries:")

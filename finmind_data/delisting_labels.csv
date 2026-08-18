@@ -1,39 +1,69 @@
-stock_id,stock_name,delist_date,drawdown,suspension_days,tail_sessions,shared_date,sign,stratum,era,purpose,label,form,source
-2335,清三電子,2006-07-12,0.2242857142857142,139,0,True,distress,deep,early,measure,distress,,"financial failure, ceased operations"
-2523,德寶營造,2007-03-12,0.1001221001221001,250,0,False,distress,deep,early,measure,distress,,court reorganisation (重整)
-6702,興航,2017-02-02,0.0878980891719745,9,0,False,distress,deep,late,measure,distress,,"dissolved 2016-11, bankrupt 2018-06 (TransAsia)"
-2475,華映,2019-05-13,0.0772727272727272,3,0,False,distress,deep,late,measure,distress,,"negative net worth, bankruptcy petition (CPT)"
-2902,中信,2005-06-13,0.2580645161290322,3,0,False,distress,edge_lo,early,measure,distress,,"net worth negative, exchange rule"
-2318,佳錄,2005-07-05,0.2555555555555555,1,0,True,distress,edge_lo,early,measure,distress,,"forced delisting, 東雲 group"
-3039,宏傳,2005-11-13,0.2876190476190476,264,0,False,distress,edge_lo,early,measure,distress,,"accounting fraud, chairman absconded"
-2333,碧悠電子,2007-06-20,0.2596899224806202,190,0,True,distress,edge_lo,early,measure,distress,,"net worth -0.07/share, bankruptcy petition"
-1601,台灣日光燈,2007-10-15,0.295049504950495,98,0,False,distress,edge_lo,early,measure,distress,,"failed to file, ceased business 2008-02"
-2381,華宇光能,2009-07-12,0.3050847457627118,2,805,False,ambiguous,edge_lo,early,measure,distress,,"failed listing standards after asset sale, no payout"
-5259,奕智博,2020-01-09,0.2687224669603524,52,0,False,distress,edge_lo,late,measure,distress,,"failed to file, refused-transaction status"
-2358,廷鑫,2024-11-19,0.3211267605633803,230,0,True,ambiguous,edge_lo,late,measure,distress,,"failed to file 2023 annual + 2 quarters, forced"
-2416,世平興業,2005-11-09,0.5384615384615384,13,0,True,ambiguous,mid,early,measure,merger,swap,share swap 1.18:1 into WPG Holdings 3702
-2470,品佳,2005-11-09,0.5512465373961218,13,0,True,ambiguous,mid,early,measure,merger,swap,share swap 1:1 into WPG Holdings 3702
-2407,陞技電腦,2006-05-10,0.3553299492385786,0,45,False,ambiguous,mid,early,measure,distress,,"financial-statement fraud, negative net worth"
-3271,其樂達,2008-06-30,0.5387713997985901,13,0,False,ambiguous,mid,early,measure,distress,,"sustained losses, operations ceased"
-8199,廣鎵,2012-12-28,0.5139896373056995,8,0,False,ambiguous,mid,late,measure,merger,swap,share swap into Epistar 2448
-3080,威力盟,2013-02-01,0.5819477434679334,11,0,False,ambiguous,mid,late,measure,merger,,"merged into Lextar 3698, effective 2013-02-01"
-4733,上緯,2016-08-31,0.5333333333333333,13,0,False,ambiguous,mid,late,measure,merger,swap,share swap 1:1 into holding co 3708
-3514,昱晶,2018-10-01,0.625,14,0,True,ambiguous,mid,late,measure,merger,swap,share swap 1.39 into 新日光 / United Renewable
-2841,台開,2022-08-04,0.3701657458563536,120,0,False,ambiguous,mid,late,measure,distress,,"defaults, refused-transaction, forced delisting"
-3536,誠創,2023-06-26,0.4991452991452991,76,0,False,ambiguous,mid,late,measure,distress,,Q1 2023 net worth negative
-2366,亞旭電腦,2006-03-01,0.6806282722513088,6,0,False,ambiguous,edge_hi,early,measure,merger,swap,share swap 7:1 into Asustek 2357
-3367,英華達,2011-10-07,0.6805293005671078,9,0,False,ambiguous,edge_hi,late,measure,merger,swap,share swap 1:1.68 into Inventec 2356
-5854,合庫,2011-12-01,0.7235294117647059,13,0,False,merger,edge_hi,late,measure,merger,swap,share swap into holding co 5880
-1613,台一,2017-11-21,0.7480106100795756,229,0,False,merger,edge_hi,late,measure,distress,,"failed to file China subsidiary accounts, forced"
-8420,明揚,2024-11-29,0.6612377850162867,9,0,False,ambiguous,edge_hi,late,measure,distress,,"suspended 6 months, compulsory termination"
-2822,農民銀行,2006-05-01,0.7706422018348624,13,0,False,merger,clear,early,measure,merger,swap,merged into 合作金庫 at 2.45:1
-3020,奇普仕,2008-01-10,0.989145183175034,8,0,False,merger,clear,early,measure,merger,swap,"acquired by Arrow Electronics, share conversion"
-2452,乾坤,2010-03-31,0.9904761904761904,7,0,False,merger,clear,early,measure,merger,swap,"share swap 1.07:1 into Delta 2308, 14.6% premium"
-3638,F-IML,2014-09-10,0.9988950276243096,1,0,False,merger,clear,late,measure,merger,cash,"acquired by Exar at NT$91, ~34% premium"
-3698,隆達,2021-01-06,0.9008097165991904,14,0,True,merger,clear,late,measure,merger,swap,share swap 0.275 into Ennostar 3714
-8480,泰昇-KY,2022-12-21,0.8134615384615385,7,0,False,merger,clear,late,measure,merger,cash,"cash merger at NT$85, 33.7% premium"
-2494,突破,2008-10-27,0.3016666666666667,5,0,False,ambiguous,edge_lo,early,resolve,distress,,"net worth below par, forced delisting"
-2389,世昕企業,2005-10-30,0.4439252336448598,12,0,False,ambiguous,mid,early,resolve,distress,,"financial difficulty, operations ceased"
-2391,合勤科技,2010-08-16,0.6445182724252491,13,0,False,ambiguous,mid,early,resolve,merger,swap,share swap 1:1 into holding co 3704
-6255,奈普,2010-09-15,0.5892255892255892,13,0,False,ambiguous,mid,early,resolve,merger,swap,merged into 輔祥 with share conversion
-5280,F-敦泰,2015-01-02,0.4790322580645161,14,0,False,ambiguous,mid,late,resolve,merger,,"merged into 旭曜 3545, 11% premium"
+stock_id,stock_name,delist_date,drawdown,suspension_days,tail_sessions,shared_date,sign,stratum,purpose,label,form,source
+4703,揚華科技股份有限公司,2016-03-30 00:00:00,0.04811205846528624,225,0,True,distress,deep,measure,distress,,"fake-transaction fraud, could not file financials; 31 indicted 2016-01"
+6107,華美電子股份有限公司,2018-06-27 00:00:00,0.04064587973273942,223,0,False,distress,deep,measure,distress,,"could not file financials; fake overseas trades, NT$4.2bn embezzled 2014-16"
+4803,VHQ-KY,2021-12-27 00:00:00,0.07700534759358289,12,0,False,distress,deep,measure,distress,,"net worth negative 2021Q3, uncorrected; TPEx rule 12-2-1-4"
+6404,通訊-KY,2024-07-02 00:00:00,0.1966101694915254,224,0,False,distress,deep,measure,distress,,going-concern opinion 3 years unremedied; suspended 2023-11-22
+8053,巨擘科技股份有限公司,2016-05-11 00:00:00,0.3238095238095238,1,0,False,ambiguous,edge_lo,measure,distress,,"court reorganisation petition 2012-07, liabilities NT$4.27bn"
+6250,宇加科技股份有限公司,2016-05-25 00:00:00,0.25391849529780564,225,0,False,distress,edge_lo,measure,distress,,same fake-transaction ring as 4703; ex-chairman indicted 2016-01
+8082,漢承泰企業股份有限公司,2016-09-26 00:00:00,0.294314381270903,3,0,False,distress,edge_lo,measure,distress,,"financial records lost, reporting system failed, revenue misreported"
+5255,美桀科技股份有限公司,2018-11-30 00:00:00,0.31556039173014144,9,0,False,ambiguous,edge_lo,measure,merger,swap,"share transfer into Chilisin 2456, 0.3562:1"
+3431,長天科技股份有限公司,2019-09-02 00:00:00,0.3224431818181818,227,0,False,ambiguous,edge_lo,measure,distress,,"suspended 6 months, internal-control failure, bounced cheque, staff dismissed"
+5259,奕智博,2020-01-09 00:00:00,0.2687224669603524,52,0,False,distress,edge_lo,measure,distress,,"failed to file, refused-transaction status"
+3452,益通光能科技股份有限公司,2020-01-13 00:00:00,0.3181818181818182,3,0,False,ambiguous,edge_lo,measure,distress,,six consecutive months of zero revenue; TPEx rule 12-2-1-7; dissolved 2020-03-31
+2358,廷鑫,2024-11-19 00:00:00,0.3211267605633803,230,0,True,ambiguous,edge_lo,measure,distress,,"failed to file 2023 annual + 2 quarters, forced"
+3389,志遠電子股份有限公司,2012-02-01 00:00:00,0.577027027027027,16,0,False,ambiguous,mid,measure,merger,swap,"share swap into WT Micro 3036, announced 2011-08"
+3126,信億科技股份有限公司,2016-04-06 00:00:00,0.45454545454545453,407,0,False,ambiguous,mid,measure,distress,,halted 2015-02-25 over undisclosed/inconsistent bank records; never resumed
+4733,上緯,2016-08-31 00:00:00,0.5333333333333333,13,0,False,ambiguous,mid,measure,merger,swap,share swap 1:1 into holding co 3708
+4965,商店街市集國際資訊股份有限公司,2018-06-22 00:00:00,0.5625806451612904,1,0,False,ambiguous,mid,measure,merger,cash,PChome 8044 bought in minorities at NT$44/share
+3428,光燿科技股份有限公司,2018-10-01 00:00:00,0.4571240105540897,14,0,True,ambiguous,mid,measure,merger,swap,share transfer into new holdco 3172 alongside 6145 and 6298
+6145,勁永,2018-10-01 00:00:00,0.4412587412587412,14,0,True,ambiguous,mid,measure,merger,swap,share transfer into new holdco Wistron-Yung-Wei 3172
+3514,昱晶,2018-10-01 00:00:00,0.625,14,0,True,ambiguous,mid,measure,merger,swap,share swap 1.39 into 新日光 / United Renewable
+8913,全銓租賃股份有限公司,2020-01-20 00:00:00,0.5745140388768899,7,0,False,ambiguous,mid,measure,merger,cash,share transfer to 宏育管理顧問 at NT$13.4/share cash
+1333,恩得利工業股份有限公司,2020-11-17 00:00:00,0.5255474452554744,225,0,False,ambiguous,mid,measure,distress,,failed to file financials from 2019; suspended 2020-04-07
+3089,億杰,2024-03-04 00:00:00,0.5276872964169381,229,0,False,ambiguous,mid,measure,distress,,suspended 6+ months after control change; never resumed
+3367,英華達,2011-10-07 00:00:00,0.6805293005671078,9,0,False,ambiguous,edge_hi,measure,merger,swap,share swap 1:1.68 into Inventec 2356
+5395,圓方創新股份有限公司,2017-02-18 00:00:00,0.6605504587155964,227,0,False,ambiguous,edge_hi,measure,distress,,"ex-chairman embezzlement, non-arm's-length transactions"
+1613,台一,2017-11-21 00:00:00,0.7480106100795756,229,0,False,merger,edge_hi,measure,distress,,"failed to file China subsidiary accounts, forced"
+5491,連展科技股份有限公司,2017-12-29 00:00:00,0.7222222222222222,11,0,False,merger,edge_hi,measure,merger,swap,1:1 share transfer into holdco 連展投控
+8420,明揚,2024-11-29 00:00:00,0.6612377850162867,9,0,False,ambiguous,edge_hi,measure,distress,,"suspended 6 months, compulsory termination"
+3534,雷凌,2011-10-01 00:00:00,0.7945736434108527,9,0,False,merger,clear,measure,merger,swap,"share swap into MediaTek 2454, 3.15:1, effective 2011-10-01"
+3638,F-IML,2014-09-10 00:00:00,0.9988950276243095,1,0,False,merger,clear,measure,merger,cash,"acquired by Exar at NT$91, ~34% premium"
+4762,三汰控股(開曼)股份有限公司,2017-08-01 00:00:00,0.7986111111111112,1,0,False,merger,clear,measure,merger,cash,tender by Granadilla Ltd; voluntary delisting
+3315,宣昶,2017-10-01 00:00:00,0.9981412639405206,9,0,True,merger,clear,measure,merger,cash,"WT Micro 3036 at NT$27/share, NT$1.897bn"
+3068,美磊科技股份有限公司,2018-06-13 00:00:00,1.0,7,0,False,merger,clear,measure,merger,swap,share transfer into Chilisin 2456
+6247,淇譽電,2023-02-10 00:00:00,1.0,9,0,False,merger,clear,measure,merger,cash,share transfer to 福譽投資 for cash
+8199,廣鎵,2012-12-28 00:00:00,0.5139896373056995,8,0,False,ambiguous,mid,resolve,merger,swap,share swap into Epistar 2448
+3080,威力盟,2013-02-01 00:00:00,0.5819477434679334,11,0,False,ambiguous,mid,resolve,merger,swap,"merged into Lextar 3698, 2:1, effective 2013-02-01"
+5280,F-敦泰,2015-01-02 00:00:00,0.4790322580645161,14,0,False,ambiguous,mid,resolve,merger,swap,"merged into Orise 3545, 1:4.8, 11% premium; Orise survived, renamed FocalTech"
+6211,福登精密工業股份有限公司,2016-01-04 00:00:00,0.5616797900262467,4,0,False,ambiguous,mid,resolve,merger,cash,tender by BOOTHBAY PTE LTD at NT$21.59/share
+8266,中日新科技股份有限公司,2016-11-15 00:00:00,0.628698224852071,7,0,False,ambiguous,mid,resolve,merger,cash,parent 台灣顯示器 at NT$21.4/share cash
+3299,帛漢股份有限公司,2018-11-29 00:00:00,0.48205128205128206,8,0,False,ambiguous,mid,resolve,merger,swap,"share transfer into Kaimei 5317, 0.93:1"
+6497,亞獅康-KY,2020-08-25 00:00:00,0.47966101694915253,1,0,False,ambiguous,mid,resolve,distress,,net worth negative 2020Q2; TPEx rule 12-2-1-4; moved primary listing to NASDAQ
+4944,兆遠,2023-11-01 00:00:00,0.5296803652968036,7,0,False,ambiguous,mid,resolve,merger,swap,"share transfer into GlobalWafers 6488, 0.02:1"
+2335,清三電子,2006-07-12,0.2242857142857142,139,0,True,distress,deep,prior,distress,,"financial failure, ceased operations"
+2523,德寶營造,2007-03-12,0.1001221001221001,250,0,False,distress,deep,prior,distress,,court reorganisation (重整)
+6702,興航,2017-02-02,0.0878980891719745,9,0,False,distress,deep,prior,distress,,"dissolved 2016-11, bankrupt 2018-06 (TransAsia)"
+2475,華映,2019-05-13,0.0772727272727272,3,0,False,distress,deep,prior,distress,,"negative net worth, bankruptcy petition (CPT)"
+2902,中信,2005-06-13,0.2580645161290322,3,0,False,distress,edge_lo,prior,distress,,"net worth negative, exchange rule"
+2318,佳錄,2005-07-05,0.2555555555555555,1,0,True,distress,edge_lo,prior,distress,,"forced delisting, 東雲 group"
+3039,宏傳,2005-11-13,0.2876190476190476,264,0,False,distress,edge_lo,prior,distress,,"accounting fraud, chairman absconded"
+2333,碧悠電子,2007-06-20,0.2596899224806202,190,0,True,distress,edge_lo,prior,distress,,"net worth -0.07/share, bankruptcy petition"
+1601,台灣日光燈,2007-10-15,0.295049504950495,98,0,False,distress,edge_lo,prior,distress,,"failed to file, ceased business 2008-02"
+2381,華宇光能,2009-07-12,0.3050847457627118,2,805,False,ambiguous,edge_lo,prior,distress,,"failed listing standards after asset sale, no payout"
+2416,世平興業,2005-11-09,0.5384615384615384,13,0,True,ambiguous,mid,prior,merger,swap,share swap 1.18:1 into WPG Holdings 3702
+2470,品佳,2005-11-09,0.5512465373961218,13,0,True,ambiguous,mid,prior,merger,swap,share swap 1:1 into WPG Holdings 3702
+2407,陞技電腦,2006-05-10,0.3553299492385786,0,45,False,ambiguous,mid,prior,distress,,"financial-statement fraud, negative net worth"
+3271,其樂達,2008-06-30,0.5387713997985901,13,0,False,ambiguous,mid,prior,distress,,"sustained losses, operations ceased"
+2841,台開,2022-08-04,0.3701657458563536,120,0,False,ambiguous,mid,prior,distress,,"defaults, refused-transaction, forced delisting"
+3536,誠創,2023-06-26,0.4991452991452991,76,0,False,ambiguous,mid,prior,distress,,Q1 2023 net worth negative
+2366,亞旭電腦,2006-03-01,0.6806282722513088,6,0,False,ambiguous,edge_hi,prior,merger,swap,share swap 7:1 into Asustek 2357
+5854,合庫,2011-12-01,0.7235294117647059,13,0,False,merger,edge_hi,prior,merger,swap,share swap into holding co 5880
+2822,農民銀行,2006-05-01,0.7706422018348624,13,0,False,merger,clear,prior,merger,swap,merged into 合作金庫 at 2.45:1
+3020,奇普仕,2008-01-10,0.989145183175034,8,0,False,merger,clear,prior,merger,swap,"acquired by Arrow Electronics, share conversion"
+2452,乾坤,2010-03-31,0.9904761904761904,7,0,False,merger,clear,prior,merger,swap,"share swap 1.07:1 into Delta 2308, 14.6% premium"
+3698,隆達,2021-01-06,0.9008097165991904,14,0,True,merger,clear,prior,merger,swap,share swap 0.275 into Ennostar 3714
+8480,泰昇-KY,2022-12-21,0.8134615384615385,7,0,False,merger,clear,prior,merger,cash,"cash merger at NT$85, 33.7% premium"
+2494,突破,2008-10-27,0.3016666666666667,5,0,False,ambiguous,edge_lo,prior,distress,,"net worth below par, forced delisting"
+2389,世昕企業,2005-10-30,0.4439252336448598,12,0,False,ambiguous,mid,prior,distress,,"financial difficulty, operations ceased"
+2391,合勤科技,2010-08-16,0.6445182724252491,13,0,False,ambiguous,mid,prior,merger,swap,share swap 1:1 into holding co 3704
+6255,奈普,2010-09-15,0.5892255892255892,13,0,False,ambiguous,mid,prior,merger,swap,merged into 輔祥 with share conversion
