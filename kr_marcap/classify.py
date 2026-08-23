@@ -15,7 +15,15 @@ adding an "official label" collector for any of these axes:
     official SPAC flag — better-founded than the 스팩 name match), plus
     '관리종목'/'투자주의환기종목'/'외국기업' (admin/alert/foreign — consumed by
     kr_status, see CLAUDE.md). classify_ticker takes only (code, name, market),
-    so it can't see Dept; a Dept-aware caller can flag SPAC officially.
+    so it can't see Dept. That signature stays: reading Dept here would make
+    every caller a marcap reader, and fnguide_data and kr_delisted classify
+    without marcap on purpose. The name match is instead held against the
+    official flag from outside, by
+    test_assertions.py::test_spac_kind_matches_krx_official_flag — over
+    2005-2024, no flagged session classifies 'common' or lands inside a 'common'
+    spell of the point-in-time panel, and every name match the flag misses falls
+    in one of its three gaps (KOSPI, pre-2011-05-02, or a Dept slot an admin
+    designation holds). Read that check before widening either regex below.
 """
 from __future__ import annotations
 

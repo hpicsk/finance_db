@@ -263,6 +263,129 @@ def test_fnguide_disagreement_is_the_stuck_oracle():
             f"{n_tickers} tickers"), len(days)
 
 
+# ---- the 스팩 name match, held against KRX's own 소속부 flag -------------------
+# classify.py's docstring already concedes the position this check measures the
+# cost of: marcap's `Dept` column carries an official 'SPAC(소속부없음)' flag
+# "better-founded than the 스팩 name match", and `classify_ticker(code, name,
+# market)` cannot see it. So the security-type boundary rests on a regex — and on
+# a second copy of that regex in fnguide_data, where the two agreeing shows only
+# that one was copied from the other.
+def test_spac_kind_matches_krx_official_flag():
+    """Hold the name-based SPAC test against KRX's flag, in the direction that
+    can move a downstream sample: an officially-flagged session must not be
+    classified 'common', and must not fall inside a 'common' spell of the
+    point-in-time panel, which is what a consumer restricting to common stock
+    actually reads. Where a flagged session lands among the other excluded kinds
+    is reported and not bounded — 'spac' or 'fund' removes the same rows.
+
+    The converse — every name match carries the flag — is false and must not be
+    asserted. The flag is a KOSDAQ 소속부: absent on KOSPI SPACs, absent before
+    it was introduced, and singular, so an admin designation on the same session
+    displaces it rather than joining it. Those three gaps are named here and
+    their residue is required to be empty, which is what keeps the check from
+    being satisfied by the flag itself thinning out. The first two are also
+    pinned against the data — the introduction date and the KOSDAQ-only reach are
+    each asserted — because both are measurements, and a gap read off the same
+    re-pull it excuses widens itself. The third needs no pin: `Dept` is one
+    column, so a designation occupying it is structural.
+    """
+    sys.path.insert(0, str(REPO))
+    from kr_marcap.classify import classify_ticker
+
+    panel_fp = REPO / "kr_marcap/cache/universe_panel.parquet"
+    if not panel_fp.exists():
+        raise Skipped("universe_panel.parquet not built")
+
+    SPAC_DEPT = "SPAC(소속부없음)"
+    ADMIN_DEPT = ("관리종목(소속부없음)", "투자주의환기종목(소속부없음)")
+
+    frames = []
+    for fp in sorted(glob.glob(str(REPO / "marcap/data/marcap-*.parquet"))):
+        y = int(os.path.basename(fp).split("-")[-1][:4])
+        if WIN_START.year <= y <= WIN_END.year:
+            frames.append(pd.read_parquet(
+                fp, columns=["Date", "Code", "Name", "Dept", "Market"]))
+    d = pd.concat(frames, ignore_index=True)
+    d["Date"] = pd.to_datetime(d["Date"])
+    d = d[(d["Date"] >= WIN_START) & (d["Date"] <= WIN_END)]
+    d["Code"] = d["Code"].astype(str).str.zfill(6)
+    d["official"] = d["Dept"].fillna("") == SPAC_DEPT
+
+    # classify_ticker is pure in (code, name, market), so classify the distinct
+    # triples and map back rather than calling it once per session-row.
+    triples = d[["Code", "Name", "Market"]].drop_duplicates()
+    triples["kind"] = [classify_ticker(c, n, m)
+                       for c, n, m in triples.itertuples(index=False)]
+    d = d.merge(triples, on=["Code", "Name", "Market"], how="left")
+    off = d[d["official"]]
+
+    # Every bound below is a "no violations", and an absent flag satisfies all of
+    # them. Pin what is supposed to be under test before testing anything with it.
+    assert len(off) > 100_000 and off["Code"].nunique() > 250, (
+        f"marcap's official SPAC flag covers {len(off):,} sessions across "
+        f"{off['Code'].nunique()} codes in {WIN_START:%Y}-{WIN_END:%Y}; the "
+        f"agreement bounds below are vacuous against a flag this sparse"
+    )
+
+    leaked = off[off["kind"] == "common"]
+    assert leaked.empty, (
+        f"{len(leaked):,} sessions KRX flags '{SPAC_DEPT}' classify as 'common' "
+        f"across {leaked['Code'].nunique()} codes "
+        f"({sorted(leaked['Code'].unique())[:5]}): every consumer restricting to "
+        f"common stock is holding shell prices"
+    )
+
+    # A code that merges keeps trading under the same number, so nothing marks
+    # the handover but the date the panel splits its spells at. Join each flagged
+    # session onto its code's 'common' spells; one landing inside a spell is a
+    # shell's price sold as the operating company's.
+    pan = pd.read_parquet(panel_fp)
+    pan["code"] = pan["code"].astype(str).str.zfill(6)
+    com = pan[pan["kind"] == "common"][["code", "first_date", "last_date"]]
+    j = off[["Code", "Date"]].merge(com, left_on="Code", right_on="code")
+    inside = j[(j["Date"] >= j["first_date"]) & (j["Date"] <= j["last_date"])]
+    assert inside.empty, (
+        f"{len(inside):,} flagged SPAC sessions fall inside a 'common' spell of "
+        f"universe_panel across {inside['Code'].nunique()} codes "
+        f"({sorted(inside['Code'].unique())[:5]}): the panel dates the "
+        f"shell-to-issuer handover later than KRX does"
+    )
+
+    # The introduction date is one of the three gaps, so reading it off the data
+    # would let a re-pull that lost the early flags widen its own excuse.
+    flag0 = off["Date"].min()
+    assert flag0 == pd.Timestamp("2011-05-02"), (
+        f"the KRX SPAC flag first appears {flag0:%Y-%m-%d}, not 2011-05-02; the "
+        f"pre-flag gap excused below is now a different span of sessions"
+    )
+    # Same hazard on the second gap: 'the flag is a KOSDAQ 소속부' is what excuses
+    # every KOSPI name match below, and it is a measurement, not a definition.
+    kospi_flagged = off[off["Market"] == "KOSPI"]
+    assert kospi_flagged.empty, (
+        f"{len(kospi_flagged):,} KOSPI sessions carry the KRX SPAC flag across "
+        f"{kospi_flagged['Code'].nunique()} codes; the flag is no longer "
+        f"KOSDAQ-only, so excusing KOSPI name matches below is now a loophole"
+    )
+    named = d[(d["kind"] == "spac") & ~d["official"]]
+    unexplained = named[(named["Date"] >= flag0) & (named["Market"] != "KOSPI")
+                        & ~named["Dept"].isin(ADMIN_DEPT)]
+    assert unexplained.empty, (
+        f"{len(unexplained):,} sessions classify_ticker calls 'spac' carry no "
+        f"KRX flag and sit outside its three gaps — KOSPI listings, sessions "
+        f"before {flag0:%Y-%m-%d}, and sessions whose Dept slot an admin "
+        f"designation holds — across {unexplained['Code'].nunique()} codes "
+        f"({sorted(unexplained['Code'].unique())[:5]}). The 스팩 match is "
+        f"catching something KRX does not call a SPAC"
+    )
+
+    elsewhere = off.loc[off["kind"] != "spac", "kind"].value_counts().to_dict()
+    return (f"{len(off):,} KRX-flagged SPAC sessions over "
+            f"{off['Code'].nunique()} codes: none 'common', none inside the "
+            f"'common' spell of the {j['Code'].nunique()} that later merge; "
+            f"{elsewhere or 'all'} land off 'spac'; {len(named):,} name-matched "
+            f"sessions unflagged, all inside the three gaps"), len(off)
+
+
 CHECKS = [
     test_kr_trading_days_2005_2024,
     test_kr_kospi_common_count,
@@ -272,6 +395,7 @@ CHECKS = [
     test_fnguide_benchmark_agreement,
     test_fnguide_disagreement_is_the_stuck_oracle,
     test_seibro_zero_is_non_payment,
+    test_spac_kind_matches_krx_official_flag,
 ]
 
 

@@ -30,5 +30,9 @@
   "test_seibro_zero_is_non_payment": {
     "bound": "monotone",
     "n": 35999
+  },
+  "test_spac_kind_matches_krx_official_flag": {
+    "bound": "exact",
+    "n": 150898
   }
 }
