@@ -9,11 +9,11 @@
   },
   "test_taiwan_adj_source_partitions_the_panel": {
     "bound": "monotone",
-    "n": 16602
+    "n": 16610
   },
   "test_taiwan_adjusted_coverage_decomposition": {
     "bound": "monotone",
-    "n": 5754275
+    "n": 5755477
   },
   "test_taiwan_adjusted_series": {
     "bound": "monotone",
@@ -51,10 +51,6 @@
     "bound": "monotone",
     "n": 43779
   },
-  "test_taiwan_make_up_sessions_are_recovered": {
-    "bound": "monotone",
-    "n": 303
-  },
   "test_taiwan_month_rev_date_is_the_following_month": {
     "bound": "monotone",
     "n": 281009
@@ -63,9 +59,13 @@
     "bound": "monotone",
     "n": 54
   },
+  "test_taiwan_no_session_the_tape_holds_is_missing": {
+    "bound": "monotone",
+    "n": 5906434
+  },
   "test_taiwan_no_trade_rows_are_not_holdable": {
     "bound": "monotone",
-    "n": 5882323
+    "n": 5883919
   },
   "test_taiwan_ohlcv_is_raw": {
     "bound": "monotone",
@@ -77,7 +77,7 @@
   },
   "test_taiwan_open_outside_session_range": {
     "bound": "monotone",
-    "n": 5754275
+    "n": 5755477
   },
   "test_taiwan_overlay_covers_the_window": {
     "bound": "exact",
@@ -93,7 +93,7 @@
   },
   "test_taiwan_rebuild_matches_vendor": {
     "bound": "exact",
-    "n": 203671
+    "n": 203655
   },
   "test_taiwan_single_cut_is_registered_unscored": {
     "bound": "exact",
@@ -109,11 +109,15 @@
   },
   "test_taiwan_tree_readers_import_the_window": {
     "bound": "monotone",
-    "n": 7
+    "n": 9
   },
   "test_taiwan_universe_excludes_the_instruments_it_claims_to": {
     "bound": "monotone",
     "n": 2158
+  },
+  "test_taiwan_universe_holds_every_common_the_tape_shows": {
+    "bound": "monotone",
+    "n": 2038
   },
   "test_taiwan_vendor_defects_are_patched": {
     "bound": "monotone",
@@ -121,7 +125,7 @@
   },
   "test_taiwan_vendor_edges_are_carried": {
     "bound": "monotone",
-    "n": 2
+    "n": 4
   },
   "test_taiwan_vendor_event_audit_is_current": {
     "bound": "monotone",

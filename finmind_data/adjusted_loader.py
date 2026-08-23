@@ -49,18 +49,16 @@ printing — has no in-window instance: every name it applies to delisted before
 the window, which is what makes those four a hole for the rebuild rather than an
 edge for the carry.
 
-**The sessions the raw endpoint dropped are put back.** ``ohlcv/`` has no row
-at all for 303 sessions ``price_adj/`` carries, in 96 stocks, and every one of
-them is a 補行交易日 — a Saturday worked to make up a holiday. The cost is not
-the missing row but the return after it, which spans two sessions instead of one:
-303 absent rows are 303 overstated returns, clustered on 14 holiday-adjacent
-dates rather than scattered. ``price_adj/`` carries the whole row — ``open``,
-``max`` and ``min`` on the close's own factor, the volume columns unadjusted — so
-the raw row is the vendor's divided by the factor at an adjacent session, a
-vendor factor over a vendor factor, and the declared-vs-published cent below
-cancels instead of propagating. 210 come back as traded sessions and the 93 the
-vendor reports no volume on as the zero rows ``ohlcv/`` writes for a session with
-none. Those rows are ``raw_covered`` False.
+**The sessions the raw endpoint dropped are back in the tree, not rebuilt
+here.** ``ohlcv/`` used to have no row at all for 1,941 sessions the vendor
+serves, in 507 stocks. 1,940 of them fall on 14 補行交易日 — Saturdays worked to
+make up a holiday — and the last is one no-trade row for 2910 on an ordinary
+Wednesday. The cost is not the missing row but the return after it, which spans
+two sessions instead of one: 1,940 absent Saturdays are 1,940 overstated
+returns, clustered on 14 holiday-adjacent dates rather than scattered. ``backfill_make_up_sessions.py`` read every one of them back from the
+date-keyed endpoint, so the loader now reads those prices rather than deriving
+them, and what stands here in place of the reconstruction is the guard that
+refuses to derive one — see ``_require_raw_covers_vendor``.
 
 **Two conventions therefore live in one panel**, and ``adj_method`` says which.
 FinMind subtracts the *declared* distribution from the prior close; the rebuild
@@ -167,13 +165,6 @@ DELISTED_PATH = ROOT / 'delisted_universe.parquet'
 # range marks the same 10 splices; this is a materiality choice, not a tuned one.
 _BREAK_GAP_DAYS = 730
 
-# ``ohlcv/`` quotes every price to the cent, so a session reconstructed from the
-# vendor's adjusted row is rounded onto that grid rather than left carrying the
-# vendor's own rounding. It is not a tolerance: on the 209 make-up sessions with
-# an anchor on either side the two reconstructions differ by at most 1.3e-7 and
-# round to the same cent in every case.
-_PRICE_DECIMALS = 2
-
 # Which convention produced the ex-date steps in a row's factor chain. The
 # vendor subtracts the declared distribution; the rebuild reads the exchange's
 # published reference price. See the module docstring on how far apart they are.
@@ -245,9 +236,6 @@ def load_adjusted(stock_id: str,
       ``adj_covered``    the *vendor* served this date — False across a rebuilt
                          stock and on a carried edge, so the survivorship hole
                          stays countable after it is filled
-      ``raw_covered``    ``ohlcv/`` served this date — False on the 303 make-up
-                         sessions reconstructed from the vendor's row, whose
-                         fields are therefore derived rather than read
       ``is_valid``       this row is a position a study could have held
       ``invalid_reason`` why not: ``unpriced_cancellation`` or ``series_break``
                          behind the last break, ``post_delisting_emerging``
@@ -269,10 +257,9 @@ def load_adjusted(stock_id: str,
 
     ``adj_close_tr`` is NaN on a session the stock did not trade and on any
     session nothing covers; ``adj_source`` separates the two. ``df.attrs``
-    carries ``adj_coverage``, ``series_breaks``, ``vendor_only_sessions``,
-    ``sessions_recovered``, ``events_patched`` and ``sessions_carried`` for a
-    single stock, and is **not** the safe route for a panel — read provenance off
-    ``adj_source`` and ``raw_covered`` there.
+    carries ``adj_coverage``, ``series_breaks``, ``events_patched`` and
+    ``sessions_carried`` for a single stock, and is **not** the safe route for a
+    panel — read provenance off ``adj_source`` there.
     """
     p = Path(ohlcv_dir) / f'{stock_id}.parquet'
     if not p.exists():
@@ -308,22 +295,15 @@ def load_adjusted(stock_id: str,
         raise FileNotFoundError(
             f'no adjusted series for {stock_id} at {a} — run '
             f'`python download.py --datasets price_adj --stocks {stock_id}`')
-    # Whether ``ohlcv/`` served this date. False only on the make-up sessions
-    # recovered below, where it is what says the row's fields were reconstructed
-    # from the vendor's rather than read.
-    out['raw_covered'] = True
-
     adj = pd.read_parquet(a)
     if len(adj):
         adj['date'] = pd.to_datetime(adj['date'])
         adj = clip(adj)
     if len(adj):
-        out, vendor_only, recovered = _recover_make_up_sessions(
-            str(stock_id), out, adj)
+        _require_raw_covers_vendor(str(stock_id), out, adj)
         adj = adj[['date', 'close']].rename(columns={'close': 'adj_close_tr'})
         out = out.merge(adj, on='date', how='left')
     else:
-        vendor_only = recovered = 0
         out['adj_close_tr'] = np.nan
 
     # Whether the *vendor* served this date, captured before the no-trade masking
@@ -450,100 +430,53 @@ def load_adjusted(stock_id: str,
     out.attrs['adj_coverage'] = float(
         (out['adj_covered'].to_numpy() & traded).sum() / max(int(traded.sum()), 1))
     out.attrs['series_breaks'] = int(len(seen))
-    out.attrs['vendor_only_sessions'] = vendor_only
-    out.attrs['sessions_recovered'] = recovered
     out.attrs['events_patched'] = n_patched
     out.attrs['sessions_carried'] = int(carried.sum())
     return out
 
 
-def _recover_make_up_sessions(stock_id: str, out: pd.DataFrame,
-                              adj: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
-    """Put back the sessions ``price_adj/`` carries and ``ohlcv/`` has no row for.
+def _require_raw_covers_vendor(stock_id: str, out: pd.DataFrame,
+                               adj: pd.DataFrame) -> None:
+    """Refuse to load a stock whose raw tree is behind the vendor's adjusted one.
 
-    All 303 of them across the panel are 補行交易日 — Saturdays worked to make up
-    a holiday — and the damage is not the missing row. A gap in the calendar
-    makes the *next* session's return span two sessions instead of one, so 303
-    absent rows are 303 overstated returns, every one of them on a
-    holiday-adjacent Saturday rather than anywhere at random.
+    ``ohlcv/`` once had no row at all for 1,941 sessions the vendor serves, in
+    507 stocks — 1,940 of them on 14 補行交易日, Saturdays worked to make up a
+    holiday. The cost was never the missing row. A gap in the calendar makes the
+    *next* session's return span two sessions instead of one, so those were
+    1,940 overstated returns sitting on 14 holiday-adjacent dates rather than
+    anywhere at random, which is the shape a study reads as an effect.
 
-    ``price_adj/`` carries the whole row, not just the close: ``open``, ``max``
-    and ``min`` sit on the same factor as the close (worst relative departure
-    5.9e-6 over 5,692,266 shared traded ticker-days, which is the vendor's rounding),
-    and the three volume columns come across unadjusted. So the raw row is the
-    vendor's row divided by the factor at an adjacent session —
+    This function used to reconstruct the 303 of them ``price_adj/`` carried,
+    dividing the vendor's row by the factor at an adjacent session. That
+    arithmetic was exact — checked per row against every filed 除權息 and 減資,
+    and 209 of the 210 traded sessions reconstructed from anchors on both sides
+    agreed to 1.8e-7 — but it could only reach a session at least one local tree
+    held, and 1,638 of the 1,941 were in neither. ``backfill_make_up_sessions.py``
+    reads all of them from the date-keyed endpoint that serves them, so the rows
+    are in the tree and the panel derives nothing.
 
-        ``close(sat) = adj_close(sat) * close(anchor) / adj_close(anchor)``
+    What is left is the guard, because the condition can recur: the trees fell
+    behind a vendor backfill once and nothing in the package noticed. A
+    reconstructed price is a derived field wearing a read one's clothes, so the
+    answer to the tree falling behind again is to stop, not to paper over it —
+    the repair belongs in the tree, where a later download keeps it, rather than
+    in a loader that re-derives it on every call.
 
-    — which is a vendor factor over a vendor factor, so the declared-vs-published
-    cent that separates the two conventions cancels rather than propagating.
-    Exact whenever no filing sits between the two, which is checked per row
-    against every 除權息 and 減資 and the cancellations no filing explains, the
-    same guard the edge carry uses. Unlike that one it does not fire on this
-    vintage: no make-up session in the panel has an event in its interval.
-
-    The check on the arithmetic is that 209 of the 210 traded sessions have a
-    usable anchor on *both* sides, and the two reconstructions agree to 1.8e-7 —
-    two different sessions, opposite directions, one answer. The nearer earlier
-    anchor is the one used, and 4167's 2012-12-22 is the single session with
-    nothing usable behind it.
-
-    A session the vendor reports no volume on is written the way ``ohlcv/``
-    writes one, as a zero row: across 102,976 zero-volume rows in that tree not
-    one carries a close, so a zero is what the raw file would have held. Those
-    93 rows land on ``invalid_reason = 'no_trade'`` with everything else that
-    did not trade, and the return across them stays the one-session return it
-    already was.
-
-    Returns the frame with the rows inserted, how many sessions the vendor had
-    and the raw file did not, and how many of them came back.
+    This sees only the half of the condition ``price_adj/`` exposes; the 1,638
+    rows neither tree held were invisible to it by construction, and measuring
+    the tree against the vendor rather than against another tree is what
+    ``test_taiwan_no_session_the_tape_holds_is_missing`` does with the tape.
     """
     missing = adj[~adj['date'].isin(out['date'])]
     if not len(missing):
-        return out, 0, 0
-
-    dates = out['date'].to_numpy()
-    close = out['close'].to_numpy(dtype=float)
-    priced = dict(zip(adj['date'].to_numpy(), adj['close'].to_numpy(dtype=float)))
-    # An anchor is a session both files carry and the stock traded on, so the
-    # vendor's factor there is readable as adj_close / close.
-    seat = np.nonzero([c > 0 and priced.get(d, 0.0) > 0
-                       for d, c in zip(dates, close)])[0]
-    blocking = np.concatenate([adjust.filed_event_dates(stock_id),
-                               _unpriced_dates(stock_id)])
-
-    rows = []
-    for _, v in missing.iterrows():
-        r = v.to_dict()
-        r['stock_id'] = str(stock_id)
-        r['raw_covered'] = False
-        # FinMind's own close-minus-prior-close, taken on FinMind's own calendar
-        # and so blind to this row. There is nothing to divide by a factor here.
-        r['spread'] = np.nan
-        if r['Trading_Volume'] == 0:
-            for c in ('open', 'max', 'min', 'close'):
-                r[c] = 0.0
-        else:
-            f = None
-            d = np.datetime64(v['date'])
-            k = int(np.searchsorted(dates[seat], d, 'left'))
-            for i in [j for j in (k - 1, k) if 0 <= j < len(seat)]:
-                lo, hi = sorted((dates[seat[i]], d))
-                if not ((blocking > lo) & (blocking <= hi)).any():
-                    f = priced[dates[seat[i]]] / close[seat[i]]
-                    break
-            if f is None:
-                continue
-            for c in ('open', 'max', 'min', 'close'):
-                r[c] = round(r[c] / f, _PRICE_DECIMALS)
-        rows.append(r)
-
-    if not rows:
-        return out, len(missing), 0
-    got = pd.DataFrame(rows).reindex(columns=out.columns).astype(out.dtypes)
-    out = (pd.concat([out, got], ignore_index=True)
-             .sort_values('date').reset_index(drop=True))
-    return out, len(missing), len(rows)
+        return
+    dates = [str(d)[:10] for d in missing['date'].head(5)]
+    raise ValueError(
+        f'{stock_id}: price_adj/ carries {len(missing)} '
+        f'session{"s" if len(missing) > 1 else ""} ohlcv/ has no row for ({", ".join(dates)}{" ..." if len(missing) > 5 else ""}), so '
+        f'the return after each one spans two sessions. The raw tree is behind '
+        f'a vendor backfill — repair the tree, do not derive the rows: '
+        f'`python -m finmind_data.backfill_make_up_sessions --dry-run`')
 
 
 def _patch(stock_id: str, dates: np.ndarray, covered: np.ndarray,

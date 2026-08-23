@@ -323,7 +323,7 @@ def test_taiwan_adjusted_survivorship_hole():
 
 
 def test_taiwan_adjusted_coverage_decomposition():
-    """README, "The adjusted panel is survivorship-biased": 98.92 %, and why.
+    """README, "The adjusted panel is survivorship-biased": 98.90 %, and why.
 
     The figure has to be quoted against every traded session in `ohlcv/`. Drop
     the 54 uncovered stocks from the denominator and the same files report
@@ -399,45 +399,40 @@ def test_taiwan_adjusted_coverage_decomposition():
             f"and is not what the carry fills"
         )
 
-    assert (traded, covered) == (5754275, 5692266), (
-        f"README pins adjusted coverage at 5,692,266 of the 5,754,275 traded "
-        f"sessions in ohlcv/ (98.92 %); this tree gives {covered:,} of "
+    assert (traded, covered) == (5755477, 5692446), (
+        f"README pins adjusted coverage at 5,692,446 of the 5,755,477 traded "
+        f"sessions in ohlcv/ (98.90 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first, makeup) == (61505, 0, 493, 11), (
+    assert (hole, tail, first, makeup) == (61505, 0, 493, 1033), (
         f"README splits the {traded - covered:,} missing sessions into 61,505 "
         f"in the 54 stocks with no adjusted series, none past the end of a "
-        f"vendor series that stopped at a delisting, 493 first sessions and 11 "
-        f"Saturday make-up sessions; this tree gives {hole:,} / {tail:,} / "
+        f"vendor series that stopped at a delisting, 493 first sessions and "
+        f"1,033 make-up sessions the vendor's adjusted product does not cover; "
+        f"this tree gives {hole:,} / {tail:,} / "
         f"{first:,} / {makeup}. The first number is the survivorship hole — if "
         f"it moved, so did the bias"
     )
 
+    # The reverse gap — sessions `price_adj/` carries and `ohlcv/` does not —
+    # used to be 303 rows in 96 stocks on 14 Saturdays, and was the whole of
+    # what the loader could put back. It is now empty: those sessions are in the
+    # raw tree, read from the endpoint that serves them rather than
+    # reconstructed. What that count *measured* was never the size of the hole,
+    # only the part of it a second local tree happened to reach;
+    # `test_taiwan_no_session_the_tape_holds_is_missing` measures the whole of it
+    # against the vendor.
     vo = pd.DataFrame(vendor_only, columns=["stock_id", "date", "lead", "trail"])
-    assert (len(vo), vo["stock_id"].nunique(), vo["date"].nunique()) == (303, 96, 14), (
-        f"README puts the reverse gap at 303 sessions in 96 stocks on 14 dates; "
-        f"this tree gives {len(vo):,} in {vo['stock_id'].nunique()} on "
-        f"{vo['date'].nunique()}. These are sessions `ohlcv/` has no row for, so "
-        f"unlike the missing adjusted ones they cannot be filled from the panel"
-    )
-    # Every one is a Saturday 補行交易日, which is the whole content of the
-    # finding: the raw endpoint serves those Saturdays for a thousand-odd stocks
-    # each and drops the row for a few dozen. An ordinary weekday appearing here
-    # would be a different defect wearing the same count.
-    assert set(vo["date"].dt.dayofweek) == {5}, (
-        f"README calls all 303 make-up Saturdays; this tree has vendor-only "
-        f"sessions on {sorted(set(vo['date'].dt.day_name()))}"
-    )
-    assert not vo["lead"].any() and not vo["trail"].any(), (
-        f"{int(vo['lead'].sum())} vendor-only sessions fall before the raw "
-        f"series opens and {int(vo['trail'].sum())} after it closes. Both are "
-        f"interior in this tree, which is what makes the head fill's anchor the "
-        f"raw first traded session rather than a date the raw file never reaches"
+    assert len(vo) == 0, (
+        f"{len(vo):,} sessions in {vo['stock_id'].nunique()} stocks are carried "
+        f"by price_adj/ and absent from ohlcv/, so the loader is reconstructing "
+        f"rows the raw tree should hold after backfill_make_up_sessions: "
+        f"{vo[['stock_id', 'date']].head(10).to_dict('records')}"
     )
     return (f"{covered:,}/{traded:,} = {100 * covered / traded:.2f} % "
             f"(vs {100 * covered / (traded - hole):.2f} % on the bias-removed "
             f"denominator); missing = {hole:,} hole + {tail:,} tail + {first:,} "
-            f"first; {len(vo)} the other way, all interior make-up Saturdays"
+            f"first; {len(vo)} the other way"
             ), traded
 
 
@@ -470,6 +465,65 @@ def test_taiwan_overlay_covers_the_window():
     assert n_overlay == 57, f"4-digit type=NaN overlay ids = {n_overlay}, expected 57"
     return ("in-window commons fully covered; 57-name overlay present",
             len(inwin))
+
+
+def _tape_universe():
+    p = REPO / "finmind_data/tape_universe.parquet"
+    if not p.exists():
+        raise Skipped("tape_universe.parquet not built "
+                      "(python -m finmind_data.tape_universe)")
+    return pd.read_parquet(p)
+
+
+def test_taiwan_universe_holds_every_common_the_tape_shows():
+    """README, "Survivorship bias": the universe checked against the trade record.
+
+    Every other check on the universe compares it to a registry — the live
+    `taiwan_stock_info`, or `delisted_universe.parquet` — and a registry is the
+    artifact that forgets. The 2026-08-17 refresh took the delisting table from
+    315 rows to 723 and retracted five committed rows; the gate that stood
+    before it rested on a premise the table it was checked against could not
+    have falsified. Nothing compared the universe to a source that is not a
+    list of who was listed.
+
+    `tape_universe.py` is that source: one date-keyed request per session over
+    all 3,414 of them returns every instrument that traded, so the union is
+    what the market executed rather than what a vendor still serves. A name
+    delisted in 2016 is in the 2015 sessions whatever the registry says now.
+
+    What the tape cannot do is say what a code *was* — it mixes ETFs, warrants,
+    TDRs and 興櫃 in with the commons — so the instrument type is the registry
+    classification stamped into the artifact when it was built. The claim
+    asserted here is the conjunction: a code that traded, that the registry
+    calls a TWSE or TPEx listing, that is not an excluded instrument, is in
+    `universe.parquet`.
+    """
+    tape = _tape_universe()
+    u, _, uid, _ = _tw_ids()
+    listed = tape["registry_types"].str.contains("twse|tpex", regex=True)
+    common = (listed & ~tape["registry_excluded"]
+              & ~tape["stock_id"].str.fullmatch(_NON_COMMON_CODE_BLOCK))
+    missing = sorted(set(tape.loc[common, "stock_id"]) - uid)
+    assert not missing, (
+        f"{len(missing)} codes traded inside the window and the registry calls "
+        f"each a TWSE/TPEx common, yet none is in universe.parquet — the "
+        f"universe is survivorship-biased against them: {missing[:25]}")
+
+    # The other direction is not an error but it is worth pinning: names the
+    # universe carries that never traded in the window contribute no
+    # observation to anything, so the answerable universe is smaller than the
+    # headline count and a study that assumes uniform coverage over 2,158 is
+    # measuring 63 empty series.
+    never = sorted(uid - set(tape["stock_id"]))
+    assert len(never) == 63, (
+        f"README 'Universe' pins 2,158 names of which 63 never trade inside "
+        f"2011-01-25..2024-12-31; this tree has {len(never)}")
+    assert len(u) - len(never) == 2095, (
+        f"the in-window answerable universe is 2,095; this tree gives "
+        f"{len(u) - len(never)}")
+    return (f"{int(common.sum())} listed commons on the tape, all in the "
+            f"universe; {len(never)} universe names never trade in window "
+            f"(answerable universe {len(u) - len(never)})"), int(common.sum())
 
 
 # ---- Taiwan: the coverage flag has to survive a panel build -----------------
@@ -551,8 +605,8 @@ def test_taiwan_open_outside_session_range():
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
-    assert (bad, stocks) == (125114, 669), (
-        f"README caveat 11 pins 125,114 rows across 669 stocks with open "
+    assert (bad, stocks) == (125666, 669), (
+        f"README caveat 11 pins 125,666 rows across 669 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
@@ -1452,9 +1506,16 @@ def test_taiwan_adjusted_series():
     # majority of its file. Both counts are pinned rather than tested for
     # presence — a single surviving zero-close row would satisfy `> 0` while the
     # encoding this check exists for had changed underneath it.
-    assert (int(z.sum()), n_filled) == (1321, 1321), (
-        f"8934 is chosen for having 1,321 zero-close sessions, every one of "
-        f"which the vendor prices anyway; this tree has {int(z.sum())} and the "
+    #
+    # The vendor prices 1,320 of the 1,326, not all of them. It used to price
+    # all 1,321: `backfill_make_up_sessions` added six no-trade make-up sessions
+    # the raw endpoint serves and the adjusted one does not, so they are
+    # zero-close rows with no vendor price behind them rather than zero-close
+    # rows the vendor carried a price across. The NaN rule below holds either
+    # way, which is the point of pinning both counts separately.
+    assert (int(z.sum()), n_filled) == (1326, 1320), (
+        f"8934 is chosen for having 1,326 zero-close sessions, 1,320 of which "
+        f"the vendor prices anyway; this tree has {int(z.sum())} and the "
         f"vendor fills {n_filled}. Either the raw zero encoding or the vendor's "
         f"carry changed, and the NaN rule below is written against both"
     )
@@ -1672,7 +1733,7 @@ def test_taiwan_vendor_edges_are_carried():
     from finmind_data.adjusted_loader import _unpriced_dates, load_adjusted
 
     head = tail = 0
-    refused = []
+    refused, uncovered = [], []
     # 3271, 3142, 2479 and 3053 left this list when the window started being
     # enforced: their last quote is 2005-2008, so the package has no series for
     # them and `load_adjusted` refuses them rather than returning one. 1240
@@ -1706,13 +1767,30 @@ def test_taiwan_vendor_edges_are_carried():
             head += i < served[0]
             tail += i > served[-1]
         # A traded session the vendor does not serve and the guard would not
-        # carry stays NaN rather than being filled from further away.
+        # carry stays NaN rather than being filled from further away. Two
+        # conditions land here and only one is the guard: a session *before*
+        # the vendor's first served row is an edge it declined to carry, while
+        # one *interior* to the series is a session the vendor's adjusted
+        # product does not cover at all. The make-up sessions
+        # `backfill_make_up_sessions` restored are the second — the raw
+        # endpoint serves them and the adjusted endpoint does not — so they
+        # reached the panel as traded rows with no adjusted price when the raw
+        # tree was completed, and reading them as refusals would blame the
+        # guard for the vendor's coverage.
         for i in np.nonzero((df["close"].to_numpy() > 0) & (s == ""))[0]:
-            refused.append((sid, str(pd.Timestamp(dates[i]).date())))
+            if i < served[0] or i > served[-1]:
+                refused.append((sid, str(pd.Timestamp(dates[i]).date())))
+            else:
+                uncovered.append((sid, str(pd.Timestamp(dates[i]).date())))
 
     assert refused == [("4141", "2011-04-14")], (
         f"the carry guard should refuse exactly 4141's 2011-04-14 stub print "
         f"among these stocks; it refused {refused}"
+    )
+    assert uncovered == [("1240", "2017-09-30"), ("1240", "2018-03-31")], (
+        f"among these stocks the only traded sessions interior to the vendor's "
+        f"series that it prices nothing for are 1240's two restored make-up "
+        f"Saturdays; this tree has {uncovered}"
     )
     assert (head, tail) == (1, 0), (
         f"these stocks hold 1 of the 492 carried first sessions, and no session "
@@ -1720,8 +1798,9 @@ def test_taiwan_vendor_edges_are_carried():
         f"{head} / {tail}"
     )
     return (f"{head} first session carried from the adjacent factor with no "
-            f"filing in the gap, {tail} after a delisting; "
-            f"4141 2011-04-14 refused"), head + len(refused)
+            f"filing in the gap, {tail} after a delisting; 4141 2011-04-14 "
+            f"refused; {len(uncovered)} restored make-up sessions the vendor "
+            f"prices nothing for"), head + len(refused) + len(uncovered)
 
 
 def test_taiwan_post_delisting_sessions_are_marked():
@@ -1945,22 +2024,22 @@ def test_taiwan_no_trade_rows_are_not_holdable():
         f"OHLCV file holds no rows at all and 58 quoted only outside the window; "
         f"{len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
-    assert (rows, zero, zero_stocks) == (5_882_323, 127_838, 1_150), (
-        f"README quotes 127,838 no-trade sessions in 1,150 stocks over a "
-        f"5,882,323-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+    assert (rows, zero, zero_stocks) == (5_883_919, 128_442, 1_152), (
+        f"README quotes 128,442 no-trade sessions in 1,152 stocks over a "
+        f"5,883,919-row panel; this tree has {zero:,} in {zero_stocks:,} over "
         f"{rows:,}. Every count below is a share of that population")
     assert mismatched == 0, (
         f"README claims is_valid alone is now enough — every False row carries "
         f"a reason and every True row carries none. {mismatched:,} of {rows:,} "
         f"rows break that, so invalid_reason no longer accounts for is_valid")
-    assert by_reason == {"no_trade": 125_055,
-                         "series_break": 1_931,
+    assert by_reason == {"no_trade": 125_649,
+                         "series_break": 1_941,
                          "unpriced_cancellation": 852}, (
-        f"README claims 125,055 no-trade sessions take the new reason and the "
-        f"2,783 behind a segment reason keep it; the split here is {by_reason}")
-    assert len(no_trade_stocks) == 1_141, (
-        f"README claims the 125,055 no_trade rows fall in 1,141 stocks — the "
-        f"1,150 with a zero close, less the 9 whose zero closes all sit behind "
+        f"README claims 125,649 no-trade sessions take the new reason and the "
+        f"2,793 behind a segment reason keep it; the split here is {by_reason}")
+    assert len(no_trade_stocks) == 1_143, (
+        f"README claims the 125,649 no_trade rows fall in 1,143 stocks — the "
+        f"1,152 with a zero close, less the 9 whose zero closes all sit behind "
         f"a break; {len(no_trade_stocks):,} carry one here")
     return (f"{by_reason['no_trade']:,} no-trade sessions in "
             f"{len(no_trade_stocks):,} stocks marked invalid, "
@@ -1970,106 +2049,86 @@ def test_taiwan_no_trade_rows_are_not_holdable():
 
 
 # ---- Taiwan: the make-up sessions ohlcv/ dropped ---------------------------
-def test_taiwan_make_up_sessions_are_recovered():
-    """README, "The gap that runs the other way": 303 sessions, and 303 returns.
+def test_taiwan_no_session_the_tape_holds_is_missing():
+    """README, "The gap that runs the other way": the calendar, against the vendor.
 
-    The cost of a dropped session is not the row. It is that the *next* session's
-    return spans two sessions instead of one, so the 303 sessions `ohlcv/` has no
-    row for were 303 overstated returns — and not scattered, but clustered on 14
-    holiday-adjacent Saturdays, which is the shape a study would read as an
-    effect. That contamination is invisible to the coverage decomposition, which
-    counts rows and not the gaps between them, so it is asserted here.
+    An absent session is not a missing row, it is an overstated return — the
+    *next* session's return spans two sessions instead of one — and 1,940 of the
+    1,941 sat on 14 holiday-adjacent Saturdays rather than anywhere at random,
+    which is the shape a study reads as an effect.
 
-    The assertion is on the return path rather than on the count: after the
-    recovery no session `price_adj/` carries is absent from the panel, which is
-    what makes every return a one-session return.
+    The hole used to be measured as the sessions ``price_adj/`` carries and
+    ``ohlcv/`` does not: 303 rows in 96 stocks. That is a set difference between
+    two local trees, so it could only ever see a session at least one of them
+    held, and the number was read as the size of the hole rather than as the
+    part of it one tree could still reach. Measured against the vendor instead,
+    the hole was **1,941 rows in 507 stocks** — the 303 the loader could
+    reconstruct, and 1,638 that neither tree held and nothing therefore
+    reported. ``backfill_make_up_sessions`` read them from the date-keyed
+    endpoint, which serves them today; the trees were behind a backfill.
 
-    The reconstruction is then checked against a source it did not use. The
-    loader takes the nearer earlier anchor; this recomputes from the following
-    one, a different session in the opposite direction, and the two must give the
-    same price. That is a real check because it would fail on exactly what the
-    method assumes away — a factor that moved inside the interval.
+    The assertion is therefore on the calendar and not on a recovery count: no
+    session the tape holds is absent from the interior of a raw series. A date
+    before a file's first row is the other condition entirely — the vendor's
+    adjusted series opens one session after the raw one for ~500 stocks, which
+    ``adjusted_loader`` handles by carrying the adjacent factor — and is not a
+    gap in the calendar.
     """
-    sys.path.insert(0, str(REPO))
-    import numpy as np
+    tape_dir = REPO / "finmind_data/tape"
+    if not tape_dir.exists():
+        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+    tape = pd.concat([pd.read_parquet(q) for q in sorted(tape_dir.glob("*.parquet"))],
+                     ignore_index=True)
+    lo, hi = tape["date"].min(), tape["date"].max()
+    by_code = {}
+    for c, d in zip(tape["stock_id"], tape["date"]):
+        by_code.setdefault(c, set()).add(d)
 
-    from finmind_data.adjusted_loader import load_adjusted
-
-    # Which stocks could be short a session at all — a set difference over the
-    # files, so the expensive pass runs on the 159 that can fail rather than the
-    # 2,103 that cannot.
-    want = {}
-    for sid in _panel_ids():
-        raw = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
-        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
-        if not len(raw) or not len(adj):
+    interior, examined, offenders = 0, 0, []
+    for q in sorted((REPO / "finmind_data/ohlcv").glob("*.parquet")):
+        sid = q.stem
+        if sid not in by_code:
             continue
-        only = set(pd.to_datetime(adj["date"])) - set(pd.to_datetime(raw["date"]))
-        if only:
-            want[sid] = (only, adj)
+        try:
+            have = set(pd.read_parquet(q, columns=["date"])["date"].astype(str))
+        except Exception:
+            continue
+        w = {d for d in have if lo <= d <= hi}
+        if not w:
+            continue
+        first, last = min(w), max(w)
+        gaps = [d for d in by_code[sid] - have if first < d < last]
+        examined += len(by_code[sid])
+        interior += len(gaps)
+        if gaps and len(offenders) < 12:
+            offenders.append((sid, sorted(gaps)[:3]))
+    assert interior == 0, (
+        f"{interior} sessions the vendor serves are absent from the interior of "
+        f"a raw series, so the return after each one spans two sessions rather "
+        f"than one: {offenders}")
 
-    n_traded = n_flat = n_both = 0
-    dev = []
-    for sid, (only, adj) in want.items():
-        df = load_adjusted(sid)
-        assert df.attrs["vendor_only_sessions"] == len(only), (
-            f"{sid}: attrs reports {df.attrs['vendor_only_sessions']} vendor-only "
-            f"sessions against {len(only)} in the files")
-        panel = set(df["date"])
-        assert not (only - panel), (
-            f"{sid}: {len(only - panel)} sessions price_adj/ carries are still "
-            f"absent from the panel, so the return after each of them spans two "
-            f"sessions rather than one")
-        rec = df[~df["raw_covered"]]
-        assert set(rec["date"]) == only, (
-            f"{sid}: raw_covered is False on {len(rec)} rows against {len(only)} "
-            f"sessions ohlcv/ has no row for, so the flag no longer marks what "
-            f"was reconstructed")
-
-        a = adj.assign(date=pd.to_datetime(adj["date"])).sort_values("date")
-        priced = a.set_index("date")["close"].astype(float).to_dict()
-        vol = a.set_index("date")["Trading_Volume"].to_dict()
-        d8 = list(df["date"])
-        seat = np.nonzero((df["raw_covered"].to_numpy())
-                          & (df["close"].to_numpy(dtype=float) > 0)
-                          & np.array([priced.get(x, 0.0) > 0 for x in d8]))[0]
-        for _, r in rec.iterrows():
-            if vol[r["date"]] == 0:
-                # ohlcv/ writes a session with no volume as a zero row and never
-                # with a close, so that is what a reconstruction of one holds.
-                n_flat += 1
-                assert r["close"] == 0 and not r["is_valid"], (
-                    f"{sid} {r['date'].date()}: the vendor reports no volume, so "
-                    f"the row should read as the no-trade row ohlcv/ would have "
-                    f"written and be unholdable; it carries close {r['close']} "
-                    f"and is_valid {r['is_valid']}")
-                continue
-            n_traded += 1
-            # Reconstruct from the anchor on each side and hold the loader's
-            # price to both. Checking only the side it did not take would leave
-            # the check trivial whenever it fell back to the other one.
-            k = int(np.searchsorted([d8[j] for j in seat], r["date"], "left"))
-            js = [j for j in (k - 1, k) if 0 <= j < len(seat)]
-            n_both += len(js) == 2
-            for i in (seat[j] for j in js):
-                f = priced[d8[i]] / float(df["close"].to_numpy()[i])
-                dev.append(abs(priced[r["date"]] / f / r["close"] - 1.0))
-
-    assert (len(want), n_traded + n_flat, n_traded) == (96, 303, 210), (
-        f"README claims 303 make-up sessions in 96 stocks, 210 of them traded; "
-        f"this tree recovers {n_traded + n_flat} in {len(want)}, {n_traded} traded")
-    dev = np.array(dev)
-    assert (len(dev), n_both) == (419, 209) and dev.max() < 1e-5, (
-        f"209 of the 210 traded make-up sessions have a usable anchor on both "
-        f"sides, and the price the loader wrote has to be reproducible from "
-        f"either — a disagreement is a factor that moved inside the interval the "
-        f"carry assumes it did not. {len(dev)} reconstructions were run over "
-        f"{n_both} two-sided sessions, and the worst differs from the loader's "
-        f"price by {dev.max():.2e}")
-    return (f"{n_traded + n_flat} make-up sessions recovered in {len(want)} "
-            f"stocks ({n_traded} traded, {n_flat} written as no-trade rows); "
-            f"no return spans two sessions; the two anchors agree to "
-            f"{dev.max():.1e}"), n_traded + n_flat
+    # The 303 were exactly the sessions price_adj/ held and ohlcv/ did not, and
+    # they are what `adjusted_loader` used to reconstruct. With the raw tree
+    # complete there is nothing to reconstruct, and `_require_raw_covers_vendor`
+    # now raises rather than deriving one — this is the panel-wide version of
+    # that guard, which per stock sees only what price_adj/ exposes.
+    vendor_only = 0
+    for q in sorted((REPO / "finmind_data/price_adj").glob("*.parquet")):
+        sid = q.stem
+        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        if not r.exists():
+            continue
+        try:
+            adj = set(pd.read_parquet(q, columns=["date"])["date"].astype(str))
+            raw = set(pd.read_parquet(r, columns=["date"])["date"].astype(str))
+        except Exception:
+            continue
+        vendor_only += len({d for d in adj - raw if lo <= d <= hi})
+    assert vendor_only == 0, (
+        f"{vendor_only} sessions price_adj/ carries are still absent from "
+        f"ohlcv/, so the loader is reconstructing rows the raw tree should hold")
+    return (f"no interior session gap across {examined:,} vendor-served "
+            f"ticker-days; price_adj/ carries none ohlcv/ lacks"), examined
 
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
@@ -2200,9 +2259,9 @@ def test_taiwan_rebuild_matches_vendor():
         ok6 += int((diff < 1e-6).sum())
         ok3 += int((diff < 1e-3).sum())
 
-    assert (stocks, n) == (116, 203671), (
+    assert (stocks, n) == (116, 203655), (
         f"README quotes the gate on 116 covered in-window delistings and "
-        f"203,671 daily adjusted returns; this tree gives {stocks} / {n:,}"
+        f"203,655 daily adjusted returns; this tree gives {stocks} / {n:,}"
     )
     assert ok6 / n >= 0.9991 and ok3 / n >= 0.9999, (
         f"README claims the rebuild reproduces the vendor on 99.954 % of daily "
@@ -2359,6 +2418,7 @@ CHECKS = [
     test_taiwan_universe_excludes_the_instruments_it_claims_to,
     test_taiwan_price_adj_one_per_universe,
     test_taiwan_overlay_covers_the_window,
+    test_taiwan_universe_holds_every_common_the_tape_shows,
     test_taiwan_adjusted_survivorship_hole,
     test_taiwan_adjusted_coverage_decomposition,
     test_taiwan_vendor_event_audit_is_current,
@@ -2366,7 +2426,7 @@ CHECKS = [
     test_taiwan_vendor_edges_are_carried,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
-    test_taiwan_make_up_sessions_are_recovered,
+    test_taiwan_no_session_the_tape_holds_is_missing,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,

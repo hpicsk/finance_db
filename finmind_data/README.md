@@ -59,6 +59,19 @@ above.
 | In-window delistings the endpoint dropped (type unknown) | 57 |
 | **Total**                              | **2,158** |
 
+**2,095 of them trade inside the window**, and that is the number a study
+meets. The other 63 hold a code and contribute no observation: **42 delisted
+before 2011-01-25** and are carried because the live endpoint still lists them
+— 1107, 2341, 2381 and 2396 among them, quoted on 興櫃 after their exit but
+never again on a board — and **21 first traded after 2024-12-31**, the earliest
+on 2025-01-03, which `build_universe.py` does not filter on because it reads a
+registry rather than a calendar. **None of the 63 delisted inside the window**,
+which is the case that would have been a coverage failure rather than dead
+weight. Nothing is biased by their presence; a study that assumes uniform
+coverage over 2,158 is measuring 63 empty series. Both counts are checked
+against the tape rather than asserted, in
+`test_taiwan_universe_holds_every_common_the_tape_shows`.
+
 Excludes: ETFs (`00xxx` codes), warrants, TDRs (industry categories
 "存託憑證" / "臺灣存託憑證"), beneficiary certificates ("受益證券"),
 ETNs, and the TWSE Innovation Board relaxed-disclosure tier
@@ -211,6 +224,10 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
 ├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2005-2024)
+├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
+├── delisting_labels.csv               reasons read off announcements; the drawn sample
+├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
+├── delisting_consideration.csv        deal terms read for the payouts, incl. pre-window names
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
@@ -235,9 +252,12 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── detect_unpriced_actions.py         share drops no filing explains → unpriced_actions.parquet
 ├── download_exright.py                TWSE TWT49U (free, keyless) → exright_reference.parquet
 ├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
+├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
 ├── available_date.py                  fiscal period end + filing_deadlines.csv → available_date
+├── test_assertions.py                 executable checks behind this file's claims
+├── populations.json                   what each check last read, so a shrunk tree fails
 ├── download.log                       per-stock progress log
 ├── nohup.bg2005.out                   2005-2024 re-download runtime log (started 2026-04-27)
 └── .token                             FinMind API token (chmod 600)
@@ -453,10 +473,10 @@ gap (caveat 5).
 The two segment reasons win where they overlap the third, so the 2,783
 no-trade sessions a segment claims keep the segment's name — a row in a
 history this series does not continue, or one printed after the listing
-ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 127,838, so
+ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 128,442, so
 the two-column filter above dropped them before this reason existed;
 what changed is that `is_valid` alone now drops them too, and that every
-False row in the panel's 5,882,323 carries a reason for being one.
+False row in the panel's 5,883,919 carries a reason for being one.
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -482,26 +502,37 @@ The two rebuilt values are kept apart on purpose: the cumulative-product
 path is the one with somewhere to go wrong, and separating it lets a
 later check isolate it without re-deriving which stocks had events.
 
-**`raw_covered` says whether `ohlcv/` served the date.** It is False on
-303 rows and True on everything else: the make-up sessions the raw
-endpoint has no row for, reconstructed from the vendor's below. Their
-prices and volumes are derived rather than read, so a study that will
-not take a derived field drops `~raw_covered` and loses 303 rows of
-5,882,323.
+**There is no `raw_covered` column any more.** It used to say whether `ohlcv/`
+served the date, and was False on 303 rows — the make-up sessions the raw tree
+had no row for, reconstructed from the adjusted series, whose prices and volumes
+were derived rather than read. `backfill_make_up_sessions.py` has since read all
+1,941 missing sessions back from the endpoint that serves them, and the loader
+now *refuses* to derive one rather than deriving it and flagging it, so the
+column could no longer take its False value under any input. A boolean that
+cannot vary is not provenance; the guard that raises is, and the flag was
+dropped rather than kept as a constant nothing reads.
 
 `adj_close_tr` is NaN where the raw `close` is 0 — FinMind's encoding
-for a session the stock did not trade (127,745 rows in `ohlcv/` and
-127,838 in the panel, 2.17 %, in 1,150 stocks). The vendor prices
-125,904 of the ones `ohlcv/` holds anyway, at the last traded price, so
+for a session the stock did not trade (**128,442 rows, 2.18 %, in 1,152
+stocks**, and the same figure in `ohlcv/` as in the panel: the 93-row
+difference the two used to show was the no-trade sessions the loader
+reconstructed, and the raw tree now holds them). The vendor prices
+126,027 of the ones `ohlcv/` holds anyway, at the last traded price, so
 the zero that identifies them survives only in `ohlcv/`; filtering on
 `adj_close_tr > 0` alone would keep every one of them, and so would
 filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
-`price_adj/` reaches 5,692,266 of the 5,754,275 traded sessions in
-`ohlcv/` — 98.92 % — and the 62,009 it misses are not missing at
-random. **50 of the 164 in-window universe delistings have raw prices
+`price_adj/` reaches 5,692,446 of the 5,755,477 traded sessions in
+`ohlcv/` — 98.90 % — and the 63,031 it misses are not missing at
+random. They split four ways: **61,505** in the 54 stocks with no adjusted
+series at all, **0** past the end of a vendor series that stopped at a
+delisting, **493** first sessions the vendor opens one day late on, and
+**1,033** make-up sessions the raw endpoint serves and the adjusted product
+does not. Only the first is a bias.
+
+**50 of the 164 in-window universe delistings have raw prices
 and no adjusted series at all** (60,371 sessions). They delisted
 between 2012 and 2020, scattered rather than banked against either edge
 of the window, which is the shape the 2026-08-17 delisting refresh
@@ -525,7 +556,7 @@ and 59 that have no raw prices in it either — 37 delisted before it opens,
 21 listed after it closes, and one is a zero-row file. Quoting the 99.99 % these
 same files give once the 54 leave the denominator reports the coverage of
 a panel the bias has already been removed from — the vendor's coverage is
-98.92 %, and `available_stocks()` lists the 2,139 names it serves.
+98.90 %, and `available_stocks()` lists the 2,139 names it serves.
 
 `load_adjusted` fills all 54 rather than returning a column of NaN a
 panel build would drop. `adjust.py` rebuilds the factor from the
@@ -545,7 +576,7 @@ in the first place.
 **The rebuild is validated where the vendor exists.** The gate set is
 the 116 in-window delistings `price_adj/` *does* cover — same era, same
 delisting situation — run through the identical code path. Across
-203,671 daily adjusted returns the rebuild reproduces the vendor on
+203,655 daily adjusted returns the rebuild reproduces the vendor on
 99.954 % to 1e-6 and 99.998 % to 1e-3; what is left is the declared-vs-
 published cent above, on the ex-date session only.
 
@@ -624,79 +655,91 @@ tail is itself a weak signal on the delisting reason (caveat 8).
 And `ohlcv/` itself is a zero-row file for one stock while 58 more hold
 prices only outside the window; `load_adjusted` raises on all 59.
 
-### The gap that runs the other way, and the 303 returns it cost
+### The gap that runs the other way, and the 1,941 returns it cost
 
-Every figure above counts sessions `ohlcv/` has and `price_adj/` does
-not. The reverse set difference is **303 sessions in 96 stocks**, all
-of them on **14 dates, every one a Saturday** — a 補行交易日, worked to
-make up a holiday. `ohlcv/` serves those Saturdays for 1,393 to 1,662
-stocks each, so the endpoint knows the date and drops the row for 16 to
-26 names on it; the skew is mild (7.2 % of TPEx names against 2.7 % of
-TWSE). Per stock the median is 2 sessions and the worst is 13, against
-~3,410 in a full series.
+Every figure above counts sessions `ohlcv/` has and `price_adj/` does not. The
+reverse difference used to be quoted as **303 sessions in 96 stocks** on 14
+Saturdays, each a 補行交易日 worked to make up a holiday. That number is a set
+difference between two local trees, so it can only see a session at least one
+of them holds, and it was read as the size of the hole rather than as the part
+of it the other tree could still reach.
 
-**The cost is not the missing rows.** A gap in the calendar makes the
-*next* session's return span two sessions rather than one, so 303 absent
-rows were 303 overstated returns — and they were not scattered but
-clustered on 14 holiday-adjacent dates, which is the shape a study reads
-as an effect. Nothing in the coverage decomposition above sees this: it
-counts rows, and the damage is in the gaps between them.
+`tape_universe.py` measures the same hole against the vendor instead — one
+date-keyed request per session, so the reference is what the endpoint serves
+rather than what either tree stored. The hole is **1,941 rows in 507 stocks**,
+on 15 dates: the same 14 Saturdays, carrying 1,940 of the rows, and a single
+no-trade row for 2910 on an ordinary Wednesday, 2021-01-20. Of them **303 had a
+`price_adj/` row** — exactly the set the loader could reconstruct, which is why
+the count reproduced — and **1,638 were in neither tree**, so nothing reported
+them and no flag marked them.
 
-**They are recovered, and the arithmetic is exact.** `price_adj/`
-carries the whole row and not just the close — `open`, `max` and `min`
-sit on the same factor as the close (worst departure 5.9e-6 over
-5,692,266 shared traded ticker-days, which is the vendor's rounding) and the
-three volume columns come across unadjusted. So the raw row is the
-vendor's row divided by the factor at an adjacent session:
+**The cost is not the missing rows.** A gap in the calendar makes the *next*
+session's return span two sessions rather than one, so the 1,940 absent
+Saturdays were 1,940 overstated returns, clustered on 14 holiday-adjacent dates
+rather than scattered, which is the shape a study reads as an effect. The coverage
+decomposition above cannot see it: it counts rows, and the damage is in the
+gaps between them.
 
-```
-close(sat) = adj_close(sat) × close(anchor) / adj_close(anchor)
-```
+**The endpoint serves them, so the trees were behind a backfill.** A `data_id`
+request for 1338 on 2012-02-04 returns the row `ohlcv/1338.parquet` lacked;
+the same holds for every one checked. That is the behaviour
+`TaiwanStockDelisting` showed between the 315-row and 723-row pulls — the
+vendor fills history in after the fact, and a tree downloaded once does not
+follow. `backfill_make_up_sessions.py` reads the 15 dates back and inserts
+them, 1,311 traded sessions and 630 zero-volume rows, and the insert is
+additive: 507 files, 1,941 rows added, not one pre-existing row altered.
 
-A vendor factor divided by a vendor factor, so the declared-vs-published
-cent that separates the two conventions cancels rather than propagating
-— cleaner than reconstructing the factor. It is exact as long as no
-filing sits between the two sessions, which is checked per row against
-every 除權息 and 減資 and the cancellations no filing explains. Unlike
-the same guard on the edge carry, it does not fire here: no make-up
-session in the panel has an event in its interval.
+The recovered rows are the vendor's own, not a reconstruction. `spread` is
+present on all 1,941 where the arithmetic recovery left it NaN, and the volume
+is the raw endpoint's answer rather than the adjusted endpoint's — the two
+disagree on 1,943 rows across 12 of the 14 Saturdays, never with the vendor's
+adjusted number the smaller, and that disagreement no longer enters the tree.
 
-The check is that 209 of the 210 traded sessions have a usable anchor on
-**both** sides, and the price the loader wrote is reproducible from
-either — 419 reconstructions from two different sessions in opposite
-directions, agreeing to 1.8e-7. The nearer earlier anchor is the one
-used; 4167's 2012-12-22 is the single session with nothing usable behind
-it. Prices are rounded
-onto the cent grid `ohlcv/` quotes on, which the two-sided agreement
-says is the tick and not a tolerance.
+**What the repair costs, stated plainly.** Of the 1,941 restored rows, only
+**303 have an adjusted counterpart** — 210 traded and 93 no-trade, exactly the
+set the loader used to reconstruct. The other 1,638 are sessions the vendor's
+*adjusted* product does not cover at all, so they enter the panel with
+`adj_close_tr` NaN and `adj_covered` False: **1,101 of them traded** (1,067 in
+universe names) and 537 did not. That is a real change in what a study meets.
+Before the repair those sessions were absent, so a return computed across one
+of them silently spanned two sessions and looked like an ordinary observation;
+after it, the same span is an explicit NaN. The raw calendar is now correct and
+the adjusted series is now visibly incomplete where the vendor is, which is the
+trade this makes: one silently wrong return exchanged for two missing ones. The
+adjusted gap cannot be closed from the endpoint — it does not serve those rows.
 
-The remaining 93 are sessions the vendor reports **no volume** on, and
-they are written the way `ohlcv/` writes one: as a zero row. Across
-102,976 zero-volume rows in that tree not one carries a close, so a zero
-is what the raw file would have held, and those rows land on
-`invalid_reason = "no_trade"` with everything else that did not trade.
-The return across them stays the one-session return it already was.
+**The reconstruction is retired and a guard stands where it was.**
+`_recover_make_up_sessions` is now `_require_raw_covers_vendor`, which raises
+instead of deriving a row: the trees fell behind a vendor backfill once and
+nothing in the package noticed, so the answer to it happening again is to stop
+and repair the tree, not to paper over the gap on every load. It is the cheap
+per-load half of the check — it sees only what `price_adj/` exposes, and the
+1,638 rows neither tree held were invisible to it by construction. The full
+measurement is `test_taiwan_no_session_the_tape_holds_is_missing`, which pins
+the condition from both directions against the tape: no session the tape holds
+is absent from the interior of a raw series, across 5,906,434 vendor-served
+ticker-days, and `price_adj/` carries none `ohlcv/` lacks.
 
-All 303 carry `raw_covered = False`, per stock in
-`df.attrs["sessions_recovered"]`. Two things they do not get. `spread`
-is FinMind's own close-minus-prior-close taken on FinMind's own
-calendar, so it is NaN on the recovered rows and stale on the row after
-each of them — it was already blind to these sessions and the recovery
-does not make it less so. And on 12 of the 14 Saturdays the two
-endpoints report *different* volume for the stocks they both carry —
-1,943 rows, half of them by under 0.5 %, but the vendor's number is never
-the smaller one and the widest gap is 30×. So the volume on a recovered
-row is the vendor's answer to a question `ohlcv/` answers differently.
+#### Why the adjusted tree was not repaired the same way
 
-None of the 303 falls outside the raw series' own range — no stock's
-vendor file opens before its raw file does, or runs past it. That is
-what keeps the head fill's anchor well defined, and it is why the 40
-stocks whose vendor file opens on an earlier *date* than their first
-traded session are not this problem: their raw file opens on the same
-date, on a no-trade row the vendor priced anyway.
+A raw print carries no factor. A back-adjusted close is anchored at the
+present, so a row fetched today carries every event since the file was written
+and a row already in the file does not. Measured across four dates the trees
+already cover, `ohlcv/` reproduces the endpoint **exactly** on every one of
+~1,500 closes, while `price_adj/` differs on **38 stocks by up to 32 %** —
+re-anchorings, not errors, and inserting one into a file at the older anchor
+would splice two vintages inside a single series.
 
-Why the raw endpoint sheds make-up Saturdays for a minority of names is
-not answered here.
+So the adjusted insert is gated per stock against the dates its file already
+holds, and it refuses **44 rows in 12 stocks** — 1597, 2066, 2496, 3147, 4162,
+4432, 5206, 5222, 6432, 6574, 6691, 8077 — whose committed values disagree
+with the endpoint. Those need the whole file re-downloaded rather than a row
+added, and that is left undone: re-anchoring them would move every adjusted
+value they carry and invalidate the `vendor_event_audit.parquet` rows over
+them. Nothing else is missing from `price_adj/`; the 1,649 sessions the tape
+holds and it does not are sessions the adjusted endpoint does not serve for
+those stocks at all, and the 506 rows before a file's first session are the
+documented `vendor_carried` edge.
 
 ## Load the full panel
 

@@ -56,6 +56,12 @@ finmind_data/div_result/
 finmind_data/sec_lending/
 finmind_data/cap_red/
 
+# Date-keyed full-market tape (~78 MB), regenerable from the endpoint via
+# tape_universe.py. The per-code summary it rolls up to,
+# tape_universe.parquet, is small and is tracked — that is the file the
+# assertions read.
+finmind_data/tape/
+
 # Capital-reduction consolidated output is regenerable from cap_red/ via
 # consolidate_capred.py
 finmind_data/capital_reduction.parquet
