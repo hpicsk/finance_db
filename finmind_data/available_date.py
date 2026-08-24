@@ -58,9 +58,20 @@ to either would need its own rows before this module could be trusted on them.
 the company did. A company that filed late — or one granted a 不可抗力 extension,
 which both regimes allow on application within three days — published after the
 date computed here, and joining on it hands a trader that figure before it
-existed. That is the one direction this module cannot bound away without the
-announcement dates, which live in 公開資訊觀測站 filings that no FinMind endpoint
-mirrors.
+existed. That is the one direction this module cannot bound away on its own. The
+announcement dates exist: ``filing_dates.parquet`` carries the 上傳日期 of the
+report that first made each company-quarter public, collected by
+``filing_dates.py`` from TWSE's document server. Against it, 6.56 % of the
+window's company-quarters were published after the date computed here (README
+caveat 9). This module is still the right default — it is what the law required,
+it needs no external file, and where it holds it is tight — but a study that
+cannot afford a look-ahead on one quarter in fifteen should join the observed
+date instead of this one.
+
+A note on using the result: this function reindexes its input, so assigning it
+straight onto a filtered frame (``d['deadline'] = available_date(d.period_end)``)
+aligns on a RangeIndex the frame no longer has and silently fills NaN. Reset the
+index first, or pass ``.values``.
 """
 from __future__ import annotations
 

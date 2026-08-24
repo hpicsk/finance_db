@@ -43,6 +43,14 @@
     "bound": "monotone",
     "n": 723
   },
+  "test_taiwan_filing_dates_cover_the_statement_trees": {
+    "bound": "monotone",
+    "n": 163991
+  },
+  "test_taiwan_filing_deadline_q2_rule_starts_a_year_early": {
+    "bound": "monotone",
+    "n": 1621
+  },
   "test_taiwan_filing_deadline_table_covers_the_data": {
     "bound": "monotone",
     "n": 332
@@ -122,6 +130,10 @@
   "test_taiwan_statement_trees_drop_old_delistings": {
     "bound": "exact",
     "n": 164
+  },
+  "test_taiwan_statements_are_published_after_their_deadline": {
+    "bound": "monotone",
+    "n": 93527
   },
   "test_taiwan_survivorship_hole_is_rebuilt": {
     "bound": "exact",

@@ -2583,6 +2583,121 @@ def test_taiwan_mops_reason_scored_against_the_hand_labels():
 
 
 
+def test_taiwan_filing_dates_cover_the_statement_trees():
+    """README caveat 9: every company with a statement tree is dated.
+
+    The panel exists to say when a figure became public, so a company missing
+    from it silently falls back on the deadline — the very bound the caveat says
+    is wrong for one quarter in fifteen. Asserting the frames match means a tree
+    added later fails here rather than being dated by a rule nobody chose.
+    """
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists():
+        raise Skipped("filing_dates.parquet not built — "
+                      "run `filing_dates.py` then `--consolidate`")
+    d = pd.read_parquet(path)
+    trees = {p.stem for p in (REPO / "finmind_data/fin_is").glob("*.parquet")}
+    missing = sorted(trees - set(d["stock_id"]))
+    assert not missing, (
+        f"README caveat 9 dates all {len(trees)} companies that carry a "
+        f"statement tree; {len(missing)} have no filing dates ({missing[:5]}), "
+        f"so their statements would be dated by the deadline the caveat says "
+        f"is a bound and not a date"
+    )
+    extra = sorted(set(d["stock_id"]) - trees)
+    assert not extra, (
+        f"{len(extra)} companies carry filing dates but no statement tree "
+        f"({extra[:5]}); the panel is keyed on the code its page was asked "
+        f"for, so a stray code means a page answered for someone else"
+    )
+    undated = int(d["first_public"].isna().sum())
+    assert not undated, f"{undated} rows carry no 上傳日期 and date nothing"
+    return (f"{len(d):,} company-quarters over {d['stock_id'].nunique():,} "
+            f"companies, none undated", len(d))
+
+
+def test_taiwan_statements_are_published_after_their_deadline():
+    """README caveat 9: 6.56 % of the window's quarters were published late.
+
+    This is the number the caveat's claim rests on — that joining `fin_is` on
+    `available_date` hands a trader one figure in fifteen before it existed. It
+    is computed here against the deadline the module actually returns, so a
+    change to `filing_deadlines.csv` moves it and this check says by how much.
+
+    The 第二季 rule is scored on the boundary the filings support rather than
+    the one the table carries, because the table's is a year early and scoring
+    against it would report a table error as a market fact — see the same
+    caveat, and the check below that holds the table to it.
+    """
+    from finmind_data.available_date import available_date
+
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists():
+        raise Skipped("filing_dates.parquet not built")
+    d = pd.read_parquet(path)
+    w = d[(d["period_end"] >= pd.Timestamp("2011-12-31"))
+          & (d["period_end"] <= pd.Timestamp("2024-12-31"))].reset_index(drop=True)
+    dl = available_date(w["period_end"])
+    early_q2 = (w["period_end"].dt.quarter == 2) & (w["period_end"].dt.year <= 2012)
+    dl = dl.where(~early_q2, w["period_end"] + pd.Timedelta(days=75))
+    late = (w["first_public"].dt.normalize() - dl).dt.days
+    n_late = int((late > 0).sum())
+    rate = n_late / len(w)
+    assert math.isclose(rate, 0.0656, abs_tol=0.005), (
+        f"README caveat 9 says 6.56 % of the window's company-quarters were "
+        f"published after the deadline; the rate is now {rate:.2%} "
+        f"({n_late:,} of {len(w):,})"
+    )
+    med = int(late[late > 0].median())
+    assert med == 15, (
+        f"README caveat 9 puts the median lateness at 15 days; it is now {med}"
+    )
+    on_time = int(-late[late <= 0].median())
+    assert on_time == 3, (
+        f"README caveat 9 says an on-time filing lands a median 3 days ahead "
+        f"of the deadline, which is what makes the deadline a tight bound; "
+        f"it is now {on_time}"
+    )
+    return (f"{n_late:,}/{len(w):,} = {rate:.2%} published late, median "
+            f"{med}d; on-time filings land {on_time}d early", len(w))
+
+
+def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
+    """README caveat 9: the table's 第二季 boundary is a year ahead of the data.
+
+    Asserted rather than fixed, because `filing_deadlines.csv` is sourced
+    legislation and a measurement is not a citation. What this holds is the
+    discrepancy: the 45-day rule the table applies to FY2012 half-years is one
+    the filings say nobody was keeping, and 98 % of them come back late against
+    it. If the row is corrected, this check fails and is deleted along with the
+    paragraph it guards; if the filings change, it fails and the paragraph is
+    wrong. Either way the two stop disagreeing silently.
+    """
+    from finmind_data.available_date import available_date
+
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists():
+        raise Skipped("filing_dates.parquet not built")
+    d = pd.read_parquet(path)
+    q2 = d[d["period_end"] == pd.Timestamp("2012-06-30")].reset_index(drop=True)
+    late = ((q2["first_public"].dt.normalize()
+             - available_date(q2["period_end"])).dt.days > 0)
+    assert late.mean() > 0.9, (
+        f"README caveat 9 says the table scores 98 % of FY2012 half-years as "
+        f"late, which is the sign its 第二季 boundary is a year early; the rate "
+        f"is now {late.mean():.1%}. If the row was corrected, delete this check "
+        f"and the paragraph it guards"
+    )
+    med = int((q2["first_public"].dt.normalize()
+               - q2["period_end"]).dt.days.median())
+    assert 55 <= med <= 70, (
+        f"README caveat 9 reads the FY2012 第二季 regime off a median lag of 61 "
+        f"days, against the 45 the table applies; the median is now {med}"
+    )
+    return (f"FY2012 第二季: {late.sum()}/{len(q2)} = {late.mean():.1%} late "
+            f"against the table, median lag {med}d", len(q2))
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -2609,6 +2724,9 @@ CHECKS = [
     test_taiwan_mops_reason_empties_the_undecided_band,
     test_taiwan_mops_overturns_only_failures_the_tape_missed,
     test_taiwan_mops_reason_scored_against_the_hand_labels,
+    test_taiwan_filing_dates_cover_the_statement_trees,
+    test_taiwan_statements_are_published_after_their_deadline,
+    test_taiwan_filing_deadline_q2_rule_starts_a_year_early,
     test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,

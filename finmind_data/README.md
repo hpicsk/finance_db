@@ -228,10 +228,12 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
 ├── delisting_consideration.csv        deal terms read for the payouts, incl. pre-window names
+├── filing_dates.parquet                when each statement first became public (1997-2026)
 ├── mops_reason.parquet                why each exit happened, read off MOPS subjects (2011-2024)
 ├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
+├── filing_dates/<stock_id>.parquet    every 財務報告書 this company filed, with 上傳日期
 ├── mops_listing/<stock_id>.parquet    重大訊息 主旨, delisting ROC year and the two before
 ├── mops_detail/<stock_id>.parquet     同, with 符合條款 / 事實發生日 / 說明 where served
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
@@ -1179,8 +1181,66 @@ ohlcv_all = pd.concat(
     rows first. And a **late filer is not covered** — the deadline is what the
     law required, not what the company did, and a company that filed late, or
     one granted a 不可抗力 extension, published after the date computed here.
-    Closing that needs the announcement dates in 公開資訊觀測站 filings, which
-    no FinMind endpoint mirrors (caveat 8).
+    Closing that needs the announcement dates, and the block below is where
+    they were pulled from — not 公開資訊觀測站, which serves no such table, but
+    TWSE's document server, which stamps every filed report with the second it
+    was uploaded.
+
+    **The announcement dates are pulled, and they close the one direction the
+    deadline cannot bound.** `filing_dates.py` collects TWSE's document server —
+    `doc.twse.com.tw/server-java/t57sb01`, which stamps every filed report with
+    its 上傳日期 to the second — for all **2,230** companies that carry a
+    statement tree: **255,795 documents**, consolidated to **163,991**
+    company-quarters in `filing_dates.parquet`, one row per period with the
+    earliest Chinese report that made it public. The server is not 公開資訊觀測站
+    and carries none of its registration gate, so it answers for delisted and
+    deregistered names alike — 158 of the 164 in-window delistings are dated
+    here. A blank `year` returns a company's whole history, so this is one
+    request per company rather than one per quarter.
+
+    Of the **93,527** company-quarters inside the window, **6,138 — 6.56 %,
+    across 1,421 companies — were published after the deadline this package
+    computes**, a median of 15 days late, 234 at the 90th percentile and 1,665
+    at the worst. That is the bias caveat 9 names, now measured rather than
+    asserted: one company-quarter in fifteen, joined on the deadline, hands a
+    trader a figure that did not yet exist. Where the deadline does hold it is
+    tight — the on-time filings land a median of 3 days ahead of it — so it
+    remains a good bound and a bad date.
+
+    **The filings also falsify a row of `filing_deadlines.csv`.** The table puts
+    the 45-day 第二季 rule in force from `2011-12-31`, so it scores FY2012's
+    half-year against 45 days. The filings say the regime changed a year later:
+    the median 第二季 lag is 59, 59, 61, 61 and 61 days for 2008 through 2012 and
+    then 44 days from 2013, and the 第一季/第三季 lag steps from 29-30 days to 44
+    on the same boundary. Read against the table as it stands, 1,592 of the 1,621
+    FY2012 half-years are late — 98.2 %, which is a table failing rather than a
+    market failing. Moving the rule to first apply to FY2013 leaves 31, and takes
+    the window's late count from 7,699 to the 6,138 quoted above. The annual rule
+    is right where the table puts it: the 第四季 lag drops from 117 days to 89 at
+    FY2011, exactly where the three-month amendment bites. The row is sourced
+    legislation and is corrected against a citation rather than against this
+    measurement, so it is recorded here and left standing.
+
+    Two silent failures were caught in the collecting, both of which returned
+    HTTP 200 and parsed to zero rows. The server throttles by serving
+    「查詢過量，請稍後再查詢!」 in a 469-byte page — a burst allowance of about 14
+    requests with a 16-second cooldown, measured — and reading that as an absence
+    wrote empty histories for 89 companies that have one. A 金融控股公司 is served
+    a subsidiary picker rather than its own filings, and needs the hidden
+    `check2858=Y` the picker carries; without it the fifteen 金控 — 2880 through
+    2892, 5820 and 5880, the whole sector — record nothing. Both are detected by
+    the phrase now, and the collector ends non-zero if any company still lands an
+    empty history, because twice the empty was the collector and not the company.
+
+    Two smaller things the panel keeps and drops. **1,057 rows are filed under a
+    six-digit 公開發行 registration number** rather than a ticker — a company that
+    was publicly issued before it listed filed its first reports under that
+    number, and the server returns them on the listed code's page; they are the
+    same company, so they are kept under the listed code with the old one beside
+    them in `filed_as`. **Thirteen filenames carry a period no calendar has** —
+    192003, 291001, 283102 — and are dropped rather than clipped, all of them
+    pre-2001 documents outside the window.
+
 10. **The statement trees drop old delistings; the exchange's daily trees keep
     them.** The overlay puts every delisted name back in the universe and the
     rebuild gives each one an adjusted return series, but that completeness

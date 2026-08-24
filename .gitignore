@@ -66,6 +66,13 @@ finmind_data/tape/
 # consolidate_capred.py
 finmind_data/capital_reduction.parquet
 
+# Per-company 財務報告書 filing indexes from TWSE's document server (~23 MB,
+# 2,230 files), regenerable via filing_dates.py — budget a day, the server
+# allows a burst of ~14 requests then a cooldown. The company-quarter panel it
+# rolls up to, filing_dates.parquet, is small and is tracked — that is the file
+# the assertions read.
+finmind_data/filing_dates/
+
 # Unpriced share cancellations, regenerable from shares/ via
 # detect_unpriced_actions.py
 finmind_data/unpriced_actions.parquet
