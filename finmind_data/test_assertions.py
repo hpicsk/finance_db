@@ -2412,6 +2412,177 @@ def test_taiwan_month_rev_date_is_the_following_month():
             f"all {rows:,} rows"), rows
 
 
+
+def test_taiwan_mops_covers_every_delisted_name():
+    """README caveat 8: the 主旨 was pulled for all 164, not for the servable few.
+
+    The two MOPS hosts disagree about delisted companies, and the legacy one
+    answers for 14 of the 164. A pull that ran against it would return a corpus
+    that looks complete — every file non-empty, every request answered — over a
+    twelfth of the frame. This asserts the corpus spans the frame, so a rerun
+    pointed at the wrong host fails here rather than shrinking the population a
+    reason is later read from.
+    """
+    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    d = REPO / "finmind_data/mops_listing"
+    if not d.exists():
+        raise Skipped("mops_listing/ not built — run `mops_filings.py listings`")
+    files = {p.stem for p in d.glob("*.parquet")}
+    missing = sorted(set(frame.stock_id) - files)
+    assert not missing, (
+        f"README caveat 8 says 重大訊息 were pulled for every one of the "
+        f"{len(frame)} in-window commons; {len(missing)} have no file "
+        f"({missing[:5]}), so any reason read from this corpus is read over a "
+        f"smaller frame than the caveat claims"
+    )
+    rows = pd.concat([pd.read_parquet(p) for p in d.glob("*.parquet")],
+                     ignore_index=True)
+    empty = sorted(f for f in files if not len(pd.read_parquet(d / f"{f}.parquet")))
+    assert not empty, (
+        f"a company with zero announcements cannot have its reason read; "
+        f"{len(empty)} files are empty ({empty[:5]})"
+    )
+    assert len(rows) >= 19_000, (
+        f"README caveat 8 puts 19,949 announcements in this corpus; it now "
+        f"holds {len(rows)}. A pull that shrank means the host changed what it "
+        f"serves, and the reasons downstream were read from more than survives"
+    )
+    return (f"{len(rows)} 主旨 across {len(files)} names, none empty", len(rows))
+
+
+def test_taiwan_mops_detail_gate_is_registration_not_filing():
+    """README caveat 8: 說明 is refused for a company that deregistered.
+
+    The refusal is the coverage figure, so it is asserted rather than logged:
+    if MOPS starts serving the bodies, the caveat's claim that a consideration
+    must still be read one filing at a time is obsolete and the 說明 for 150
+    names is sitting there unread.
+    """
+    path = REPO / "finmind_data/mops_detail_refusals.csv"
+    if not path.exists():
+        raise Skipped("mops_detail_refusals.csv not built — "
+                      "run `mops_filings.py details`")
+    ref = pd.read_csv(path, dtype={"stock_id": str})
+    ref = ref[ref["stage"] == "details"]
+    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    served = len(frame) - len(ref)
+    assert served == 14, (
+        f"README caveat 8 says MOPS serves the 說明 for 14 of the "
+        f"{len(frame)} and refuses 150; it now serves {served}. If that grew, "
+        f"the consideration is readable for more names than the caveat admits"
+    )
+    off_script = ref.loc[~ref["refusal"].str.contains(
+        "不繼續公開發行|已下市", regex=True, na=False), "stock_id"]
+    assert not len(off_script), (
+        f"caveat 8 says the gate is the company's registration, in one of two "
+        f"sentences; {len(off_script)} names were refused for some other "
+        f"reason ({sorted(off_script)[:5]}), so the gate is not what is claimed"
+    )
+    return (f"{served} names serve a 說明, {len(ref)} refused on registration",
+            len(ref))
+
+
+def test_taiwan_mops_reason_empties_the_undecided_band():
+    """README caveat 8: the filings decide 30 of the 37 the price shape did not.
+
+    This is what the pull bought. The band is the set the single cut is
+    registered against, and the claim is that a filing settles most of it
+    without the cut — so if the reader shrinks, the cut is carrying names the
+    caveat says it no longer has to.
+    """
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    r = pd.read_parquet(path)
+    amb = r[r["price_shape_sign"] == "ambiguous"]
+    decided = amb[amb["reason"] != "unknown"]
+    assert len(amb) == 37, (
+        f"README caveat 8 counts 37 names the shape left undecided; the frame "
+        f"now holds {len(amb)}, so the band this claim is about has moved"
+    )
+    assert len(decided) == 30, (
+        f"README caveat 8 says the filings decide 30 of the 37 undecided "
+        f"names; they now decide {len(decided)}"
+    )
+    n_mer = int((decided["reason"] == "merger").sum())
+    assert n_mer == 19, (
+        f"README caveat 8 splits those 30 into 19 payouts and 11 failures; "
+        f"the split is now {n_mer} and {len(decided) - n_mer}"
+    )
+    return (f"band {len(amb)} -> {len(decided)} decided "
+            f"({n_mer} payout, {len(decided) - n_mer} failure)", len(amb))
+
+
+def test_taiwan_mops_overturns_only_failures_the_tape_missed():
+    """README caveat 8: four overturns, all the same error, one of them 1613.
+
+    The caveat used to describe its error mode with one name because one name
+    was labelled. The filings put four in the 127 the shape decided, every one
+    a removal the tape read as a payout and none the other way. A fifth, or one
+    running the other direction, means the described error mode is no longer
+    the one the data shows — which is the same contract the labelled miss is
+    held to.
+    """
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    r = pd.read_parquet(path)
+    d = r[(r["price_shape_sign"] != "ambiguous") & (r["reason"] != "unknown")]
+    over = d[d["price_shape_sign"] != d["reason"]]
+    wrong_way = over[over["reason"] != "distress"]
+    assert not len(wrong_way), (
+        f"README caveat 8 says every overturn runs the same way — a removal "
+        f"the tape read as a payout; {len(wrong_way)} now run the other way "
+        f"({sorted(wrong_way['stock_id'])}), so the error mode is not one-sided"
+    )
+    got = sorted(over["stock_id"])
+    assert got == ["1613", "3562", "5305", "8497"], (
+        f"README caveat 8 names the four overturns 1613, 3562, 5305 and 8497; "
+        f"they are now {got}. The sentence describing what the shape gets "
+        f"wrong no longer matches the filings"
+    )
+    return (f"{len(over)} overturns, all payout->failure: {got}", len(d))
+
+
+def test_taiwan_mops_reason_scored_against_the_hand_labels():
+    """README caveat 8: the subject rule agrees with the hand labels bar one.
+
+    The labels were read off announcements by hand and the rule reads the same
+    filings mechanically, so this is the rule's error rate against the best
+    reading the package owns. The single disagreement is asserted by name
+    because caveat 8 says that name's *label* is what is wrong: correcting
+    8420 is what should retire this line, and any other name appearing here
+    means the rule drifted instead.
+    """
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    r = pd.read_parquet(path)
+    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                      dtype={"stock_id": str})[["stock_id", "label"]]
+    m = r.merge(lab, on="stock_id", how="inner")
+    dec = m[m["reason"] != "unknown"]
+    assert len(dec) >= 40, (
+        f"the rate needs names the rule decided *and* a hand label reads; "
+        f"only {len(dec)} qualify now, so the score is over a sample too "
+        f"small for the caveat's sentence"
+    )
+    miss = sorted(dec.loc[dec["reason"] != dec["label"], "stock_id"])
+    assert miss == ["8420"], (
+        f"README caveat 8 says the rule and the labels part on 8420 alone, "
+        f"and that the label is the side that is wrong; they now part on "
+        f"{miss}"
+    )
+    rate = float((dec["reason"] == dec["label"]).mean())
+    assert rate >= 0.95, (
+        f"README caveat 8 reports the subject rule agreeing with the hand "
+        f"labels on all but one of {len(dec)}; the rate is now {rate:.1%}"
+    )
+    return (f"{len(dec) - len(miss)}/{len(dec)} agree with the hand labels, "
+            f"parting on {miss}", len(dec))
+
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -2433,6 +2604,11 @@ CHECKS = [
     test_taiwan_adj_covered_survives_concat,
     test_taiwan_open_outside_session_range,
     test_taiwan_delisting_table_has_no_reason,
+    test_taiwan_mops_covers_every_delisted_name,
+    test_taiwan_mops_detail_gate_is_registration_not_filing,
+    test_taiwan_mops_reason_empties_the_undecided_band,
+    test_taiwan_mops_overturns_only_failures_the_tape_missed,
+    test_taiwan_mops_reason_scored_against_the_hand_labels,
     test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,

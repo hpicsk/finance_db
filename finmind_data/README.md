@@ -228,8 +228,12 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
 ├── delisting_consideration.csv        deal terms read for the payouts, incl. pre-window names
+├── mops_reason.parquet                why each exit happened, read off MOPS subjects (2011-2024)
+├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
+├── mops_listing/<stock_id>.parquet    重大訊息 主旨, delisting ROC year and the two before
+├── mops_detail/<stock_id>.parquet     同, with 符合條款 / 事實發生日 / 說明 where served
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
 ├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
@@ -844,8 +848,12 @@ ohlcv_all = pd.concat(
    it is **not** the survivorship bias the universe overlay fixes — a panel can
    hold every delisted name and still misprice each one's final return. The
    reasons live in 公開資訊觀測站 (`mops.twse.com.tw`) filings, which no FinMind
-   endpoint mirrors. Until those are pulled, any delisting return computed from
-   this package is an assumption wearing a number.
+   endpoint mirrors. Those filings are pulled — `mops_filings.py`, and the block
+   at the end of this caveat says how far they reach — and they settle the
+   *reason* for 146 of the 164. They do not settle the *amount*: 說明 is served
+   only for a company still registered as 公開發行, which 14 are, so what a
+   holder received is still read one filing at a time and a delisting return
+   that substitutes the last close is still an assumption wearing a number.
 
     The obvious cheaper source is empty, and it is worth saying so because it is
     the first place anyone looks. TWSE's own 終止上市公司 table
@@ -865,7 +873,8 @@ ohlcv_all = pd.concat(
     that stretch is a market observation of what the shell was worth, which the
     last exchange close is not. It is also a weak signal on the reason, since a
     name that left by merger does not go to 興櫃 at all. Four quoted tails is a
-    sample, not a fix; the fix is still MOPS.
+    sample, not a fix; MOPS is where the fix came from, and
+    the part of it still owed is the consideration, not the sign.
 
     All four delisted between 2007 and 2010, so the exit itself sits before the
     window even though the quotes reach into it — which is also why the vendor
@@ -1023,6 +1032,83 @@ ohlcv_all = pd.concat(
     fact about the cuts, and booking the value a label already settled does not
     make the cuts better. The counts a study meets are **42 `failed`, 4
     `consideration`, 109 `substituted`, 9 `undecided`**.
+
+    **The filings are pulled, and this is how far they reach.**
+    `mops_filings.py` collects 公開資訊觀測站 重大訊息 for every one of the 164,
+    over the delisting ROC year and the two before it — **19,949 announcements**,
+    the thinnest name carrying 31 and the median 103. Two hosts answer and they
+    answer differently. `mopsov.twse.com.tw` serves 14 and refuses 150, 144 with
+    「公開發行公司不繼續公開發行！」and 6 with 「上市公司已下市！」. The 2025 backend
+    at `mops.twse.com.tw/mops/api` serves the 主旨 for all 164, which is why it is
+    the host this package uses. Neither serves the 說明 for a company that has
+    deregistered: the gate is on the company's registration today rather than on
+    the filing, it does not move with `marketKind`, and it is the same on both
+    hosts (probed 2026-08-24). So `mops_detail/` holds 2,555 filing bodies for the 14
+    that stayed 公開發行公司, `mops_detail_refusals.csv` names the 150 that did
+    not, and the reason for those is read off subject lines. A pull that reported
+    only the 14 would be reporting the host's registration policy as a coverage
+    figure.
+
+    **What the subjects decide.** `mops_reason.py` anchors on the filing that
+    announces the exit — the 終止上市/終止櫃檯買賣 notice nearest the delisting
+    date, with bond notices excluded, since a company's convertible bond delists
+    under almost the same sentence and 5346's would otherwise anchor the stock
+    930 days early. An anchor is found for **134** of the 164, a median 40 days
+    ahead of the exit and none earlier than 245, so the 540-day window the module
+    reads is not binding on any name. Where the anchor names a mechanism it
+    decides; where it does not, the window's subjects are counted; where the two
+    sides tie, the answer is `unknown` and stays that way. The frame comes out
+    **110 merger, 36 distress, 18 unknown**.
+
+    Both marker sets are specified positively, and neither started that way. In
+    Taiwanese accounting 合併 means *consolidated*: 合併負債, 合併現金流量表,
+    合併及個體財務報告 and 合併自結獲利 are routine quarterly filings, and matching
+    the bare word marked 24 subjects across 12 of the 116 unlabelled names as
+    merger evidence. 淨值 alone is the monthly 每股淨值 disclosure and 逾期 alone
+    the 逾期應收帳款 ageing table, both of which a watch-listed company files
+    whether or not it is failing. Subtracting such phrases one at a time leaves
+    whichever phrase was not thought of, so 合併 now counts only against a
+    merger-specific word and 淨值 only against a negative one. 解散 is not a
+    distress marker at all — a merger dissolves the company it absorbs.
+
+    **Against the price shape.** The shape left **37** names undecided; the
+    filings decide **30** of them, 19 as payouts and 11 as failures, and 7 stay
+    unknown. On the 127 the shape did decide, the filings agree on 112, are
+    silent on 11, and overturn **4** — all four in the same direction, a payout
+    on the tape that was a removal in the filings. One is **1613 台一**, the miss
+    this caveat names, recovered here without its label. Two more, **5305 敦南**
+    and **8497 格威傳媒**, anchor on 「依證券交易所營業細則第五十三條之十七公告」,
+    the provision under which a suspended company is delisted outright. The
+    fourth, **3562 頂晶科技**, stopped trading at its own peak — a drawdown of
+    1.00 — under 43 in-window notices of 關務署 penalties and 假扣押 seizures. So
+    the error mode this caveat describes is not one name; it is four in 127, and
+    all four are failures that never panicked the tape.
+
+    **One asymmetry is left in, deliberately.** 營業細則第五十三條之十七 is the
+    TWSE provision for delisting a suspended company and is a distress marker
+    here; 證券商營業處所買賣有價證券業務規則, the TPEx notice that does the same
+    job, is not. Adding it would move 6 names, 4 of which carry hand labels —
+    which is to say it would be a second recalibration chosen after seeing what
+    the first one scored, and the score would stop being a measurement. It is
+    recorded as a gap rather than closed, and closing it needs labels this frame
+    has not spent.
+
+    **What it does not close.** The reason is not the amount. 說明 is refused for
+    150 of the 164, so the consideration a holder actually received is still
+    read one filing at a time, and `terminal_value()`'s `substituted` basis and
+    the bias it carries are unchanged by this pull. What changed is the sign: the
+    band the single cut was registered against is no longer the only way to
+    settle 30 of its 37 names.
+
+    One label does not survive the filings. `delisting_labels.csv` reads 8420
+    明揚 as "suspended 6 months, compulsory termination"; its filings record a
+    1-day suspension in 113/04, a board resolution that same week for a 股份轉換
+    with 明安國際, a base date moved twice to 113/11/29, and TPEx approving
+    termination on exactly that date — and the frame's own `suspension_days` for
+    it is 9, not six months. Correcting it moves `n_ambiguous_merger` from 22.2
+    to 23.8 and leaves the 98.7 %, its miss list and the verdict count untouched.
+    The label is pre-registered, so it is recorded here and corrected under its
+    own commit rather than inside this one.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2011-03-31, 2011-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

@@ -55,6 +55,26 @@
     "bound": "monotone",
     "n": 281009
   },
+  "test_taiwan_mops_covers_every_delisted_name": {
+    "bound": "monotone",
+    "n": 19949
+  },
+  "test_taiwan_mops_detail_gate_is_registration_not_filing": {
+    "bound": "monotone",
+    "n": 150
+  },
+  "test_taiwan_mops_overturns_only_failures_the_tape_missed": {
+    "bound": "monotone",
+    "n": 116
+  },
+  "test_taiwan_mops_reason_empties_the_undecided_band": {
+    "bound": "monotone",
+    "n": 37
+  },
+  "test_taiwan_mops_reason_scored_against_the_hand_labels": {
+    "bound": "monotone",
+    "n": 42
+  },
   "test_taiwan_no_event_holes_are_event_free_in_three_sources": {
     "bound": "monotone",
     "n": 54
