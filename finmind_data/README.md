@@ -972,21 +972,30 @@ ohlcv_all = pd.concat(
     payouts.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
-    classified as one books its last traded close, and against the 7 deals whose
-    consideration is recorded in a form needing no ratio convention, that
+    classified as one books its last traded close, and against the 11 deals
+    whose consideration is recorded in a form needing no ratio convention, that
     substitute is wrong in one direction every time — it understates. By a
-    median **+0.9 %** on the five cash deals (+0.47 % to +1.34 %) and **+11.2 %**
+    median **+0.75 %** on the nine cash deals (+0.47 % to +1.34 %) and **+11.2 %**
     on the two share swaps (+9.9 % and +12.5 %). The split is the usable part:
     cash lands the last close to within 1.5 %, so those names never need a filing
-    pulled at all. Seven deals is few and the direction is what survives that; it
-    is a downward bias on a portfolio rather than noise that averages out. Two of
-    the original six delisted before the window starts and left the frame with
-    it; they stay in `delisting_consideration.csv` as the record of what was
-    read. The sample can still be grown without another afternoon of searching:
-    the re-registered draw added payout labels whose `source` already states a
-    price or a ratio, and transcribing them would take the swap convention to
-    roughly n=15 — which is now the only way it moves, since the tender table
-    below reaches cash deals alone.
+    pulled at all. Eleven deals is few and the direction is what survives that;
+    it is a downward bias on a portfolio rather than noise that averages out.
+    Two of the original six delisted before the window starts and left the frame
+    with it; they stay in `delisting_consideration.csv` as the record of what
+    was read.
+
+    The cash side was grown twice and it held both times. Three going-private
+    tenders came out of the exchange's own summary table (below), taking it from
+    n=2 to n=5 and the worst residual from under 1 % to +1.34 %; four more were
+    transcribed from `delisting_labels.csv`, whose `source` already carried a
+    per-share cash price read at labelling, and all four landed inside the band
+    the tenders had widened. **The swap side stays at n=2 and cannot be grown
+    the same way.** A dozen swap labels do state a ratio, but in conventions
+    that disagree row to row — `0.3562:1`, `1:1.68`, `3.15:1`, a bare `1.39` —
+    and the only way to pick a direction without opening the filing is to take
+    whichever one puts the implied consideration near the last close, which is
+    the quantity being measured. That is fitting the answer to the hypothesis,
+    so those stay unread until the filings are.
 
     Where the deals sit was itself read as a finding, and the corrected frame
     refutes it. On the 18 payouts labelled before the refresh, all 9 whose form
@@ -1022,13 +1031,19 @@ ohlcv_all = pd.concat(
     against. Both are holding-company conversions, which follows from the
     selection rather than being a coincidence — a swap stated 1:1 or as a flat
     share count is what a conversion looks like, while a third-party acquisition
-    for stock is the case carrying the odd ratio excluded here. Across the seven
-    the rank correlation with the gap is 0.51, and that is the cash deals
-    settling in a day against the swaps' 13 and 14: the deal form reported under
-    the gap's name. It was 0.80 on four deals and fell when three same-day cash
-    settlements were added, which is what a correlation carried by two clusters
-    does when one of them grows. The staleness account is untested rather than
-    refuted, and these deals cannot test it.
+    for stock is the case carrying the odd ratio excluded here. Across the
+    eleven the rank correlation with the gap is 0.10, and that is the deal form
+    reported under the gap's name: it read 0.80 on four deals, 0.51 once three
+    tenders were added and 0.10 once four transcriptions were, which is what a
+    correlation carried by two clusters does as one of them grows.
+
+    Nine cash deals can be asked something two could not, and this is the one
+    place the staleness account is actually testable here. Staleness is a claim
+    about ordering *within* a cluster — a close nine days old should have
+    drifted further than one a day old — and the ordering runs the other way:
+    the rank correlation of gap against residual is **−0.70** across the nine.
+    Nine is few and the sign is what to take from it, but it is the sign
+    staleness forbids, and it is asserted.
 
     What survives that is the direction, and not the mechanism. Why a
     conversion's last close sits below what was paid is open: a liquidity
@@ -1041,7 +1056,7 @@ ohlcv_all = pd.concat(
 
     So `terminal_value()` books on four bases, cut so each names a different
     piece of work. **`failed`** is zero. **`consideration`** is what was actually
-    paid, for the 7 recorded, a swap priced on the panel at the delisting date.
+    paid, for the 11 recorded, a swap priced on the panel at the delisting date.
     **`substituted`** is the last close standing in for a consideration nobody
     has looked up, carrying the bias above, and one filing closes each. It is
     the count that falls when a consideration is recorded, and the only one:
@@ -1060,8 +1075,8 @@ ohlcv_all = pd.concat(
     and it overturns one verdict outside the band — 1613 books zero rather than
     its last close. The 98.7 % above is unchanged by this and should be: it is a
     fact about the cuts, and booking the value a label already settled does not
-    make the cuts better. The counts a study meets are **41 `failed`, 7
-    `consideration`, 107 `substituted`, 9 `undecided`**, and they are asserted
+    make the cuts better. The counts a study meets are **41 `failed`, 11
+    `consideration`, 103 `substituted`, 9 `undecided`**, and they are asserted
     rather than quoted: the previous pair of them was a name apart from what the
     code returned, and survived because the four numbers were only ever printed
     in a check's message and never compared to anything.

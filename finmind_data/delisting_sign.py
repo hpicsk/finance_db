@@ -469,18 +469,21 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     A swap is worth the successor's price, so it is priced on the panel at the
     delisting date rather than taken from the filing.
 
-    Seven of the 35 payout labels are recorded here. Four were read during
-    labelling; three are the going-private tender offers in
+    Eleven of the 35 payout labels are recorded here, nine of them cash. Four
+    were read during labelling; three are the going-private tender offers in
     ``tender_offers.parquet``, where the exchange's own filing summary states a
     per-share price and the offer opened on the day the shares stopped trading,
-    so no later transaction can have been the exit. What is left is a
-    transcription backlog rather than a property of the deals: the file was
-    built against the 38 labels the package held before the 2026-08-17 refresh,
-    and the re-registered draw added payout labels whose ``source`` already
-    names a per-share price or a share ratio. Reading those across is still the
-    single cheapest thing that would sharpen the bias below, and it is the only
-    thing that would move the swap convention, which the tender table cannot
-    reach — a tender is paid in cash.
+    so no later transaction can have been the exit; four more were transcribed
+    from ``delisting_labels.csv``, whose ``source`` already carried a per-share
+    cash price read at labelling.
+
+    The swap convention stays at two and cannot be grown the same way. A dozen
+    swap labels do state a ratio, but in conventions that disagree row to row —
+    ``0.3562:1``, ``1:1.68``, ``3.15:1``, a bare ``1.39`` — and the only way to
+    pick a direction without the filing is to take whichever one lands the
+    implied consideration near the last close, which is the quantity
+    ``substitute_error`` below exists to measure. So those stay unread until the
+    filing is, and the tender table cannot help: a tender is paid in cash.
     """
     c = pd.read_csv(_CONSIDERATION_FILE,
                     dtype={"stock_id": str, "successor": str})
@@ -547,16 +550,24 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     conversion looks like, while a third-party acquisition for stock is the case
     that carries the odd ratio excluded here — so the staleness account is
     untested rather than refuted, and it is untestable on the deals in hand.
-    Across the seven the rank correlation with the gap is 0.51, which is the
-    cash deals settling in 1 day (7 on one of them) against the swaps' 13 and
-    14: the gap standing in for the deal form, reported under its own name. It
-    fell from 0.80 when the three tender offers were added, all of which settle
-    in a day, which is what a correlation carried by two clusters does when one
-    of them grows.
+    Across the eleven the rank correlation with the gap is 0.10, and its
+    history is half the argument. It read 0.80 at n=4, 0.51 once the three
+    tender offers were added and 0.10 once the four label transcriptions were,
+    because it was never a relationship: it was two clusters, cash settling in
+    1 to 9 days and the two swaps in 13 and 14, and every cash deal added pulls
+    the pooled figure toward nothing.
+
+    The other half is what nine cash deals can now be asked and two could not.
+    Staleness is a claim about ordering *within* a cluster — a close nine days
+    old should have drifted further than one a day old — and the ordering runs
+    the other way: the rank correlation of gap against residual is −0.70 across
+    the nine. Nine is few and the sign is what to take from it, but it is the
+    sign staleness forbids, measured where the pooled correlation could only
+    ever have reported the deal form back.
 
     Ruling that out leaves the direction measured and the mechanism open. A
     liquidity discount on a name whose exit is already fixed, terms revised
-    upward between announcement and effect, and seven deals falling one way all
+    upward between announcement and effect, and eleven deals falling one way all
     fit these residuals equally, and no caller should read a cause into the
     column: ``residual`` is a bias to disclose, not a factor to divide out.
     """

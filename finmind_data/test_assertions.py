@@ -888,15 +888,25 @@ def test_taiwan_delisting_substitute_is_biased_low():
     assertion pins; the size splits by deal type and the split is the finding,
     because it decides which lookups are worth doing.
 
-    Seven deals is few, and the direction is the part that survives that. Two of
-    the original six delisted before the coverage start and left the frame with
-    the window; they stay in `delisting_consideration.csv` as the record of what
-    was read. Three of the seven are the going-private tender offers in
-    `tender_offers.parquet`, and adding them took cash from n=2 to n=5 and the
-    worst cash residual from under 1 % to +1.34 % — the direction held on all
-    three and the bound did not, which is what growing a sample is for. The rest
-    can still be grown, and only from labels: a tender is paid in cash, so that
-    table cannot reach the swap convention at all.
+    Eleven deals is still few, and the direction is the part that survives
+    that. Two of the original six delisted before the coverage start and left
+    the frame with the window; they stay in `delisting_consideration.csv` as the
+    record of what was read. The sample was grown twice. Three came from the
+    going-private tender offers in `tender_offers.parquet`, taking cash from n=2
+    to n=5 and the worst cash residual from under 1 % to +1.34 % — the direction
+    held and the bound did not, which is what growing a sample is for. Four more
+    came off `delisting_labels.csv`, whose `source` already carried a per-share
+    cash price read at labelling, and all four landed inside the band the tender
+    offers had already widened.
+
+    The swap side is stuck at n=2 and the reason is worth stating, because the
+    labels appear to carry ratios for a dozen more. They carry them in
+    inconsistent conventions — `0.3562:1`, `1:1.68`, `3.15:1`, a bare `1.39` —
+    and picking a direction per row would mean choosing the one whose implied
+    consideration sits near the last close. That is fitting the answer to the
+    hypothesis this check tests. The direction has to come off the filing, which
+    is the one-at-a-time work caveat 8 describes, and until it does the swap
+    convention stays at two.
 
     The `overlap` assertion is the one that will fire on such an addition, and
     it should. Zero acquirer sessions before the target's last trade is what
@@ -939,6 +949,18 @@ def test_taiwan_delisting_substitute_is_biased_low():
         f"README caveat 8 puts the share-swap understatement near 11 %; the "
         f"median is now {swap.median():+.1%}. That number is what makes a "
         f"swap worth resolving and a cash deal not"
+    )
+    # Staleness predicts an ordering *within* a cluster, and nine cash deals
+    # can now be asked for one where two could not. The pooled correlation
+    # cannot: it only ever reported cash-vs-swap back under another name.
+    within = cash.to_frame().join(e.set_index(e.index)["gap"])
+    rho = float(within.corr(method="spearman").iloc[0, 1])
+    assert rho < -0.5, (
+        f"README caveat 8 rules out staleness partly on the cash deals ordering "
+        f"against it — a close nine days old has drifted less, not more, at a "
+        f"rank correlation of -0.70 across the nine. It is now {rho:+.2f}; at or "
+        f"above zero the staleness account is live again and the caveat's "
+        f"dismissal of it does not hold"
     )
     assert (e.loc[e["kind"] == "swap", "overlap"] == 0).all(), (
         f"README caveat 8 says the understatement is not the last close going "
@@ -986,9 +1008,9 @@ def test_taiwan_delisting_substitute_is_biased_low():
     # `substituted` were a name apart from what the code returns, and survived
     # because they were only ever printed in this check's message. Asserted now.
     basis = t["basis"].value_counts().to_dict()
-    assert basis == {"substituted": 107, "failed": 41, "undecided": 9,
-                     "consideration": 7}, (
-        f"README caveat 8 says a study meets 41 failed, 7 consideration, 107 "
+    assert basis == {"substituted": 103, "failed": 41, "undecided": 9,
+                     "consideration": 11}, (
+        f"README caveat 8 says a study meets 41 failed, 11 consideration, 103 "
         f"substituted and 9 undecided; it now meets {basis}. Recording a "
         f"consideration moves a name from substituted to consideration and "
         f"nothing else moves at all"

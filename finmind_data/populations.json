@@ -41,7 +41,7 @@
   },
   "test_taiwan_delisting_substitute_is_biased_low": {
     "bound": "monotone",
-    "n": 7
+    "n": 11
   },
   "test_taiwan_delisting_table_has_no_reason": {
     "bound": "monotone",
