@@ -854,6 +854,32 @@ ohlcv_all = pd.concat(
    242.49 against `min` = `close` = 3.43, which reads as −98.6 % followed by
    +6,853 %. `is_valid` does not cover these; they are bad prices, not broken
    series.
+
+   **A third pre-listing cluster is inside the window.** On **2011-04-14** the
+   vendor stamped one session onto **12** codes that then do not trade again
+   for **7 to 419 days** — 1337, 3665, 4141, 4144, 4935, 4984, 5215, 5871,
+   5880, 5906, 5907 and 8427 — where every other series in the panel waits a
+   median of one day between its first two sessions. It is the third most
+   common opening date in `ohlcv/`, behind only the two backfill epochs
+   (2005-01-03 with 1,114 series and 2006-12-13 with 118) and ahead of any real
+   listing day. No single row gives itself away: the OHLCV is internally
+   consistent, and `spread` reads −1.00 on all twelve, which on one row is an
+   ordinary one-dollar fall — it is that on 1.1 % of the panel — and on twelve
+   is not chance. Whatever the vendor means by it, it is a property of the
+   cohort and not a test a row can be put to, so the cohort is what is read.
+
+   These rows are **pinned rather than truncated**, and the reason is that
+   nothing available says where to cut. FinMind publishes no Taiwanese listing
+   date — `TaiwanStockInfo.date` is the day a stock left a market, by the
+   vendor's own note, and `IPOYear` belongs to the US table — so a pre-listing
+   rule would have to infer the boundary from the silence that follows the row,
+   and that silence runs unbroken from a week to fourteen months. The same rule
+   loosed on the panel reaches the **56** series whose largest gap exceeds 180
+   days, and **50** of those gaps sit mid-series, where the name resumes and
+   goes on trading — deleting a halt is a worse error than keeping a session. So the class is closed by assertion instead: a
+   thirteenth series, or a second such day, fails
+   `test_taiwan_pre_listing_sessions_are_one_vendor_day` rather than arriving
+   in a return.
 7. **TWSE stopped publishing the 除權息 split in 2009.** `exright_reference.parquet`
    carries 權值 and 息值 as separate columns for 2005-2008 and only their sum
    `權值+息值` from 2009 on, alongside a `權/息` label. The label still settles a
@@ -1041,9 +1067,11 @@ ohlcv_all = pd.concat(
     other reading implies NT$331 against a last close of NT$22.25.
 
     Seven in-frame swaps are still unpriced, and the gate is the same one a
-    company over. **Five had a buyer that was itself later bought** — 2448 晶電,
-    3698 隆達, 2456 奇力新, 5317 凱美 — and MOPS refuses a deregistered acquirer in
-    the words it refuses the targets, recorded in `mops_acquirer_refusals.csv`.
+    company over. **Five had a buyer that was itself later bought** — four
+    buyers across those five deals, since 2456 奇力新 bought two of them, the
+    others being 2448 晶電, 3698 隆達 and 5317 凱美 — and MOPS refuses a
+    deregistered acquirer in the words it refuses the targets, recorded per
+    target in `mops_acquirer_refusals.csv`.
     **Two went into a holding company that did not exist before the conversion**
     (3428 and 6145 into 永崴投控 3712), so there is no earlier filing of its to
     read; its first announcements are dated the conversion day and are
@@ -1174,7 +1202,7 @@ ohlcv_all = pd.concat(
     reads is not binding on any name. Where the anchor names a mechanism it
     decides; where it does not, the window's subjects are counted; where the two
     sides tie, the answer is `unknown` and stays that way. The frame comes out
-    **110 merger, 36 distress, 18 unknown**.
+    **112 merger, 34 distress, 18 unknown**.
 
     Both marker sets are specified positively, and neither started that way. In
     Taiwanese accounting 合併 means *consolidated*: 合併負債, 合併現金流量表,
@@ -1189,25 +1217,47 @@ ohlcv_all = pd.concat(
 
     **Against the price shape.** The shape left **37** names undecided; the
     filings decide **30** of them, 19 as payouts and 11 as failures, and 7 stay
-    unknown. On the 127 the shape did decide, the filings agree on 112, are
-    silent on 11, and overturn **4** — all four in the same direction, a payout
-    on the tape that was a removal in the filings. One is **1613 台一**, the miss
-    this caveat names, recovered here without its label. Two more, **5305 敦南**
-    and **8497 格威傳媒**, anchor on 「依證券交易所營業細則第五十三條之十七公告」,
-    the provision under which a suspended company is delisted outright. The
-    fourth, **3562 頂晶科技**, stopped trading at its own peak — a drawdown of
-    1.00 — under 43 in-window notices of 關務署 penalties and 假扣押 seizures. So
-    the error mode this caveat describes is not one name; it is four in 127, and
-    all four are failures that never panicked the tape.
+    unknown. On the 127 the shape did decide, the filings agree on 114, are
+    silent on 11, and overturn **2** — both in the same direction, a payout on
+    the tape that was a removal in the filings. One is **1613 台一**, the miss
+    this caveat names, recovered here without its label. The other, **3562
+    頂晶科技**, stopped trading at its own peak — a drawdown of 1.00 — under 43
+    in-window notices of 關務署 penalties and 假扣押 seizures. So the error mode
+    this caveat describes is not one name; it is two in 127, and both are
+    failures that never panicked the tape.
 
-    **One asymmetry is left in, deliberately.** 營業細則第五十三條之十七 is the
-    TWSE provision for delisting a suspended company and is a distress marker
-    here; 證券商營業處所買賣有價證券業務規則, the TPEx notice that does the same
-    job, is not. Adding it would move 6 names, 4 of which carry hand labels —
-    which is to say it would be a second recalibration chosen after seeing what
-    the first one scored, and the score would stop being a measurement. It is
-    recorded as a gap rather than closed, and closing it needs labels this frame
-    has not spent.
+    **The list stood at four, and two of them were this rule.** Until
+    2026-08-25 a citation to 營業細則第五十三條之十七 counted as distress, on the
+    reading that the article removes a suspended company. It does not. The
+    provision governs one transaction and no other — a listed company that swaps
+    its shares to an unlisted existing company under 企業併購法第34條, becomes its
+    wholly-owned subsidiary, and delists on the swap's record date. **5305 敦南**
+    is that swap into Diodes' 台灣達爾科技 and **8497 格威傳媒** is that swap into
+    台北博報堂投資, the second step after a tender at NT$69 a share that took
+    25.2m of a 26.9m ceiling and so left the rest to buy; each files its
+    企業併購法第33條 notice beside the citation. The marker moved to the merger
+    side, where it decides at the anchor. Nothing in the rule's output could
+    have shown this — a misread statute returns a verdict, not an error — so the
+    reading is now bound to the transaction it names, and a citer that files no
+    swap fails the assertion. The article appears on 2 subjects in the whole
+    archive and neither name carries a hand label, so the score below is
+    arithmetically the score it was before the correction.
+
+    **The TPEx notice stays out, and the reason is not symmetry.**
+    證券商營業處所買賣有價證券業務規則 was described here as the notice doing the
+    same job on the other exchange; it is not the same job. Six companies file
+    one and every notice suspends trading or changes the trading method, so it
+    is matched as neither marker. Adopting it would decide **two** of those six
+    and no more: 3642, 4152 and 8420 write 變更交易方法, which the distress
+    pattern already matches on its own, and 3431 is decided elsewhere in its
+    window. The two left are **1333 恩得利**, whose notices only suspend, and
+    **6497 亞獅康-KY**, whose notice writes 變更交易方**式** — one character off
+    the phrase the pattern carries. Both are `unknown` today, both carry a hand
+    label, and adopting the rule name would decide them into the labels those
+    hand readings already give them: a second recalibration chosen after seeing
+    what the first one scored, on the very names the score is read against. It
+    is recorded as a gap rather than closed, and closing it needs labels this
+    frame has not spent.
 
     **What it does not close.** The reason is not the amount. 說明 is refused for
     150 of the 164, so the consideration a holder actually received is still
@@ -1273,9 +1323,8 @@ ohlcv_all = pd.concat(
     and 5820 日盛金 by 富邦金 2881, which is the largest residual of the eight.
     Those three are the same defined lookup `swap_ratios.py` already performs,
     and they are not done here only because they change no gate: none of the
-    eight is labelled, none is held out, and the price shape calls all eight
-    payouts — 8497 格威傳媒 being the one the filings overturn to a failure, which
-    is where it is already reported. The other five were bought by
+    eight is labelled, none is held out, and the tape and the filings both call
+    all eight payouts. The other five were bought by
     unlisted or foreign vehicles — a Cayman company, a Japanese one, three
     private holdcos — which file nothing on 公開資訊觀測站 and are the standing
     part of the gap.

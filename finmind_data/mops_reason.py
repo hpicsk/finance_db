@@ -67,9 +67,17 @@ SUBSIDIARY_PROXY = r"代子公司|代重要子公司|代轉投資|本公司之�
 # phrase was not thought of: on the 116 names that carry no hand label, that
 # error marked 24 subjects across 12 companies. So 合併 counts only where a
 # merger-specific word follows it or a counterparty precedes it.
+#
+# 營業細則第五十三條之十七 belongs here and not below. The provision governs one
+# transaction and no other: a listed company that swaps its shares to an
+# unlisted existing company under 企業併購法第34條 and becomes its wholly-owned
+# subsidiary delists on the swap's record date. A company citing it has named
+# the mechanism, even though the subject line carries only an article number
+# and a date.
 MERGER = (r"合併(?:案|契約|基準日|解散|消滅|存續|新設)|"
           r"(?:與|向|由|經)[^，。\s]{2,24}合併|吸收合併|簡易合併|"
           r"股份轉換|股份交換|"
+          r"五十三條之十七|53條之17|"
           r"公開收購|承諾收購|收購.{0,8}(?:股權|股份|本公司)|"
           r"存續公司|消滅公司|私有化|概括讓與|概括承受")
 
@@ -78,15 +86,14 @@ MERGER = (r"合併(?:案|契約|基準日|解散|消滅|存續|新設)|"
 # 每股淨值 disclosure and 逾期 alone is the routine 逾期應收帳款 ageing table,
 # both of which every watch-listed company files monthly. 解散 is left out
 # entirely — a merger dissolves the absorbed company too, so it does not separate
-# the two. 營業細則第五十三條之十七 is the TWSE provision under which a suspended
-# company is delisted outright, and names the mechanism where the subject line
-# otherwise gives only a date.
+# the two. No exchange-provision citation is a distress marker on either
+# exchange: the one that reads like a delisting rule, 營業細則第五十三條之十七,
+# is a share-swap provision and is matched above.
 DISTRESS = (r"未能依|未依.{0,6}期限|"
             r"淨值(?:為負|轉負|低於|不足|已為負)|每股淨值.{0,4}低於|"
             r"重整|破產|聲請清算|"
             r"退票|存款不足|"
             r"全額交割|變更交易方法|"
-            r"五十三條之十七|53條之17|"
             r"接獲.{0,12}通知.{0,10}停止買賣|"
             r"財務困難|無法.{0,6}償還|支付命令|假扣押")
 

@@ -47,6 +47,10 @@
     "bound": "monotone",
     "n": 723
   },
+  "test_taiwan_exchange_provision_markers_match_what_they_govern": {
+    "bound": "monotone",
+    "n": 8
+  },
   "test_taiwan_filing_dates_cover_the_statement_trees": {
     "bound": "monotone",
     "n": 163991
@@ -130,6 +134,10 @@
   "test_taiwan_post_delisting_sessions_are_marked": {
     "bound": "monotone",
     "n": 1134
+  },
+  "test_taiwan_pre_listing_sessions_are_one_vendor_day": {
+    "bound": "monotone",
+    "n": 12
   },
   "test_taiwan_price_adj_one_per_universe": {
     "bound": "monotone",

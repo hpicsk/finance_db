@@ -1091,8 +1091,9 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     # The two clusters are orders of magnitude apart on `overlap`, not adjacent,
     # so the cut between them is not a judgement: a third-party acquirer has
     # traded for years and a new holding company for none. 5854's single session
-    # is a stray 5880 row eight months before that code lists, and it is why the
-    # cut is drawn above a handful rather than above zero.
+    # is 5880's pre-listing row of 2011-04-14, one of the twelve
+    # `test_taiwan_pre_listing_sessions_are_one_vendor_day` pins, and it is why
+    # the cut is drawn above a handful rather than above zero.
     acq = e[(e["kind"] == "swap") & (e["overlap"] > 100)]
     thin = e[(e["kind"] == "swap") & (e["overlap"] <= 100)]
     assert len(acq) == 6 and acq["overlap"].min() > 1000 and \
@@ -1625,6 +1626,89 @@ def test_taiwan_ohlcv_is_raw():
 
 
 # ---- Taiwan: what the bought adjusted series is, and what it does not mark --
+# The one day the vendor stamped a session onto codes that had not begun
+# trading. Named rather than derived: the silence that follows those rows runs
+# unbroken from a week to fourteen months, so no gap threshold separates them
+# from a suspension, and the date is the only thing all of them share.
+_PRE_LISTING_DAY = "2011-04-14"
+
+# Every other series in the panel waits a median of one day between its first
+# two sessions and exactly one waits longer than a month. A month is clear of
+# both, and of the seven-day minimum inside the cohort.
+_NORMAL_START_GAP_DAYS = 31
+
+
+def test_taiwan_pre_listing_sessions_are_one_vendor_day():
+    """README caveat 6: twelve series open on one day and then stop for months.
+
+    A series that trades once and does not trade again for a year has not
+    started trading, but no single row says so — the OHLCV is internally
+    consistent, and `spread` reads −1.00 on all twelve, which on one row is an
+    ordinary one-dollar fall and is that on 1.1 % of the panel. Twelve of twelve
+    is not chance, but it is a property of the cohort rather than a test a row
+    can be put to, so what this reads is the date they share and the silence
+    after it.
+
+    They are pinned rather than dropped because no vendor field says where a
+    listing begins: `TaiwanStockInfo.date` is the day a stock left a market and
+    `IPOYear` belongs to the US table, so a truncation rule would have to infer
+    the boundary from the gap — and inferring it would reach the 56 series whose
+    largest gap exceeds 180 days, 50 of them mid-series halts the name trades
+    out of. A thirteenth series, or a second such day, fails here instead of
+    arriving in a return.
+    """
+    import pyarrow.parquet as pq
+
+    files = sorted((REPO / "finmind_data/ohlcv").glob("*.parquet"))
+    if not files:
+        raise Skipped("ohlcv/ not built — run `download.py`")
+    day = pd.Timestamp(_PRE_LISTING_DAY)
+    cohort, strays, empty = {}, {}, []
+    for path in files:
+        if "date" not in pq.ParquetFile(path).schema_arrow.names:
+            empty.append(path.stem)
+            continue
+        dt = pd.to_datetime(pd.read_parquet(path, columns=["date"])["date"])
+        if not len(dt):
+            empty.append(path.stem)
+            continue
+        dt = dt.sort_values().reset_index(drop=True)
+        if len(dt) < 2:
+            continue
+        gap = int((dt.iloc[1] - dt.iloc[0]).days)
+        if dt.iloc[0] == day:
+            cohort[path.stem] = gap
+        elif gap > _NORMAL_START_GAP_DAYS:
+            strays[path.stem] = gap
+
+    assert sorted(cohort) == ["1337", "3665", "4141", "4144", "4935", "4984",
+                              "5215", "5871", "5880", "5906", "5907", "8427"], (
+        f"README caveat 6 names the twelve series that open on "
+        f"{_PRE_LISTING_DAY}; they are now {sorted(cohort)}"
+    )
+    assert (min(cohort.values()), max(cohort.values())) == (7, 419), (
+        f"caveat 6 says every one of the twelve then stops for 7 to 419 days, "
+        f"which is what makes the row a pre-listing session rather than a "
+        f"start; the run is now {min(cohort.values())} to {max(cohort.values())}"
+    )
+    assert sorted(strays) == ["2491"], (
+        f"caveat 6 rests the cohort on a date because no gap threshold "
+        f"separates it: outside {_PRE_LISTING_DAY} exactly one series waits "
+        f"more than {_NORMAL_START_GAP_DAYS} days between its first two "
+        f"sessions, and it is 2491. It is now {sorted(strays)}, so a gap rule "
+        f"and a date rule no longer pick out different sets"
+    )
+    assert len(empty) == 3, (
+        f"3 codes in the universe carry an OHLCV file the vendor never filled; "
+        f"{len(empty)} do now ({sorted(empty)[:6]}), and an empty series reads "
+        f"as an unlisted one here"
+    )
+    return (f"{len(cohort)} series open on {_PRE_LISTING_DAY} and then wait "
+            f"{min(cohort.values())}-{max(cohort.values())} days, against one "
+            f"series elsewhere in {len(files)} that waits over a month",
+            len(cohort))
+
+
 def test_taiwan_adjusted_series():
     """README "Adjusted prices", on the three things it claims.
 
@@ -2800,14 +2884,17 @@ def test_taiwan_mops_reason_empties_the_undecided_band():
 
 
 def test_taiwan_mops_overturns_only_failures_the_tape_missed():
-    """README caveat 8: four overturns, all the same error, one of them 1613.
+    """README caveat 8: two overturns, both the same error, one of them 1613.
 
     The caveat used to describe its error mode with one name because one name
-    was labelled. The filings put four in the 127 the shape decided, every one
-    a removal the tape read as a payout and none the other way. A fifth, or one
-    running the other direction, means the described error mode is no longer
-    the one the data shows — which is the same contract the labelled miss is
-    held to.
+    was labelled. The filings put two in the 127 the shape decided, both a
+    removal the tape read as a payout and neither the other way. A third, or
+    one running the other direction, means the described error mode is no
+    longer the one the data shows — which is the same contract the labelled
+    miss is held to. It stood at four until the statute behind 53-17 was read
+    (`test_taiwan_exchange_provision_markers_match_what_they_govern`); two of
+    the four were the rule misreading a share swap, not the tape missing a
+    failure.
     """
     path = REPO / "finmind_data/mops_reason.parquet"
     if not path.exists():
@@ -2822,12 +2909,117 @@ def test_taiwan_mops_overturns_only_failures_the_tape_missed():
         f"({sorted(wrong_way['stock_id'])}), so the error mode is not one-sided"
     )
     got = sorted(over["stock_id"])
-    assert got == ["1613", "3562", "5305", "8497"], (
-        f"README caveat 8 names the four overturns 1613, 3562, 5305 and 8497; "
-        f"they are now {got}. The sentence describing what the shape gets "
-        f"wrong no longer matches the filings"
+    assert got == ["1613", "3562"], (
+        f"README caveat 8 names the two overturns 1613 and 3562; they are now "
+        f"{got}. The sentence describing what the shape gets wrong no longer "
+        f"matches the filings"
     )
     return (f"{len(over)} overturns, all payout->failure: {got}", len(d))
+
+
+def test_taiwan_exchange_provision_markers_match_what_they_govern():
+    """README caveat 8: one exchange provision is a merger marker, the other is
+    no marker at all, and the second is a gap this frame cannot afford to close.
+
+    An article number is the one subject that says nothing on its face, so what
+    it is worth has to come from the statute and not from the words around it.
+    營業細則第五十三條之十七 governs a single transaction — a listed company
+    swapping its shares to an unlisted existing company under 企業併購法第34條
+    and delisting on the swap's record date — and was read here as a suspension
+    removal until 2026-08-25, which is what put 5305 and 8497 among the
+    overturns. Nothing in the rule's output could show that: a misread statute
+    returns a verdict, not an error. So the reading is bound to the transaction
+    it names, and a citer that files no swap fails here.
+
+    The TPEx notice is not the analogue it was described as — it suspends
+    trading or changes the trading method — and its counterfactual is asserted
+    rather than described, because the prose version of it counted the
+    companies filing a notice and printed that as the names adopting it would
+    decide. Six file one and two would move, and both numbers were true of
+    something.
+    """
+    sys.path.insert(0, str(REPO))
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    from finmind_data import mops_reason as M
+
+    r = pd.read_parquet(path).set_index("stock_id")
+    subjects = {p.stem: pd.read_parquet(p)["subject"].fillna("")
+                for p in sorted((REPO / "finmind_data/mops_listing").glob("*.parquet"))}
+    cites = lambda pat: sorted(k for k, v in subjects.items()
+                               if v.str.contains(pat, regex=True).any())
+
+    # The provision applies to one transaction, so a company citing it has said
+    # which one; the swap filing under its own name is that transaction on the
+    # record. `_subjects` is the rule's own window rather than a second copy.
+    twse = cites(r"五十三條之十七|53條之17")
+    assert twse == ["5305", "8497"], (
+        f"README caveat 8 names 5305 and 8497 as the two 53-17 citers; the "
+        f"archive now cites it for {twse}"
+    )
+    for sid in twse:
+        row = r.loc[sid]
+        assert (row["reason"], row["basis"]) == ("merger", "anchor"), (
+            f"README caveat 8 says 53-17 decides {sid} as a merger at the "
+            f"anchor because the provision governs only a share swap; it now "
+            f"reads {row['reason']} on the {row['basis']}"
+        )
+        w = M._subjects(sid, pd.Timestamp(row["delist_date"]))
+        own = w["subject"].fillna("")
+        own = own[~own.str.contains(M.SUBSIDIARY_PROXY, regex=True)]
+        assert own.str.contains("股份轉換", regex=True).any(), (
+            f"{sid} cites 53-17 but files no 股份轉換 of its own in the window. "
+            f"The provision governs that transaction and no other, so either "
+            f"the statute reading in `mops_reason.py` is wrong or this is a "
+            f"citation to something the rule has never seen"
+        )
+
+    # The TPEx side, and why it stays out. Adopting the rule name would decide
+    # names the score is read against, in the direction their labels already
+    # say — fitting on the scoring set, which is what the order in
+    # `mops_reason.py`'s docstring exists to prevent.
+    tpex = r"證券商營業處所買賣有價證券業務規則"
+    assert not re.search(tpex, M.MERGER) and not re.search(tpex, M.DISTRESS), (
+        "the TPEx business rule has been adopted as a marker; caveat 8 records "
+        "it as an open gap because adopting it fits the scoring set"
+    )
+    filers = cites(tpex)
+    assert len(filers) == 6, (
+        f"README caveat 8 says 6 companies file a TPEx business-rule notice; "
+        f"{len(filers)} do now ({filers})"
+    )
+    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                      dtype={"stock_id": str}).set_index("stock_id")["label"]
+    base = M.build().set_index("stock_id")["reason"]
+    stated = M.DISTRESS
+    M.DISTRESS = stated + "|" + tpex
+    try:
+        alt = M.build().set_index("stock_id")["reason"]
+    finally:
+        M.DISTRESS = stated
+    alt = alt.reindex(base.index)
+    moved = sorted(base.index[base != alt])
+    assert moved == ["1333", "6497"], (
+        f"README caveat 8 says adopting the TPEx notice moves 1333 and 6497; "
+        f"it now moves {moved}, so the sentence pricing the gap is wrong"
+    )
+    unlabelled = [s for s in moved if s not in lab.index]
+    assert not unlabelled, (
+        f"caveat 8 declines the TPEx notice because every name it decides is "
+        f"one the score is read against; {unlabelled} now carry no label, so "
+        f"the gap could be closed on names the score does not spend"
+    )
+    fitted = [s for s in moved if alt[s] == lab[s]]
+    assert fitted == moved, (
+        f"caveat 8 calls adopting the notice a recalibration on the scoring "
+        f"set — it decides labelled names into their own labels; {sorted(set(moved) - set(fitted))} "
+        f"would now be decided against the label, which is a different finding"
+    )
+    return (f"{len(twse)} names cite 53-17 and file the swap it governs, "
+            f"{len(filers)} cite the TPEx rule that stays out because adopting "
+            f"it decides {len(moved)} labelled names into their labels",
+            len(twse) + len(filers))
 
 
 def test_taiwan_mops_reason_scored_against_the_hand_labels():
@@ -3380,6 +3572,7 @@ CHECKS = [
     test_taiwan_swap_ratio_quotes_the_filing_it_names,
     test_taiwan_mops_reason_empties_the_undecided_band,
     test_taiwan_mops_overturns_only_failures_the_tape_missed,
+    test_taiwan_exchange_provision_markers_match_what_they_govern,
     test_taiwan_mops_reason_scored_against_the_hand_labels,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
@@ -3400,6 +3593,7 @@ CHECKS = [
     test_capital_reduction_artifact_exists,
     test_taiwan_par_value_changes_are_priced,
     test_taiwan_ohlcv_is_raw,
+    test_taiwan_pre_listing_sessions_are_one_vendor_day,
     test_taiwan_adjusted_series,
 ]
 
