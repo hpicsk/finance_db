@@ -25,7 +25,7 @@
   },
   "test_taiwan_cash_payouts_land_outside_the_band": {
     "bound": "exact",
-    "n": 26
+    "n": 27
   },
   "test_taiwan_delisting_sign_accuracy": {
     "bound": "exact",

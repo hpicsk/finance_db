@@ -928,9 +928,9 @@ ohlcv_all = pd.concat(
     answered about before the refresh, on the reading that the truth turns over
     near a drawdown of 0.50. On the corrected frame that reading has weakened
     and the alternative registered beside it has overtaken it. Of the 28
-    labelled names between the cuts, 8 of the 13 below 0.50 are failures and 11
-    of the 15 above are payouts — 19 right out of 28 — while the free rule that
-    reads the halt instead of the price is right 24 times on the same 28. The
+    labelled names between the cuts, 8 of the 13 below 0.50 are failures and 12
+    of the 15 above are payouts — 20 right out of 28 — while the free rule that
+    reads the halt instead of the price is right 25 times on the same 28. The
     price path is not doing the work the registered cut assumed, and registering
     the alternative at the same time is what made that visible rather than
     arguable.
@@ -941,11 +941,14 @@ ohlcv_all = pd.concat(
     the band does not grow — and their labels come free with any consideration
     pulled, since an announcement names its own reason. But the gate can no
     longer be read on them: the smallest sample at which anything short of a
-    perfect score clears the base rate is 10, and 9 names are held out, so the
-    threshold is undefined however many of the 9 get labelled. That is reported
+    perfect score clears the base rate is 11, and 9 names are held out, so the
+    threshold is undefined however many of the 9 get labelled. The 8420
+    correction is what took that minimum from 10 to 11 — it raised the band's
+    majority class from 16 payouts in 28 to 17, so the free reading a rule has
+    to beat went from 0.571 to 0.607 and the gate moved further out of reach. That is reported
     rather than repaired. Lowering the bar to fit nine names is the move the
     registration exists to stop, and the way back is a larger held-out set.
-    Until then the cuts leave the band undecided at 37 names, ~22 of them
+    Until then the cuts leave the band undecided at 37 names, ~24 of them
     payouts.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
@@ -1102,15 +1105,35 @@ ohlcv_all = pd.concat(
     band the single cut was registered against is no longer the only way to
     settle 30 of its 37 names.
 
-    One label does not survive the filings. `delisting_labels.csv` reads 8420
-    明揚 as "suspended 6 months, compulsory termination"; its filings record a
-    1-day suspension in 113/04, a board resolution that same week for a 股份轉換
-    with 明安國際, a base date moved twice to 113/11/29, and TPEx approving
-    termination on exactly that date — and the frame's own `suspension_days` for
-    it is 9, not six months. Correcting it moves `n_ambiguous_merger` from 22.2
-    to 23.8 and leaves the 98.7 %, its miss list and the verdict count untouched.
-    The label is pre-registered, so it is recorded here and corrected under its
-    own commit rather than inside this one.
+    One label did not survive the filings, and is corrected here.
+    `delisting_labels.csv` read 8420 明揚 as "suspended 6 months, compulsory
+    termination". Its filings record the opposite: a one-day halt on 113/04/15
+    for a press conference, trading resumed the next session, and on that same
+    day two board resolutions — a 股份轉換 with 明安國際, and a 終止上櫃及停止公開
+    發行 case put to the shareholders' meeting. The swap's base date moved twice
+    and settled on 113/11/29; TPEx approved termination on exactly that date and
+    金管會 the end of 公開發行 on it too. The frame's own `suspension_days` for
+    the name is 9, not six months, a contradiction internal to the sheet and
+    readable without any filing. The label is now `merger`. `form` stays blank:
+    no subject states what 明安 paid, and 股份轉換 permits shares, cash or other
+    property alike, so reading a form in would invent the fact that column
+    exists to count. The correction leaves the 98.7 %, its miss list and the
+    verdict count untouched, since a band name carries no verdict to score. It
+    moves three other things, and all three in the same direction: the band's
+    payout estimate from ~22 to ~24, the free reading a rule inside the band has
+    to beat from 0.571 to 0.607, and with it the smallest readable held-out
+    sample from 10 names to 11 — against the 9 that exist. A label correction
+    that made the registered gate easier would be worth distrusting; this one
+    put it further out of reach.
+
+    **What the subject rule scores, and why that is not an independent number.**
+    On the 42 names carrying both a hand label and a decided reason, the rule
+    now agrees with all 42. It is worth exactly what its provenance allows: the
+    rule parted from the labels on 8420, that parting is what sent the filings
+    to be read, and the label rather than the rule was the side that moved. The
+    number with provenance is **41 of 42 against the sheet as drawn**, followed
+    by a corrected sheet that no longer disagrees — not a rule that scores
+    perfectly. The other 41 were agreed before anyone went looking.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2011-03-31, 2011-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

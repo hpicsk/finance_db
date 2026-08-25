@@ -25,7 +25,7 @@ stock_id,stock_name,delist_date,drawdown,suspension_days,tail_sessions,shared_da
 5395,圓方創新股份有限公司,2017-02-18 00:00:00,0.6605504587155964,227,0,False,ambiguous,edge_hi,measure,distress,,"ex-chairman embezzlement, non-arm's-length transactions"
 1613,台一,2017-11-21 00:00:00,0.7480106100795756,229,0,False,merger,edge_hi,measure,distress,,"failed to file China subsidiary accounts, forced"
 5491,連展科技股份有限公司,2017-12-29 00:00:00,0.7222222222222222,11,0,False,merger,edge_hi,measure,merger,swap,1:1 share transfer into holdco 連展投控
-8420,明揚,2024-11-29 00:00:00,0.6612377850162867,9,0,False,ambiguous,edge_hi,measure,distress,,"suspended 6 months, compulsory termination"
+8420,明揚,2024-11-29 00:00:00,0.6612377850162867,9,0,False,ambiguous,edge_hi,measure,merger,,"股份轉換 with 明安國際 resolved 113/04/15, base date 113/11/29 = the delisting date; consideration not stated"
 3534,雷凌,2011-10-01 00:00:00,0.7945736434108527,9,0,False,merger,clear,measure,merger,swap,"share swap into MediaTek 2454, 3.15:1, effective 2011-10-01"
 3638,F-IML,2014-09-10 00:00:00,0.9988950276243095,1,0,False,merger,clear,measure,merger,cash,"acquired by Exar at NT$91, ~34% premium"
 4762,三汰控股(開曼)股份有限公司,2017-08-01 00:00:00,0.7986111111111112,1,0,False,merger,clear,measure,merger,cash,tender by Granadilla Ltd; voluntary delisting

@@ -44,7 +44,7 @@ other nine have never been looked up, and ``delisting_band.csv`` records what
 rule it has to beat, registered on the same terms so the comparison is not
 assembled afterwards. Those nine are the whole test set, and they are as many as
 there will ever be, because the band does not grow — which is also why the gate
-can no longer be read at all: ``_GATE_MIN_LABELS`` is ten. The work that would produce
+can no longer be read at all: ``_GATE_MIN_LABELS`` is eleven. The work that would produce
 their labels is the payout lookup — an announcement states its own reason, so a
 name looked up for its consideration returns a reason for free — which is why
 this is committed first. Registered after that work begins, it would be
@@ -204,13 +204,13 @@ _SAMPLE_SEED = 20260817
 # exist yet, and the nine names that can supply them are listed in
 # `delisting_band.csv` with 0.50's call on each already committed.
 _DD_SINGLE = 0.50
-_GATE_NULL = 0.571           # 16 of the 28 labelled band names are payouts
+_GATE_NULL = 0.607           # 17 of the 28 labelled band names are payouts
 _GATE_ALPHA = 0.05
 # Derived from the null and alpha, not chosen: the smallest sample at which
-# something short of a perfect score clears. The band holds nine, one below it,
+# something short of a perfect score clears. The band holds nine, two below it,
 # so the gate cannot be read on the held-out set that exists — see the note in
 # `single_cut_gate`.
-_GATE_MIN_LABELS = 10
+_GATE_MIN_LABELS = 11
 
 _LABEL_FILE = HERE / "delisting_labels.csv"
 _BAND_FILE = HERE / "delisting_band.csv"
@@ -389,7 +389,7 @@ def band_holdout(f: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFrame:
     Two calls, not one. ``halt_call`` is the rule a reader gets without the
     drawdown at all — a name whose quotation stopped a month before the formal
     date, or that went on trading after it, failed — and on the 28 labelled band
-    names it is right 24 times against 0.50's 19. It was read off the same 28, so
+    names it is right 25 times against 0.50's 20. It was read off the same 28, so
     it is registered on the same footing rather than offered as a foil, and it
     disagrees with 0.50 on three of the nine held-out names: whatever the labels
     say, they say it about both.
@@ -440,7 +440,7 @@ def single_cut_gate(band: pd.DataFrame) -> dict:
     way, which is what registering the alternative was for.
 
     The gate is unreadable as things stand and the arithmetic says so rather than
-    the prose: nine names are held out and ``_GATE_MIN_LABELS`` is ten, so
+    the prose: nine names are held out and ``_GATE_MIN_LABELS`` is eleven, so
     ``need`` is ``None`` however many of the nine get labelled. Closing the band
     on the registered cut is not available on this frame, and the way back is a
     larger held-out set, not a lower bar.

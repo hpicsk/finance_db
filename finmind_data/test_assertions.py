@@ -747,8 +747,8 @@ def test_taiwan_delisting_sign_accuracy():
         f"stratum-weighted estimate is {r['n_verdict']:.0f}, so the sample no "
         f"longer reconstructs the population it is weighted to"
     )
-    assert math.isclose(r["n_ambiguous_merger"], 22, abs_tol=3), (
-        f"README caveat 8 says ~22 of the ~38 undecided names are payouts; "
+    assert math.isclose(r["n_ambiguous_merger"], 24, abs_tol=3), (
+        f"README caveat 8 says ~24 of the ~38 undecided names are payouts; "
         f"the weighted estimate is now {r['n_ambiguous_merger']:.0f}"
     )
     return (f"{r['accuracy']:.1%} of {r['n_verdict']:.0f} verdicts correct "
@@ -772,8 +772,12 @@ def test_taiwan_single_cut_is_registered_unscored():
     Nine is one short of `_GATE_MIN_LABELS`, so the gate is unreadable on the
     band that exists: the re-registration on the corrected frame drew two of the
     old twelve into the measured sample and put three others outside the window,
-    and the null it has to beat rose from 0.55 to 0.571 at the same time. That is
-    reported rather than repaired — the repair is a wider held-out set, and
+    and the null it has to beat rose from 0.55 to 0.571 at the same time. The
+    8420 label correction took it to 0.607 and the minimum to eleven, which
+    moves the gate further out of reach rather than nearer — the null is a
+    measurement on the label sheet, so a label that changes moves it, and the
+    direction it moved is the one no amount of wanting could have chosen. That
+    is reported rather than repaired — the repair is a wider held-out set, and
     lowering the bar to fit nine names is the move this check exists to stop.
 
     Editing `_DD_SINGLE` afterwards moves a call and fails here, which is what
@@ -840,8 +844,8 @@ def test_taiwan_single_cut_is_registered_unscored():
         {True: "merger", False: "distress"}) == scored["label"]).sum())
     halt = int(((scored["has_tail"] | scored["long_suspension"]).map(
         {True: "distress", False: "merger"}) == scored["label"]).sum())
-    assert (dd50, halt) == (19, 24), (
-        f"README caveat 8 says the halt rule is right 24 times on the 28 "
+    assert (dd50, halt) == (20, 25), (
+        f"README caveat 8 says the halt rule is right 25 times on the 28 "
         f"labelled band names against 0.50's 19, which is why both are "
         f"registered; they now score {dd50} and {halt} of {len(scored)}"
     )
@@ -1036,8 +1040,10 @@ def test_taiwan_cash_payouts_land_outside_the_band():
     re-registration cannot quietly restore the original reading.
 
     `form` is blank wherever the source names a merger without saying what was
-    paid; there are none left in the frame, and reading one in would invent the
-    fact the column exists to count.
+    paid, and one name sits there: 8420's 股份轉換 with 明安國際 is announced
+    without a consideration, and 股份轉換 permits shares, cash or other property
+    alike. It is counted out of the stated-form table rather than read into it,
+    because reading one in would invent the fact the column exists to count.
     """
     from finmind_data.delisting_sign import _DD_MERGER, features
 
@@ -1076,10 +1082,10 @@ def test_taiwan_cash_payouts_land_outside_the_band():
 
     counts = form.value_counts().to_dict()
     assert (len(m), counts.get("swap"), counts.get("cash"),
-            counts.get("unstated")) == (26, 17, 9, None), (
-        f"README caveat 8 says 26 labelled payouts in the frame split 17 share "
-        f"exchanges and 9 cash, with none left unstated; the label file now "
-        f"gives {len(m)} and {counts}. A label arriving for one of the nine "
+            counts.get("unstated")) == (27, 17, 9, 1), (
+        f"README caveat 8 says 27 labelled payouts in the frame split 17 share "
+        f"exchanges, 9 cash and 8420 unstated; the label file now gives "
+        f"{len(m)} and {counts}. A label arriving for one of the nine "
         f"held-out names lands here, and the paragraph is what has to be "
         f"re-read against the new table"
     )
@@ -2376,6 +2382,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
     )
     assert ((b["available_date"] - a["available_date"])
             == pd.Timedelta(days=15)).all(), "extra_days is not additive"
+
     return (f"all {resolved} period ends in fin_is/fin_bs/fin_cf/month_rev "
             f"resolve; 2012 regime boundary holds; extra_days additive"), resolved
 
@@ -2545,14 +2552,15 @@ def test_taiwan_mops_overturns_only_failures_the_tape_missed():
 
 
 def test_taiwan_mops_reason_scored_against_the_hand_labels():
-    """README caveat 8: the subject rule agrees with the hand labels bar one.
+    """README caveat 8: the subject rule against the corrected hand labels.
 
     The labels were read off announcements by hand and the rule reads the same
     filings mechanically, so this is the rule's error rate against the best
-    reading the package owns. The single disagreement is asserted by name
-    because caveat 8 says that name's *label* is what is wrong: correcting
-    8420 is what should retire this line, and any other name appearing here
-    means the rule drifted instead.
+    reading the package owns. It is not an independent one, and caveat 8 says
+    so: the two parted on 8420, the parting is what sent the filings to be
+    read, and the label was the side that moved. 41 of 42 against the sheet as
+    drawn is the number with provenance. What this asserts is that nothing
+    parts now, so a rule that drifts arrives here by name.
     """
     path = REPO / "finmind_data/mops_reason.parquet"
     if not path.exists():
@@ -2568,18 +2576,14 @@ def test_taiwan_mops_reason_scored_against_the_hand_labels():
         f"small for the caveat's sentence"
     )
     miss = sorted(dec.loc[dec["reason"] != dec["label"], "stock_id"])
-    assert miss == ["8420"], (
-        f"README caveat 8 says the rule and the labels part on 8420 alone, "
-        f"and that the label is the side that is wrong; they now part on "
-        f"{miss}"
+    assert miss == [], (
+        f"README caveat 8 says the rule and the corrected labels agree on all "
+        f"{len(dec)}; they now part on {miss}. 8420 was the one parting and it "
+        f"closed by correcting the label, so a name here is the rule drifting "
+        f"rather than a label left to re-read"
     )
-    rate = float((dec["reason"] == dec["label"]).mean())
-    assert rate >= 0.95, (
-        f"README caveat 8 reports the subject rule agreeing with the hand "
-        f"labels on all but one of {len(dec)}; the rate is now {rate:.1%}"
-    )
-    return (f"{len(dec) - len(miss)}/{len(dec)} agree with the hand labels, "
-            f"parting on {miss}", len(dec))
+    return (f"{len(dec)}/{len(dec)} agree with the hand labels, one of them "
+            f"(8420) because the label was corrected to match", len(dec))
 
 
 
@@ -2694,6 +2698,7 @@ def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
         f"README caveat 9 reads the FY2012 第二季 regime off a median lag of 61 "
         f"days, against the 45 the table applies; the median is now {med}"
     )
+
     return (f"FY2012 第二季: {late.sum()}/{len(q2)} = {late.mean():.1%} late "
             f"against the table, median lag {med}d", len(q2))
 
