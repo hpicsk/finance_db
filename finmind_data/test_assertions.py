@@ -2383,8 +2383,21 @@ def test_taiwan_filing_deadline_table_covers_the_data():
     assert ((b["available_date"] - a["available_date"])
             == pd.Timedelta(days=15)).all(), "extra_days is not additive"
 
+    # The result carries the caller's index. Without that, assigning it onto a
+    # filtered frame aligns against a RangeIndex the frame no longer has and
+    # fills NaN, which reads downstream as an unruled period rather than as a
+    # join that silently missed.
+    filtered = d[d["date"] >= "2015-01-01"].copy()
+    assert filtered.index[0] != 0, "the case needs a frame whose index was cut"
+    filtered["deadline"] = available_date(filtered["date"])
+    assert filtered["deadline"].notna().all(), (
+        f"available_date reindexed its input, so "
+        f"{filtered['deadline'].isna().sum()} of {len(filtered)} deadlines "
+        f"assigned onto a filtered frame came back NaT"
+    )
     return (f"all {resolved} period ends in fin_is/fin_bs/fin_cf/month_rev "
-            f"resolve; 2012 regime boundary holds; extra_days additive"), resolved
+            f"resolve; 2012 regime boundary holds; extra_days additive; the "
+            f"result keeps the caller's index"), resolved
 
 
 def test_taiwan_month_rev_date_is_the_following_month():

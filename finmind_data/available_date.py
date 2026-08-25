@@ -68,10 +68,9 @@ it needs no external file, and where it holds it is tight — but a study that
 cannot afford a look-ahead on one quarter in fifteen should join the observed
 date instead of this one.
 
-A note on using the result: this function reindexes its input, so assigning it
-straight onto a filtered frame (``d['deadline'] = available_date(d.period_end)``)
-aligns on a RangeIndex the frame no longer has and silently fills NaN. Reset the
-index first, or pass ``.values``.
+The result carries the index of what was passed in, so
+``d['deadline'] = available_date(d.period_end)`` lands on a filtered frame
+rather than aligning against a RangeIndex the frame no longer has.
 """
 from __future__ import annotations
 
@@ -141,7 +140,12 @@ def available_date(period_end, kind: str = 'financial_statement',
     returning NaT, since a silent NaT here drops rows from a join and looks
     like missing data instead of a missing rule.
     """
-    pe = pd.to_datetime(pd.Series(period_end)).reset_index(drop=True)
+    pe_in = pd.Series(period_end)
+    # Internals run on a fresh RangeIndex: the rule loop assigns through a
+    # boolean mask, which pandas aligns on labels, and a duplicated label in a
+    # concatenated panel would scatter the result. The caller's index is put
+    # back on the way out so the return can be assigned to a filtered frame.
+    pe = pd.to_datetime(pe_in).reset_index(drop=True)
     if kind == 'monthly_revenue':
         want = pd.Series('monthly_revenue', index=pe.index)
     elif kind == 'financial_statement':
@@ -170,7 +174,7 @@ def available_date(period_end, kind: str = 'financial_statement',
             f'{DEADLINES_PATH.name} — first {miss.min().date()}, last '
             f'{miss.max().date()}. Extend the table rather than letting these '
             f'join as NaT.')
-    return out + pd.Timedelta(days=extra_days)
+    return (out + pd.Timedelta(days=extra_days)).set_axis(pe_in.index)
 
 
 def with_available_date(df: pd.DataFrame, kind: str = 'financial_statement',
