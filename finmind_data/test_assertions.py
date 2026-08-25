@@ -15,10 +15,12 @@ each check last read; re-seed it with `--write-populations` after a refresh.
 """
 from __future__ import annotations
 
+import ast
 import glob
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -146,6 +148,72 @@ def test_taiwan_tree_readers_import_the_window():
     return (f"{len(readers)} modules name the trees; "
             f"{len(readers) - len(excepted)} of them import the window, "
             f"{sorted(excepted)} excepted"), len(readers)
+
+
+# ---- Taiwan: no collector names a dataset the vendor does not publish ------
+def test_taiwan_dataset_names_in_code_resolve():
+    """`catalogue`'s own docstring: a dataset name is looked up, not guessed.
+
+    A wrong dataset name is not a loud failure at this API. `/data` answers a
+    name it does not know the same way it answers a name that is simply empty
+    for the ticker asked for, so an invented endpoint and a genuinely absent
+    series are told apart by probing, and the answer is then written down as a
+    comment that nothing re-checks. `download.py` carries two such answers.
+
+    The vendored catalogue is the enum itself, so the question is local. This
+    checks it in both directions: every dataset name spelled anywhere in the
+    package's own source resolves, and every name registered in
+    `catalogue.KNOWN_ABSENT` is still absent — the second half is the one that
+    decays, because the vendor adding a dataset silently converts a true note
+    into a false one and no other check in this file would see it.
+
+    The scan is over string constants rather than over a list of collectors, so
+    a module added tomorrow is covered without editing anything here; it walks
+    the AST rather than the raw text, which is what keeps a `#` comment about a
+    name from being read as a use of it. Scope is the CamelCase REST enum, for
+    the reason `catalogue`'s docstring gives: the lower-case spelling collides
+    with the SDK's method namespace, and a bad SDK method already fails loudly.
+    """
+    from finmind_data import catalogue
+
+    enum = set(catalogue.datasets())
+    assert len(enum) > 50, (
+        f"the vendored catalogue parsed to {len(enum)} datasets, which is too "
+        f"few to be the published enum (FinMind advertises 75+) — the copy is "
+        f"truncated or its heading format moved, and every name below would "
+        f"then resolve against a set that cannot refute any of them"
+    )
+    token = re.compile(r"\bTaiwan[A-Z][A-Za-z0-9]*\b")
+    seen = {}
+    for f in sorted(glob.glob(str(REPO / "finmind_data/*.py"))):
+        for node in ast.walk(ast.parse(Path(f).read_text())):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for t in token.findall(node.value):
+                    seen.setdefault(t, set()).add(os.path.basename(f))
+    used = {t: v for t, v in seen.items() if t not in catalogue.KNOWN_ABSENT}
+    assert used, (
+        "no module in the package spells a FinMind dataset name at all, so "
+        "this check has no population — the collectors moved their names out "
+        "of source, and the invariant is unverified rather than held"
+    )
+    unknown = sorted(t for t in used if t not in enum)
+    assert not unknown, (
+        f"{unknown} is named in {sorted(set().union(*(used[t] for t in unknown)))} "
+        f"and is not in the enum the vendor publishes as of "
+        f"{catalogue.pull_date()}. Either it was never a dataset, or it was "
+        f"withdrawn and whatever reads it now collects nothing while looking "
+        f"like it collects an empty series"
+    )
+    resurrected = sorted(t for t in catalogue.KNOWN_ABSENT if t in enum)
+    assert not resurrected, (
+        f"catalogue.KNOWN_ABSENT records {resurrected} as refused by the API, "
+        f"and the vendor now publishes it. The note is false and the workaround "
+        f"named beside it may no longer be the only way to get the series: "
+        f"{ {t: catalogue.KNOWN_ABSENT[t] for t in resurrected} }"
+    )
+    return (f"{len(used)} dataset names in source all resolve against the "
+            f"{len(enum)}-dataset enum pulled {catalogue.pull_date()}; "
+            f"{len(catalogue.KNOWN_ABSENT)} registered absences still absent"), len(used)
 
 
 # ---- Taiwan: one OHLCV file per universe id --------------------------------
@@ -3085,6 +3153,7 @@ def test_taiwan_par_value_changes_are_priced():
 
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
+    test_taiwan_dataset_names_in_code_resolve,
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_universe_excludes_the_instruments_it_claims_to,
     test_taiwan_price_adj_one_per_universe,

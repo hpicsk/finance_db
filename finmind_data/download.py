@@ -36,16 +36,18 @@ DATASETS = {
     "shares":            "TaiwanStockShareholding",
     # back-adjusted price (還原股價), sponsor tier only. Total-return
     # convention: cash dividends are removed along with the share events, so
-    # `close` here is the counterpart of a KRX-style dividend-inclusive series
-    # and there is no price-return variant (README "Adjusted prices").
+    # `close` here is dividend-inclusive and the vendor publishes no
+    # price-return variant beside it (README "Adjusted prices").
     "price_adj":         "TaiwanStockPriceAdj",
     # priority extension (informed-trading / reversal research).
     "per_pbr":           "TaiwanStockPER",
     "margin_short":      "TaiwanStockMarginPurchaseShortSale",
     "month_rev":         "TaiwanStockMonthRevenue",
     # second batch (fundamentals, ownership, lending).
-    # TaiwanStockEPS / TaiwanStockShareholdingClassification are not
-    # in FinMind's enum; TaiwanStockHoldingSharesPer is paid-only.
+    # Two names asked for here are not in the vendor's enum; they are
+    # registered in catalogue.KNOWN_ABSENT, where a check re-confirms the
+    # absence rather than trusting this comment. TaiwanStockHoldingSharesPer
+    # exists but is paid-only.
     "fin_is":            "TaiwanStockFinancialStatements",
     "fin_bs":            "TaiwanStockBalanceSheet",
     "fin_cf":            "TaiwanStockCashFlowsStatement",

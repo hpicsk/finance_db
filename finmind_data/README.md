@@ -1563,11 +1563,25 @@ Not a FinMind endpoint at all — the exchange serves it free and without a key:
 | — | TWSE **TWTAUU** 股票減資恢復買賣參考價格, `…/rwd/zh/reducation/TWTAUU` | **Not downloaded, and it settles caveat 5.** The exchange refuses any start date before ROC 100/1/1 (`查詢開始日期小於100年1月1日，請重新查詢!`) and its first row is 100/01/25 = **2011-01-25**, byte-identical to where FinMind's `cap_red/` begins. The pre-2011 gap is therefore TWSE's own publication limit, not a vendor tier — no paid plan and no other mirror can close it. Probed 2026-08-01. |
 
 **The whole Taiwan catalogue, swept 2026-08-25.** FinMind publishes a machine
--readable index of its datasets at `finmind.github.io/llms-full.txt` — 75+ Taiwan
-datasets with tier, date range, params and columns. Every entry was read against
-what this package holds. One gap was load-bearing and is now closed
-(`TaiwanStockSplitPrice`, caveat 5); the rest of what the sweep found is below,
-so the next reader does not re-probe it.
+-readable index of its datasets at `finmind.github.io/llms-full.txt` — every
+dataset with its tier, date range, params and columns, 105 of them at this pull.
+Every entry was read against what this package holds. One gap was load-bearing
+and is now closed (`TaiwanStockSplitPrice`, caveat 5); the rest of what the sweep
+found is below, so the next reader does not re-probe it.
+
+The index is vendored as `finmind_catalogue_20260825.txt` and read by
+`catalogue.py`, so "is there a dataset for this?" is answered locally instead of
+by probing. It matters because a wrong name is not a loud failure here: `/data`
+answers a name it does not know exactly as it answers a name that is merely
+empty for the ticker asked for, so an invented endpoint and a real absence are
+separated by trial, and the answer then survives as a comment nothing re-checks.
+`test_taiwan_dataset_names_in_code_resolve` closes both directions — every
+dataset name spelled in the package resolves, and the two names
+`catalogue.KNOWN_ABSENT` records as refused are re-confirmed absent, so the
+vendor adding one turns a note that quietly went false into a failure. The pull
+date is in the filename because this is the vendor's document and not this
+package's output: a refresh adds a file beside it rather than overwriting one,
+and how old the answer is stays readable.
 
 **The exit price is not in the catalogue, and that is structural rather than a
 tier.** `TaiwanStockDelisting` carries `date`, `stock_id`, `stock_name` and
