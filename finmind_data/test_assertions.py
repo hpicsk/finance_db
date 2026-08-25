@@ -1631,6 +1631,16 @@ def test_taiwan_vendor_event_audit_is_current():
     )
     committed = pd.read_parquet(OUT_PATH)
     fresh = audit()
+    # Datetime *unit* is the writer's, not the audit's: pandas 3 builds this
+    # frame's `date` as datetime64[us] while the committed parquet was written
+    # when the same construction gave ns, and every one of the 18,277 values is
+    # equal across the two. Comparing units would report a pandas upgrade as a
+    # changed grade, which is the opposite of what this check is for, so the
+    # unit is pinned on both sides and everything else stays exact.
+    for f in (committed, fresh):
+        for col in f.columns:
+            if pd.api.types.is_datetime64_any_dtype(f[col]):
+                f[col] = f[col].astype("datetime64[ns]")
     pd.testing.assert_frame_equal(
         committed.reset_index(drop=True), fresh.reset_index(drop=True),
         check_exact=True, obj="vendor_event_audit.parquet")
