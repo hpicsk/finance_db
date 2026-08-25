@@ -123,6 +123,10 @@
     "bound": "exact",
     "n": 175
   },
+  "test_taiwan_par_value_changes_are_priced": {
+    "bound": "exact",
+    "n": 12
+  },
   "test_taiwan_post_delisting_sessions_are_marked": {
     "bound": "monotone",
     "n": 1134

@@ -2987,6 +2987,64 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
 
 
 
+def test_taiwan_par_value_changes_are_priced():
+    """README caveat 5: the rebuild steps across a 面額變更 rather than through it.
+
+    A 面額變更 divides the quoted price and multiplies the share count by the
+    same factor, so it moves a price as mechanically as a 減資 — and it sat in
+    neither of the two chains the factor was built from. The gate that certifies
+    the rebuild (`test_taiwan_rebuild_matches_vendor`) could not see it: that one
+    scores on in-window *delistings*, and a par value change is what a healthy
+    company with an expensive share does, so the validation set is
+    anti-correlated with the failure. This check scores the same statistic on
+    the event dates themselves, which is the population that was missing.
+
+    The raw leg is asserted too. Without it a chain that silently stopped
+    carrying these events would still pass, by matching a vendor series that had
+    also stopped — the raw drop is what makes the event's presence checkable
+    from outside either adjusted series.
+    """
+    sys.path.insert(0, str(REPO))
+    from finmind_data import adjust
+
+    sp = pd.read_parquet(REPO / "finmind_data/split_reference.parquet")
+    uni = set(pd.read_parquet(REPO / "finmind_data/universe.parquet")["stock_id"])
+    ev = sp[sp["date"].between(COVERAGE_START, COVERAGE_END)
+            & sp["stock_id"].isin(uni)]
+    raw_drop = matched = 0
+    for r in ev.itertuples():
+        px = _tree(REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet",
+                   columns=["date", "close"]).sort_values("date")
+        px = px.reset_index(drop=True)
+        i = px.index[px["date"] >= r.date]
+        a = _tree(REPO / f"finmind_data/price_adj/{r.stock_id}.parquet",
+                  columns=["date", "close"]).sort_values("date")
+        a = a.reset_index(drop=True)
+        j = a.index[a["date"] >= r.date]
+        if not len(i) or not i[0] or not len(j) or not j[0]:
+            continue
+        i, j = i[0], j[0]
+        raw_drop += int(px["close"][i] / px["close"][i - 1] - 1 < -0.30)
+        f, _ = adjust.rebuild_tr_factor(r.stock_id, px)
+        rebuilt = (px["close"][i] * f[i]) / (px["close"][i - 1] * f[i - 1]) - 1
+        vendor = a["close"][j] / a["close"][j - 1] - 1
+        matched += int(abs(rebuilt - vendor) < 1e-3)
+    n = len(ev)
+    assert n == 12 and raw_drop == 12, (
+        f"README caveat 5 claims 12 in-window 面額變更 events, every one of them "
+        f"a raw drop past -30 %; this tree has {n} events and {raw_drop} drops"
+    )
+    assert matched == 12, (
+        f"README caveat 5 claims the rebuild reproduces the vendor on all 12 "
+        f"in-window 面額變更 events; it does on {matched}. Below 12 the chain in "
+        f"split_reference.parquet is no longer reaching the factor, and the "
+        f"rebuilt names carry the whole par change as a return"
+    )
+    return (f"{n} in-window 面額變更 events, all {raw_drop} a raw drop past "
+            f"-30 %, all {matched} rebuilt to the vendor within 1e-3"), n
+
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -3031,6 +3089,7 @@ CHECKS = [
     test_taiwan_month_rev_date_is_the_following_month,
     test_taiwan_no_event_holes_are_event_free_in_three_sources,
     test_capital_reduction_artifact_exists,
+    test_taiwan_par_value_changes_are_priced,
     test_taiwan_ohlcv_is_raw,
     test_taiwan_adjusted_series,
 ]

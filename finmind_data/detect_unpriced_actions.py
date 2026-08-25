@@ -10,6 +10,15 @@ FinMind's own ``TaiwanStockPriceAdj`` inherits the same limit — 2357's 85 %
 reduction on 2010-06-24 has a vendor factor step of 1.0000 — so buying the
 adjusted series does not retire this detector.
 
+This script looks for cancellations, and only for those. A share count can also
+*multiply* — a 面額變更 divides the price and multiplies the count by the same
+factor — and no threshold on a drop will ever see one. That class is covered by
+being filed rather than by being detected: ``split_reference.parquet`` carries
+the exchange's reference prices for all twelve in-window events, so
+``adjust.filed_event_dates`` explains them and nothing here needs to. Before
+that file existed the two blind spots lined up, which is why the class was
+invisible from inside the package.
+
 ``shares/NumberOfSharesIssued`` is a third source, from a different endpoint, and it
 covers 2005 onward. A share cancellation shows up there as a one-step drop, so it
 can say *that* an action happened in the window where the event file cannot. It

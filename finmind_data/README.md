@@ -220,6 +220,7 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── delisting_consideration.csv        deal terms read for the payouts, incl. pre-window names
 ├── filing_dates.parquet                when each statement first became public (1997-2026)
 ├── mops_reason.parquet                why each exit happened, read off MOPS subjects (2011-2024)
+├── split_reference.parquet            面額變更 / 分割 reference prices, the third event chain (2019-2026)
 ├── tender_offers.parquet              every filed 公開收購 and its per-share price (2016-2024)
 ├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
@@ -248,6 +249,7 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── consolidate_capred.py              merges cap_red/*.parquet → capital_reduction.parquet
 ├── detect_unpriced_actions.py         share drops no filing explains → unpriced_actions.parquet
 ├── download_exright.py                TWSE TWT49U (free, keyless) → exright_reference.parquet
+├── download_split_price.py            TaiwanStockSplitPrice → split_reference.parquet
 ├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
@@ -815,6 +817,33 @@ ohlcv_all = pd.concat(
    減資 and 42 in 40 stocks do not. Run it after `consolidate_capred.py`;
    `load_adjusted` raises if its output is missing rather than serving the
    vendor series as if the window were clean.
+
+   **A second action reprices the same way, and was in no chain at all.** A
+   面額變更 — the flexible par value the FSC opened to listed companies — divides
+   the quoted price and multiplies the share count by the same factor, so it
+   moves a price exactly as mechanically as a 減資 does. There are **12** of them
+   in the window, ratios from 0.10 to 0.50, and until `split_reference.parquet`
+   existed the rebuilt factor stepped straight across every one: it read 6548's
+   2019-09-09 ten-for-one as a **−89.0 %** day, and was wrong by 49 to 99
+   percentage points on the other eleven. Two things kept that invisible.
+   `detect_unpriced_actions.py` looks for share-count *drops*, and this action is
+   a share-count *multiplication*, so no threshold it carries could ever fire on
+   one. And the gate that certifies the rebuild scores on in-window delistings —
+   while a par value change is what a healthy company with an expensive share
+   does, and **none of the 12 names ever delisted**. The validation set was
+   anti-correlated with the failure, which is the shape of thing a green suite
+   cannot report. Nothing was actually served wrong: all 12 are vendor-covered
+   and `adj_source` reads `vendor` across each event, so the defect was latent,
+   live only in the rebuilt names it had not yet reached.
+   `download_split_price.py` now takes the exchange's reference prices for the
+   class and `adjust.py` multiplies them in as a third chain, which reproduces
+   the vendor on all 12 to 1e-3. Unlike the 減資 chain this one has no
+   publication gap behind it: scanning `shares/` × `ohlcv/` for the signature —
+   the share count multiplying while the close divides by the matching ratio —
+   turns up eleven candidates across the whole window and every one is already
+   in the endpoint, the earliest on its own first date. The twelfth, 8476, is
+   found by the endpoint and not the scan because its share count updates two
+   sessions after the reprice.
 6. **A handful of raw prices are wrong**, and no adjustment can repair a bad
    input: stale near-zero quotes, sporadic pre-listing 興櫃 sessions
    (2007-03-03 and 2007-04-14 carry clusters of them, all TPEx, both outside
@@ -1493,6 +1522,7 @@ Follow-up — delivered (top-level files, not in per-stock DATASETS):
 | File | Endpoint | Notes |
 |---|---|---|
 | `delisted_universe.parquet` | `TaiwanStockDelisting` | Already in repo — the existing file *is* the `TaiwanStockDelisting` market-wide one-shot output (723 rows, 2001-2026). Refreshed 2026-08-17. Columns: `date`, `stock_id`, `stock_name`, `year` (year derived from date). No re-download needed. |
+| `split_reference.parquet` | `TaiwanStockSplitPrice` | 面額變更 / 分割 / 反分割 reference prices, market-wide and free. 33 filings, 31 stocks, 2019-09-09 onward, of which **12 are in-window on a universe name**. `download_split_price.py` writes it; `adjust.py` reads it as a third chain. `TaiwanStockParValueChange` covers the same actions under other column names and every one of its 15 rows is already keyed here, so only the wider table is taken. Probed 2026-08-25. |
 | `capital_reduction.parquet` | `TaiwanStockCapitalReductionReferencePrice` | Concatenated event log (sparse: most stocks have 0 events). 9 columns including `PostReductionReferencePrice`, `ExrightReferencePrice`, `ReasonforCapitalReduction`. Per-stock raw files in `cap_red/`; `consolidate_capred.py` merges them. **The endpoint's earliest row is 2011-01-25**, six years after the price series starts — see caveat 5. |
 
 Not a FinMind endpoint at all — the exchange serves it free and without a key:
@@ -1501,6 +1531,30 @@ Not a FinMind endpoint at all — the exchange serves it free and without a key:
 |---|---|---|
 | `exright_reference.parquet` | TWSE **TWT49U** 除權除息計算結果表, `www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=&endDate=&response=json` | 15,314 events / 1,269 stocks, 2005-01-11 → 2024-12-31. Whole-year queries are not truncated (2007 returns 538 rows either way), so `download_exright.py` needs 20 requests. Carries the same two reference prices as `div_result/` — they agree to 1e-6 on **99.99 %** of the 13,892 joined events, the single exception being 3454's malformed 2011-07-27 twin that the vendor audit also flags — plus the **權值 / 息值 split** `div_result` lacks, which resolves 143 fused events whose cash dividend was never declared. Schema narrows in 2009; see caveat 7. Probed 2026-08-01. |
 | — | TWSE **TWTAUU** 股票減資恢復買賣參考價格, `…/rwd/zh/reducation/TWTAUU` | **Not downloaded, and it settles caveat 5.** The exchange refuses any start date before ROC 100/1/1 (`查詢開始日期小於100年1月1日，請重新查詢!`) and its first row is 100/01/25 = **2011-01-25**, byte-identical to where FinMind's `cap_red/` begins. The pre-2011 gap is therefore TWSE's own publication limit, not a vendor tier — no paid plan and no other mirror can close it. Probed 2026-08-01. |
+
+**The whole Taiwan catalogue, swept 2026-08-25.** FinMind publishes a machine
+-readable index of its datasets at `finmind.github.io/llms-full.txt` — 75+ Taiwan
+datasets with tier, date range, params and columns. Every entry was read against
+what this package holds. One gap was load-bearing and is now closed
+(`TaiwanStockSplitPrice`, caveat 5); the rest of what the sweep found is below,
+so the next reader does not re-probe it.
+
+**The exit price is not in the catalogue, and that is structural rather than a
+tier.** `TaiwanStockDelisting` carries `date`, `stock_id`, `stock_name` and
+nothing else — no reason, no consideration, no final settlement price — and no
+other dataset in the Taiwan enum carries one either. There is no paid tier that
+answers this and no endpoint left to try: what a holder received when a company
+left is read one filing at a time from MOPS and from
+公開收購申報資料彙總表, which is what caveat 8 documents.
+
+| Reachable, not taken | What it is | Why not |
+|---|---|---|
+| `TaiwanStockDispositionSecuritiesPeriod` | 處置有價證券 — 4,832 rows, 2011-01-04 → 2024-12-31, with the exchange's own `measure` text | Full-window distress marker and the largest thing on this list. Not taken because nothing here asks a question it answers yet; it is the first place to go if the delisting sign needs a source that is not a filing |
+| `TaiwanStockSuspended` | 暫停交易公告 with `resumption_date`, 7,114 rows from 2011-11-04 | Thin where it would matter: only 266 rows are 4-digit commons, across 224 names, and just 46 of the 246 in-window delisted names have one. Most of the table is warrants |
+| `TaiwanStockTradingDate` | the session calendar — 3,414 in-window sessions | Already held. It matches a continuously-listed name's tape exactly: 0 sessions either way against 2330's `ohlcv/`. Worth knowing it exists, not worth storing twice |
+| `TaiwanStockMarginShortSaleSuspension`, `TaiwanStockDayTradingSuspension` | 暫停融券賣出 / 暫停當沖, ~30k rows each | Routine rather than distress — the modal `reason` is 分配收益, the ordinary pre-ex-dividend suspension |
+| `TaiwanStockParValueChange` | the same 面額變更 actions under other column names | A strict subset: every one of its 15 rows is already keyed in `TaiwanStockSplitPrice`, which is taken instead |
+| `TaiwanStockMarketValue` | 市值, Backer/Sponsor, 2004 → now | Returns 0 rows market-wide despite the docs offering that form. Market cap is `close × NumberOfSharesIssued` here anyway |
 
 Other follow-up not pursued:
 

@@ -13,10 +13,21 @@ The rebuild is possible because ``ohlcv/close`` is raw: it equals the exchange's
 published pre-event ``before_price`` on 99.84 % of 除權息 events, so nothing has
 been removed from it and the reference prices can be applied directly. Both
 event chains are the exchange's own numbers rather than a redistribution of a
-declared dividend — ``div_result/`` for 除權息 and ``capital_reduction.parquet``
-for 減資 — and they never share a ``(stock_id, date)``: 0 overlaps across 18,277
-and 636 filings, so the two chains multiply without double counting.
+declared dividend — ``div_result/`` for 除權息, ``capital_reduction.parquet`` for
+減資 and ``split_reference.parquet`` for 面額變更 / 分割 / 反分割 — and no two of
+them ever share a ``(stock_id, date)``: 0 overlaps across 18,277, 636 and 33
+filings, so the three chains multiply without double counting.
 ``_assert_disjoint`` re-checks it per stock rather than trusting that.
+
+The third chain was the last one added and it was added because it was missing,
+not because it was new. A 面額變更 divides the quoted price and multiplies the
+share count by the same factor, so it moves a price exactly as mechanically as
+a 減資 does — and until ``split_reference.parquet`` existed the rebuilt factor
+stepped straight across all twelve in-window events, reading 6548's 2019-09-09
+ten-for-one as a −89.0 % day. ``detect_unpriced_actions`` could not have caught
+it either: that script finds share-count *drops*, and this action is a
+share-count *multiplication*. See ``download_split_price`` for why the chain's
+2019 start is the first event rather than a publication floor.
 
 **Only total return is built.** A price-return convention needs the cash leg of
 each event named separately, and the exchange publishes one *fused* reference
@@ -38,8 +49,8 @@ total-return one.
 Convention. Each event contributes ``step = before / after``, placed on the
 event row, accumulated with ``cumprod`` and normalised so the factor is 1.0 on
 the last row. For 除權息 the reference price falls, so step > 1 and history is
-scaled down; for 減資 it rises, so step < 1. Same formula, opposite direction,
-no special case.
+scaled down; for 減資 it rises, so step < 1; a 面額變更 falls again, and a
+反分割 rises. Same formula, either direction, no special case.
 
 The step is taken at the ex price rather than the cum one, which is not a
 cosmetic choice: back-adjustment factors compose multiplicatively and only the
@@ -49,7 +60,8 @@ steps are large (median 4.6 % of the cum price, q95 12.6 %) where they carry a
 share-count change as well as cash — compounding to a median 3.7 % and a q99
 30.5 % over a stock's full history.
 
-Coverage limit. ``capital_reduction.parquet`` starts on 2011-01-25 while prices
+Coverage limit, and it is the 減資 chain's alone.
+``capital_reduction.parquet`` starts on 2011-01-25 while prices
 and 除權息 start in 2005, so a reduction filed in the first six years is
 invisible to both chains and its mechanical price jump survives adjustment in
 full. Nothing this account can reach repairs that window — the reference prices
@@ -70,12 +82,17 @@ ROOT = Path(__file__).resolve().parent
 OHLCV_DIR = ROOT / 'ohlcv'
 DIV_RESULT_DIR = ROOT / 'div_result'
 CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
+SPLIT_PATH = ROOT / 'split_reference.parquet'
 
 # 除權息 columns: the exchange's official pre- and post-event reference prices.
 _DIV_BEFORE, _DIV_AFTER = 'before_price', 'after_price'
 # 減資 columns: same pair under the capital-reduction endpoint's own names.
 # ExrightReferencePrice is -1.0 / 0.0 across the file and is not a price.
 _RED_BEFORE, _RED_AFTER = 'ClosingPriceonTheLastTradingDay', 'PostReductionReferencePrice'
+# 面額變更 / 分割 / 反分割 columns: the same pair again, from `download_split_price`.
+# All three reprice by dividing or multiplying the share, with no cash leg, so
+# the step below is the whole of the action and the three share one `kind`.
+_SPL_BEFORE, _SPL_AFTER = 'before_price', 'after_price'
 
 # The exchange publishes before_price to two decimals, so agreement with a close
 # is agreement at the published precision. Not a fitted cut: the one filing this
@@ -112,6 +129,13 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
             out.append(c[['date', _RED_BEFORE, _RED_AFTER]]
                        .rename(columns={_RED_BEFORE: 'before', _RED_AFTER: 'after'})
                        .assign(kind='減資'))
+    if SPLIT_PATH.exists():
+        s = pd.read_parquet(SPLIT_PATH)
+        s = s[s['stock_id'].astype(str) == str(stock_id)]
+        if len(s):
+            out.append(s[['date', _SPL_BEFORE, _SPL_AFTER]]
+                       .rename(columns={_SPL_BEFORE: 'before', _SPL_AFTER: 'after'})
+                       .assign(kind='面額變更'))
     if not out:
         return pd.DataFrame(columns=['date', 'step', 'kind'])
 
@@ -172,7 +196,7 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
 
 
 def filed_event_dates(stock_id: str) -> np.ndarray:
-    """Every date this stock filed a 除權息 or a 減資 on, unfiltered.
+    """Every date this stock filed a 除權息, 減資 or 面額變更 on, unfiltered.
 
     ``_read_events`` drops malformed and duplicate filings because a step is
     computed from them. A caller asking only *whether* the factor could have
@@ -192,23 +216,28 @@ def filed_event_dates(stock_id: str) -> np.ndarray:
         c = c[c['stock_id'].astype(str) == str(stock_id)]
         if len(c):
             out.append(pd.to_datetime(c['date']))
+    if SPLIT_PATH.exists():
+        s = pd.read_parquet(SPLIT_PATH, columns=['stock_id', 'date'])
+        s = s[s['stock_id'].astype(str) == str(stock_id)]
+        if len(s):
+            out.append(pd.to_datetime(s['date']))
     if not out:
         return np.array([], dtype='datetime64[ns]')
     return np.sort(pd.concat(out).to_numpy())
 
 
 def _assert_disjoint(ev: pd.DataFrame, stock_id: str) -> None:
-    """除權息 and 減資 must not land on the same session, or the step double counts."""
+    """No two chains may land on one session, or that step double counts."""
     dup = ev[ev.duplicated('date', keep=False)]
     if len(dup) and dup['kind'].nunique() > 1:
         clash = dup.groupby('date')['kind'].nunique()
         clash = clash[clash > 1]
         if len(clash):
             raise ValueError(
-                f'{stock_id}: 除權息 and 減資 share {len(clash)} session(s) '
-                f'({", ".join(str(d.date()) for d in clash.index[:3])}) — the two '
-                f'reference-price chains would double count. Reconcile the '
-                f'endpoints before adjusting.')
+                f'{stock_id}: two reference-price chains share {len(clash)} '
+                f'session(s) ({", ".join(str(d.date()) for d in clash.index[:3])})'
+                f' — the step would double count. Reconcile the endpoints '
+                f'before adjusting.')
 
 
 def _raw_event_count(stock_id: str) -> int:
@@ -220,6 +249,9 @@ def _raw_event_count(stock_id: str) -> int:
     if CAP_RED_PATH.exists():
         c = pd.read_parquet(CAP_RED_PATH, columns=['stock_id'])
         n += int((c['stock_id'].astype(str) == str(stock_id)).sum())
+    if SPLIT_PATH.exists():
+        s = pd.read_parquet(SPLIT_PATH, columns=['stock_id'])
+        n += int((s['stock_id'].astype(str) == str(stock_id)).sum())
     return n
 
 
