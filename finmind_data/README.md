@@ -230,6 +230,7 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── delisting_consideration.csv        deal terms read for the payouts, incl. pre-window names
 ├── filing_dates.parquet                when each statement first became public (1997-2026)
 ├── mops_reason.parquet                why each exit happened, read off MOPS subjects (2011-2024)
+├── tender_offers.parquet              every filed 公開收購 and its per-share price (2016-2024)
 ├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
@@ -952,20 +953,21 @@ ohlcv_all = pd.concat(
     payouts.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
-    classified as one books its last traded close, and against the 4 deals whose
+    classified as one books its last traded close, and against the 7 deals whose
     consideration is recorded in a form needing no ratio convention, that
-    substitute is wrong in one direction every time — it understates. By
-    **+0.6 %** on the two cash deals and **+11 %** on the two share swaps
-    (+9.9 % and +12.5 %). The split is the usable part: a cash consideration is
-    the last close to within 1 %, so those names never need a filing pulled at
-    all. Four deals is few and the direction is what survives that; it is a
-    downward bias on a portfolio rather than noise that averages out. Two of the
-    original six delisted before the window starts and left the frame with it;
-    they stay in `delisting_consideration.csv` as the record of what was read.
-    The sample can be grown without another afternoon of searching: the
-    re-registered draw added 23 payout labels whose `source` already states a
-    price or a ratio, and transcribing them would take the two conventions to
-    roughly n=8 cash and n=15 swap.
+    substitute is wrong in one direction every time — it understates. By a
+    median **+0.9 %** on the five cash deals (+0.47 % to +1.34 %) and **+11.2 %**
+    on the two share swaps (+9.9 % and +12.5 %). The split is the usable part:
+    cash lands the last close to within 1.5 %, so those names never need a filing
+    pulled at all. Seven deals is few and the direction is what survives that; it
+    is a downward bias on a portfolio rather than noise that averages out. Two of
+    the original six delisted before the window starts and left the frame with
+    it; they stay in `delisting_consideration.csv` as the record of what was
+    read. The sample can still be grown without another afternoon of searching:
+    the re-registered draw added payout labels whose `source` already states a
+    price or a ratio, and transcribing them would take the swap convention to
+    roughly n=15 — which is now the only way it moves, since the tender table
+    below reaches cash deals alone.
 
     Where the deals sit was itself read as a finding, and the corrected frame
     refutes it. On the 18 payouts labelled before the refresh, all 9 whose form
@@ -1001,10 +1003,12 @@ ohlcv_all = pd.concat(
     against. Both are holding-company conversions, which follows from the
     selection rather than being a coincidence — a swap stated 1:1 or as a flat
     share count is what a conversion looks like, while a third-party acquisition
-    for stock is the case carrying the odd ratio excluded here. Across the four
-    the rank correlation with the gap is 0.80, and that is the cash deals
-    settling in 1 and 7 days against the swaps' 13 and 14: the deal form
-    reported under the gap's name. The staleness account is untested rather than
+    for stock is the case carrying the odd ratio excluded here. Across the seven
+    the rank correlation with the gap is 0.51, and that is the cash deals
+    settling in a day against the swaps' 13 and 14: the deal form reported under
+    the gap's name. It was 0.80 on four deals and fell when three same-day cash
+    settlements were added, which is what a correlation carried by two clusters
+    does when one of them grows. The staleness account is untested rather than
     refuted, and these deals cannot test it.
 
     What survives that is the direction, and not the mechanism. Why a
@@ -1018,9 +1022,11 @@ ohlcv_all = pd.concat(
 
     So `terminal_value()` books on four bases, cut so each names a different
     piece of work. **`failed`** is zero. **`consideration`** is what was actually
-    paid, for the 4 recorded, a swap priced on the panel at the delisting date.
+    paid, for the 7 recorded, a swap priced on the panel at the delisting date.
     **`substituted`** is the last close standing in for a consideration nobody
-    has looked up, carrying the bias above, and one filing closes each.
+    has looked up, carrying the bias above, and one filing closes each. It is
+    the count that falls when a consideration is recorded, and the only one:
+    nothing else moves.
     **`undecided`** is NaN and is the only NaN — the sign is what the band does
     not know, and a number there would be a guess at the direction rather than
     at the size. That distinction is what the column is for: the last two are
@@ -1035,8 +1041,11 @@ ohlcv_all = pd.concat(
     and it overturns one verdict outside the band — 1613 books zero rather than
     its last close. The 98.7 % above is unchanged by this and should be: it is a
     fact about the cuts, and booking the value a label already settled does not
-    make the cuts better. The counts a study meets are **42 `failed`, 4
-    `consideration`, 109 `substituted`, 9 `undecided`**.
+    make the cuts better. The counts a study meets are **41 `failed`, 7
+    `consideration`, 107 `substituted`, 9 `undecided`**, and they are asserted
+    rather than quoted: the previous pair of them was a name apart from what the
+    code returned, and survived because the four numbers were only ever printed
+    in a check's message and never compared to anything.
 
     **The filings are pulled, and this is how far they reach.**
     `mops_filings.py` collects 公開資訊觀測站 重大訊息 for every one of the 164,
@@ -1100,10 +1109,45 @@ ohlcv_all = pd.concat(
 
     **What it does not close.** The reason is not the amount. 說明 is refused for
     150 of the 164, so the consideration a holder actually received is still
-    read one filing at a time, and `terminal_value()`'s `substituted` basis and
-    the bias it carries are unchanged by this pull. What changed is the sign: the
-    band the single cut was registered against is no longer the only way to
-    settle 30 of its 37 names.
+    read one filing at a time. What changed is the sign: the band the single cut
+    was registered against is no longer the only way to settle 30 of its 37
+    names.
+
+    **One table is not behind that gate, and it settles three of them.**
+    公開收購申報資料彙總表 is filed by the *offeror* and served by period rather
+    than by company, so a deregistered target has nothing to gate: 2325 矽品 and
+    4180 安成藥業 both answer where their own 說明 does not (probed 2026-08-25).
+    `tender_offers.py` takes the whole of it in one request — **89 offers** from
+    ROC 105/11 (2016-11), the floor the query form states, each with the
+    per-share 收購對價 in words, who was buying, and how much they got.
+    **Fifteen** were made on a name in this frame.
+
+    Three of those fifteen are booked as the consideration, and the rule that
+    picks them is a date rather than a judgement. Taiwan's going-private order is
+    to terminate the listing first and buy out whoever is left after, and
+    公開收購管理辦法 §18 caps an offer at 50 days — so 4762 三汰-KY, 4965 商店街 and
+    5304 鼎創達 each open their offer *on* the delisting date and close 49 days
+    later, and nothing later can have been their exit because there was no market
+    left for it to precede. The column the offeror files,
+    被收購公司於收購後是否終止上市, does not decide this and is not used: it reads 是
+    for two of the three and 不適用 for the third on identical facts.
+
+    The other twelve stay out, and eight of them are the reason the amount is
+    still open. Those were the first step of a two-step deal — a tender, then a
+    股份轉換 or 合併 that ended the listing between 99 and 648 days later — and
+    what a holder who did *not* tender received is the squeeze-out's price, which
+    this table does not carry. Their tender prices sit from **−5.8 %** (3144
+    新揚科) to **+11.1 %** (5820 日盛金) against the last close, so assuming the two
+    steps priced alike would import a spread wider than the bias being measured.
+    The remaining four are offers the table itself says did not end the listing:
+    2823 中壽 was tendered twice, at NT$35 and NT$23.6, and left by a 股份轉換
+    four years after the first.
+
+    Where the two sources meet they agree. 4965's hand label already read
+    「PChome bought in minorities at NT$44/share」 and the exchange's table says
+    每股新台幣 44 元 — the same number from a filing read by hand and from a
+    summary filed by the buyer. The other two are new: 4762's label recorded the
+    tender and not its price, and 5304 carries no label at all.
 
     One label did not survive the filings, and is corrected here.
     `delisting_labels.csv` read 8420 明揚 as "suspended 6 months, compulsory

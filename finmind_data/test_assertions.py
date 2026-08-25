@@ -888,12 +888,15 @@ def test_taiwan_delisting_substitute_is_biased_low():
     assertion pins; the size splits by deal type and the split is the finding,
     because it decides which lookups are worth doing.
 
-    Four deals is few, and the direction is the part that survives that. Two of
+    Seven deals is few, and the direction is the part that survives that. Two of
     the original six delisted before the coverage start and left the frame with
     the window; they stay in `delisting_consideration.csv` as the record of what
-    was read. The sample can be grown — the re-registered draw added 23 payout
-    labels whose `source` already states a price or a ratio — and any addition
-    to that file moves these numbers on purpose.
+    was read. Three of the seven are the going-private tender offers in
+    `tender_offers.parquet`, and adding them took cash from n=2 to n=5 and the
+    worst cash residual from under 1 % to +1.34 % — the direction held on all
+    three and the bound did not, which is what growing a sample is for. The rest
+    can still be grown, and only from labels: a tender is paid in cash, so that
+    table cannot reach the swap convention at all.
 
     The `overlap` assertion is the one that will fire on such an addition, and
     it should. Zero acquirer sessions before the target's last trade is what
@@ -917,10 +920,20 @@ def test_taiwan_delisting_substitute_is_biased_low():
     )
     cash = e.loc[e["kind"] == "cash", "residual"]
     swap = e.loc[e["kind"] == "swap", "residual"]
-    assert cash.max() < 0.01, (
-        f"README caveat 8 says a cash consideration is within 1 % of the last "
+    assert cash.max() < 0.015, (
+        f"README caveat 8 says a cash consideration is within 1.5 % of the last "
         f"close, which is why cash deals need no lookup; the worst is now "
-        f"{cash.max():+.1%}"
+        f"{cash.max():+.2%}"
+    )
+    # The split is the finding, not either level: it is what decides that a swap
+    # is worth a filing and a cash deal is not. Pinned as a ratio so a sample
+    # that grows on either side has to keep them an order of magnitude apart.
+    assert swap.min() > 5 * cash.max(), (
+        f"README caveat 8 rests on cash and swap understatements being an order "
+        f"of magnitude apart — {len(cash)} cash deals at most {cash.max():+.2%} "
+        f"against {len(swap)} swaps from {swap.min():+.1%}. They are now within "
+        f"a factor of {swap.min() / cash.max():.1f}, so the lookup priority the "
+        f"caveat sets no longer follows from the measurement"
     )
     assert math.isclose(swap.median(), 0.112, abs_tol=0.02), (
         f"README caveat 8 puts the share-swap understatement near 11 %; the "
@@ -968,6 +981,17 @@ def test_taiwan_delisting_substitute_is_biased_low():
     assert (t.loc[t["basis"] == "substituted", "terminal"]
             == t.loc[t["basis"] == "substituted", "last_close"]).all(), (
         "a payout books its last close, which is the substitute being measured"
+    )
+    # These four were quoted in the README off a run whose `failed` and
+    # `substituted` were a name apart from what the code returns, and survived
+    # because they were only ever printed in this check's message. Asserted now.
+    basis = t["basis"].value_counts().to_dict()
+    assert basis == {"substituted": 107, "failed": 41, "undecided": 9,
+                     "consideration": 7}, (
+        f"README caveat 8 says a study meets 41 failed, 7 consideration, 107 "
+        f"substituted and 9 undecided; it now meets {basis}. Recording a "
+        f"consideration moves a name from substituted to consideration and "
+        f"nothing else moves at all"
     )
     paid = e.set_index("stock_id")["paid"]
     booked = t[t["basis"] == "consideration"].set_index("stock_id")["terminal"]
@@ -2847,6 +2871,83 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
             f"filed after it", len(w))
 
 
+def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
+    """README caveat 8: a tender is the exit only if it opened after the tape did.
+
+    `tender_offers.parquet` is the exchange's own 公開收購申報資料彙總表, and it is
+    reachable for names whose 說明 MOPS refuses because it is filed by the
+    offeror and served by period rather than by company. It states a per-share
+    price, which is the amount the caveat says is still missing — but a tender
+    price is the terminal consideration only where the tender *was* the exit.
+
+    Eight of the fifteen offers made on a name in this frame were the first step
+    of a two-step deal, and the price a holder who did not tender received is
+    the squeeze-out's, which this table does not carry. The three that are
+    booked opened on the day the shares stopped trading and ran the 50 days
+    公開收購管理辦法 §18 allows at most, so nothing later can have been their exit:
+    there was no market left for it to precede. That rule is asserted here
+    because the column the offeror files — 被收購公司於收購後是否終止上市 — does not
+    carry it, being marked 是 on two of the three and 不適用 on the third.
+    """
+    from finmind_data.delisting_sign import features
+
+    path = REPO / "finmind_data/tender_offers.parquet"
+    if not path.exists():
+        raise Skipped("tender_offers.parquet not built — "
+                      "run `python -m finmind_data.tender_offers`")
+    d = pd.read_parquet(path)
+    f = features()
+    on_frame = d[d["target_id"].isin(f["stock_id"])].merge(
+        f[["stock_id", "delist_date", "last_trade"]],
+        left_on="target_id", right_on="stock_id")
+    assert len(on_frame) == 15, (
+        f"README caveat 8 counts 15 tender offers made on the 164; there are "
+        f"now {len(on_frame)}. The table starts at ROC 105/11, so a fall means "
+        f"the source moved and a rise means it reaches further back"
+    )
+
+    c = pd.read_csv(REPO / "finmind_data/delisting_consideration.csv",
+                    dtype={"stock_id": str})
+    booked = c[c["source"].str.contains("公開收購申報資料彙總表", na=False)]
+    assert len(booked) == 3, (
+        f"README caveat 8 books 3 tender offers as the consideration paid; the "
+        f"sheet now cites the table on {len(booked)}"
+    )
+    off = on_frame.set_index("target_id")
+    for r in booked.itertuples():
+        o = off.loc[r.stock_id]
+        assert o["start_ts"] == o["delist_date"], (
+            f"{r.stock_id} is booked at its tender price, which only holds "
+            f"because the offer opened on the delisting date "
+            f"({o['delist_date'].date()}); it opened {o['start_ts'].date()}, so "
+            f"a later transaction could have been the exit instead"
+        )
+        assert (o["end_ts"] - o["start_ts"]).days == 49, (
+            f"{r.stock_id}'s offer ran {(o['end_ts'] - o['start_ts']).days + 1} "
+            f"days, not the 50 公開收購管理辦法 §18 allows at most — the ceiling "
+            f"is what makes the going-private offer's dates readable as a rule"
+        )
+        assert math.isclose(o["per_share"], r.per_share, abs_tol=0.005), (
+            f"{r.stock_id} is booked at {r.per_share} against the table's "
+            f"{o['per_share']}; the sheet is a copy of the parquet here and a "
+            f"copy that no longer matches publishes an older pull"
+        )
+
+    # The other twelve stay out, and the eight two-step ones are why the caveat
+    # still says the amount is open: their price is the squeeze-out's.
+    two_step = on_frame[on_frame["start_ts"] < on_frame["last_trade"]]
+    assert len(two_step) == 12 and not set(two_step["target_id"]) & set(booked["stock_id"]), (
+        f"README caveat 8 leaves the 12 offers that opened while the shares "
+        f"still traded unbooked; {len(two_step)} are now pre-tape and "
+        f"{sorted(set(two_step['target_id']) & set(booked['stock_id']))} are "
+        f"booked anyway, which would assert a squeeze-out price nobody read"
+    )
+    return (f"{len(d)} tender offers from ROC105/11, {len(on_frame)} on the "
+            f"frame; 3 booked because they opened on the delisting date, "
+            f"{len(two_step)} left because the tender preceded the exit",
+            len(on_frame))
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -2882,6 +2983,7 @@ CHECKS = [
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,
     test_taiwan_delisting_substitute_is_biased_low,
+    test_taiwan_booked_tender_offers_opened_on_the_delisting_date,
     test_taiwan_cash_payouts_land_outside_the_band,
     test_taiwan_fundamentals_are_fiscal_dated,
     test_taiwan_statement_trees_drop_old_delistings,

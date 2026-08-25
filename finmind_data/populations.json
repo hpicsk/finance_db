@@ -23,6 +23,10 @@
     "bound": "exact",
     "n": 164
   },
+  "test_taiwan_booked_tender_offers_opened_on_the_delisting_date": {
+    "bound": "monotone",
+    "n": 15
+  },
   "test_taiwan_cash_payouts_land_outside_the_band": {
     "bound": "exact",
     "n": 27
@@ -36,8 +40,8 @@
     "n": 164
   },
   "test_taiwan_delisting_substitute_is_biased_low": {
-    "bound": "exact",
-    "n": 4
+    "bound": "monotone",
+    "n": 7
   },
   "test_taiwan_delisting_table_has_no_reason": {
     "bound": "monotone",

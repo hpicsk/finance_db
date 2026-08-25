@@ -469,13 +469,18 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     A swap is worth the successor's price, so it is priced on the panel at the
     delisting date rather than taken from the filing.
 
-    Four of the 34 payout labels are recorded here, and that is a transcription
-    backlog rather than a property of the deals: the file was built against the
-    38 labels the package held before the 2026-08-17 refresh, and the
-    re-registered draw added 23 payout labels whose ``source`` already names a
-    per-share price or a share ratio. Reading them across would take the two
-    conventions from n=2 and n=2 to roughly n=8 and n=15 and is the single
-    cheapest thing that would sharpen the bias below.
+    Seven of the 35 payout labels are recorded here. Four were read during
+    labelling; three are the going-private tender offers in
+    ``tender_offers.parquet``, where the exchange's own filing summary states a
+    per-share price and the offer opened on the day the shares stopped trading,
+    so no later transaction can have been the exit. What is left is a
+    transcription backlog rather than a property of the deals: the file was
+    built against the 38 labels the package held before the 2026-08-17 refresh,
+    and the re-registered draw added payout labels whose ``source`` already
+    names a per-share price or a share ratio. Reading those across is still the
+    single cheapest thing that would sharpen the bias below, and it is the only
+    thing that would move the swap convention, which the tender table cannot
+    reach — a tender is paid in cash.
     """
     c = pd.read_csv(_CONSIDERATION_FILE,
                     dtype={"stock_id": str, "successor": str})
@@ -491,6 +496,15 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     for r in c.itertuples():
         assert (f["stock_id"] == r.stock_id).sum() == 1, \
             f"{r.stock_id} is not one priced market exit"
+        # The sheet's own date prices a swap and decides whether a row is inside
+        # the window, and nothing else reads it — so a mistyped one is applied
+        # rather than caught. Held against the frame, which derives its date from
+        # the delisting table rather than from whoever transcribed the filing.
+        formal = f.loc[f["stock_id"] == r.stock_id, "delist_date"].iloc[0]
+        assert formal == r.delist_date, (
+            f"{r.stock_id} is recorded in {_CONSIDERATION_FILE.name} as "
+            f"delisting {r.delist_date.date()} and the frame has "
+            f"{formal.date()}")
         paid = r.per_share
         overlap = 0
         if r.kind == "swap":
@@ -533,13 +547,16 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     conversion looks like, while a third-party acquisition for stock is the case
     that carries the odd ratio excluded here — so the staleness account is
     untested rather than refuted, and it is untestable on the deals in hand.
-    Across the four the rank correlation with the gap is 0.80, which is the cash
-    deals settling in 1 and 7 days against the swaps' 13 and 14: the gap standing
-    in for the deal form, reported under its own name.
+    Across the seven the rank correlation with the gap is 0.51, which is the
+    cash deals settling in 1 day (7 on one of them) against the swaps' 13 and
+    14: the gap standing in for the deal form, reported under its own name. It
+    fell from 0.80 when the three tender offers were added, all of which settle
+    in a day, which is what a correlation carried by two clusters does when one
+    of them grows.
 
     Ruling that out leaves the direction measured and the mechanism open. A
     liquidity discount on a name whose exit is already fixed, terms revised
-    upward between announcement and effect, and four deals falling one way all
+    upward between announcement and effect, and seven deals falling one way all
     fit these residuals equally, and no caller should read a cause into the
     column: ``residual`` is a bias to disclose, not a factor to divide out.
     """

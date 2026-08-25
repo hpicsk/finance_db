@@ -5,3 +5,6 @@ stock_id,stock_name,delist_date,kind,successor,per_share,source
 4733,上緯,2016-08-31,swap,3708,1.0,share swap 1 share of holding co 3708 per share
 2391,合勤科技,2010-08-16,swap,3704,1.0,share swap 1 share of holding co 3704 per share
 3698,隆達,2021-01-06,swap,3714,0.275,share swap 0.275 shares of Ennostar 3714 per share
+4762,三汰-KY,2017-08-01,cash,,58.27,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 58.27 元"
+4965,商店街,2018-06-22,cash,,44.0,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 44 元"
+5304,鼎創達,2020-11-20,cash,,3.35,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 3.35 元"
