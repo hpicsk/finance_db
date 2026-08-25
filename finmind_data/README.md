@@ -223,11 +223,14 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── split_reference.parquet            面額變更 / 分割 reference prices, the third event chain (2019-2026)
 ├── tender_offers.parquet              every filed 公開收購 and its per-share price (2016-2024)
 ├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
+├── mops_acquirer_refusals.csv         同, for the buyers of the swap exits (per target)
 ├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
 ├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
 ├── filing_dates/<stock_id>.parquet    every 財務報告書 this company filed, with 上傳日期
 ├── mops_listing/<stock_id>.parquet    重大訊息 主旨, delisting ROC year and the two before
 ├── mops_detail/<stock_id>.parquet     同, with 符合條款 / 事實發生日 / 說明 where served
+├── mops_acquirer_listing/<tgt>.parquet 主旨 of the *acquirer* that bought this target
+├── mops_acquirer_detail/<tgt>.parquet 同, bodies of the deal filings — where a swap ratio is read
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
 ├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
@@ -996,30 +999,70 @@ ohlcv_all = pd.concat(
     as lowering the bar and costs the 9 labels either way.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
-    classified as one books its last traded close, and against the 11 deals
-    whose consideration is recorded in a form needing no ratio convention, that
-    substitute is wrong in one direction every time — it understates. By a
-    median **+0.75 %** on the nine cash deals (+0.47 % to +1.34 %) and **+11.2 %**
-    on the two share swaps (+9.9 % and +12.5 %). The split is the usable part:
-    cash lands the last close to within 1.5 %, so those names never need a filing
-    pulled at all. Eleven deals is few and the direction is what survives that;
-    it is a downward bias on a portfolio rather than noise that averages out.
-    Two of the original six delisted before the window starts and left the frame
-    with it; they stay in `delisting_consideration.csv` as the record of what
-    was read.
+    classified as one books its last traded close, and against the 19 deals
+    whose consideration is now recorded, that substitute is wrong by two very
+    different amounts depending on how the deal paid. Cash lands it within
+    **1.5 %** every time — a median **+0.75 %** across nine deals, +0.47 % to
+    +1.34 % — so those names never need a filing pulled at all. A share swap
+    misses it by anything from **−13.9 % to +24.8 %**, median **+7.9 %** across
+    ten. The split is the usable part and it decides which lookups are worth
+    doing. Two of the original six delisted before the window starts and left
+    the frame with it; they stay in `delisting_consideration.csv` as the record
+    of what was read.
 
-    The cash side was grown twice and it held both times. Three going-private
-    tenders came out of the exchange's own summary table (below), taking it from
-    n=2 to n=5 and the worst residual from under 1 % to +1.34 %; four more were
-    transcribed from `delisting_labels.csv`, whose `source` already carried a
-    per-share cash price read at labelling, and all four landed inside the band
-    the tenders had widened. **The swap side stays at n=2 and cannot be grown
-    the same way.** A dozen swap labels do state a ratio, but in conventions
-    that disagree row to row — `0.3562:1`, `1:1.68`, `3.15:1`, a bare `1.39` —
-    and the only way to pick a direction without opening the filing is to take
-    whichever one puts the implied consideration near the last close, which is
-    the quantity being measured. That is fitting the answer to the hypothesis,
-    so those stay unread until the filings are.
+    **The swap side used to be n=2 and one-directional, and growing it retired
+    the direction.** The cash side was grown twice and held both times: three
+    going-private tenders came out of the exchange's own summary table (below),
+    taking it from n=2 to n=5 and the worst residual from under 1 % to +1.34 %,
+    and four more were transcribed from `delisting_labels.csv`, whose `source`
+    already carried a per-share cash price read at labelling. The swap side
+    could not be grown the same way, because a dozen swap labels state a ratio
+    in conventions that disagree row to row — `0.3562:1`, `1:1.68`, `3.15:1`, a
+    bare `1.39` — and picking a direction without the filing means taking
+    whichever reading puts the implied consideration near the last close, which
+    is the quantity being measured.
+
+    So the filings were opened, and the route is worth stating because it is not
+    the target's. `swap_ratios.py` reads the ratio off the **acquirer's**
+    announcement: MOPS gates the 說明 on a company's *current* registration, so
+    a target that deregistered on the way out is served subject lines and
+    nothing else, while the buyer is still 公開發行 and files the same
+    transaction in a sentence that fixes which side is which — 「調整為每3.1560股
+    雷凌科技普通股股票換發1股本公司增資普通股股票」. Six of the ten in-frame swaps
+    are read there, and 5854 合庫 from its own filing, since a bank converting
+    into a holding company keeps its registration. Each of those seven rows
+    quotes the sentence in 「」, and the quote is asserted back against the
+    cached body of a filing dated as the row says — a `per_share` whose citation
+    stops resolving is a number with a source that no longer exists, which is
+    what the labels' bare ratios already were. The remaining three carry no
+    quote: 5491 and 4733 are 1:1, which reads the same either way, and 3698's
+    0.275 into Ennostar was read at labelling — the one row still resting on the
+    shortcut, and one of the cases where the shortcut is unambiguous, since the
+    other reading implies NT$331 against a last close of NT$22.25.
+
+    Seven in-frame swaps are still unpriced, and the gate is the same one a
+    company over. **Five had a buyer that was itself later bought** — 2448 晶電,
+    3698 隆達, 2456 奇力新, 5317 凱美 — and MOPS refuses a deregistered acquirer in
+    the words it refuses the targets, recorded in `mops_acquirer_refusals.csv`.
+    **Two went into a holding company that did not exist before the conversion**
+    (3428 and 6145 into 永崴投控 3712), so there is no earlier filing of its to
+    read; its first announcements are dated the conversion day and are
+    housekeeping. Worth recording about the shortcut that was refused: on every
+    ratio actually read, the direction in the filing is also the only one that
+    is not absurd — the wrong reading of 3534's 3.156 implies NT$1,065 against a
+    last close of NT$102.50. The shortcut would have been right where the ratio
+    is odd and is a coin-flip where it is near 1, which is `0.93:1` and `1.07:1`,
+    two of the seven still out. It is safe exactly where it is not needed.
+
+    **What ten swaps overturned is the direction.** 4944 兆遠 was paid 0.02 of a
+    環球晶 6488 share on 2023-11-01, worth NT$9.99 against a last close of
+    NT$11.60 — **−13.9 %**, the substitute above what was paid rather than below
+    it. It is not an artefact of the settlement gap: priced on 兆遠's own last
+    trade date instead, 6488 closed at 476.50 and the residual is −17.8 %. The
+    name ran 9.62 → 12.75 over its final five sessions on a float that was about
+    to disappear. One deal is one deal, but the claim it refutes was a claim
+    about every deal, and the two-swap sample that supported it is exactly the
+    sample that could not contain this one.
 
     Where the deals sit was itself read as a finding, and the corrected frame
     refutes it. On the 18 payouts labelled before the refresh, all 9 whose form
@@ -1037,50 +1080,51 @@ ohlcv_all = pd.concat(
     and the offer was a premium while the drawdown was 0.56. On the 16 stated
     forms now in the band, 12 exchanges against a base rate of 17 of 26 is what
     chance gives **0.234** of the time (Fisher exact, two-sided). What survives
-    is the narrower point the comparison was good for: one of the two swaps
-    measured is a band name, so the +11 % is measured on a mix rather than on
-    classifier-confirmed payouts alone.
+    is the narrower point the comparison was good for: six of the ten swaps
+    measured are band names, so the spread is measured mostly on names the cuts
+    do not decide rather than on classifier-confirmed payouts.
 
     The obvious next move is to let the gap between the last trade and the formal
-    date price that bias, on the reading that the last close goes *stale*: a
-    swap's value would go on moving with the acquirer while the target no longer
+    date price that error, on the reading that the last close goes *stale*: a
+    swap's value goes on moving with the acquirer while the target no longer
     trades, and the gap would then estimate the error on a name whose acquirer
-    was never identified. It does not work, and the reason is worth recording so
-    nobody buys it twice. The gap barely varies — 13 and 14 days across the two
-    swaps against residuals of +9.9 % and +12.5 %, and **87 % of the 98
-    payout-shaped names sit at 7-14 days** — because it is the settlement
-    calendar rather than anything about the deal. And the mechanism cannot have
-    run: the successor of every swap measured first trades on the day the target
-    leaves, **zero sessions of overlap**, so there was no acquirer price to drift
-    against. Both are holding-company conversions, which follows from the
-    selection rather than being a coincidence — a swap stated 1:1 or as a flat
-    share count is what a conversion looks like, while a third-party acquisition
-    for stock is the case carrying the odd ratio excluded here. Across the
-    eleven the rank correlation with the gap is 0.10, and that is the deal form
-    reported under the gap's name: it read 0.80 on four deals, 0.51 once three
-    tenders were added and 0.10 once four transcriptions were, which is what a
-    correlation carried by two clusters does as one of them grows.
+    was never identified. That account used to be untestable here, and the
+    reason it was is the reason it is testable now. On two swaps the successor
+    first traded on the day the target left — **zero sessions of overlap**, no
+    acquirer price to drift against — and both were holding-company
+    conversions, which followed from the selection rather than from anything
+    about swaps: a 1:1 or a flat share count is what a conversion looks like,
+    and the third-party acquisitions carrying an odd ratio were precisely the
+    ones excluded for want of a direction. The settlement calendar is still what
+    the gap mostly is — **87 % of the 98 payout-shaped names sit at 7-14 days**.
 
-    Nine cash deals can be asked something two could not, and this is the one
-    place the staleness account is actually testable here. Staleness is a claim
-    about ordering *within* a cluster — a close nine days old should have
-    drifted further than one a day old — and the ordering runs the other way:
-    the rank correlation of gap against residual is **−0.70** across the nine.
-    Nine is few and the sign is what to take from it, but it is the sign
-    staleness forbids, and it is asserted.
+    Reading those directions put **six third-party acquisitions** into the
+    sample, each with an acquirer that had traded for 1,670 to 2,707 sessions
+    before the target's last trade. The gap now takes six values across the ten
+    swaps instead of two, and its rank correlation with the residual is
+    **+0.85** — the sign staleness predicts. Read that as a measurement, not as
+    a mechanism: it is ten deals, the reading was adopted after the sample was
+    assembled rather than committed before it, and the same correlation on the
+    nine cash deals is **−0.70**, which is the sign staleness forbids. What can
+    be said is that the two forms order against the gap in opposite directions,
+    which is also what the pooled figure was reporting under the gap's name all
+    along: it read 0.80 on four deals, 0.51 once three tenders were added, 0.10
+    once four transcriptions were, and moves again now. Both within-form figures
+    are asserted; the pooled one is not, because it never measured anything.
 
-    What survives that is the direction, and not the mechanism. Why a
-    conversion's last close sits below what was paid is open: a liquidity
-    discount on a name whose exit is already fixed, terms revised upward between
-    announcement and effect, or two deals falling one way. Nothing in this
-    package separates them at n=2, and none of the three is assumed anywhere in
-    the code. Use the **+11 %** as a measured direction, not as a correction
-    with a reason behind it — a correction would have to know which of the three
-    it was undoing.
+    What survives is the split, and not a mechanism for either half. Why a swap
+    lands where it does is open: a liquidity discount on a name whose exit is
+    already fixed, terms revised between announcement and effect, a squeeze into
+    a closing float, and the acquirer's own drift over a two-week gap all fit
+    somewhere in a spread that runs −13.9 % to +24.8 %. Nothing in this package
+    separates them at n=10, and none is assumed anywhere in the code. Use the
+    cash figure as a bound worth relying on and the swap figure as a spread
+    worth disclosing — not as a correction, which would have to know which of
+    the four it was undoing.
 
     So `terminal_value()` books on four bases, cut so each names a different
     piece of work. **`failed`** is zero. **`consideration`** is what was actually
-    paid, for the 11 recorded, a swap priced on the panel at the delisting date.
+    paid, for the 19 recorded, a swap priced on the panel at the delisting date.
     **`substituted`** is the last close standing in for a consideration nobody
     has looked up, carrying the bias above, and one filing closes each. It is
     the count that falls when a consideration is recorded, and the only one:
@@ -1099,8 +1143,8 @@ ohlcv_all = pd.concat(
     and it overturns one verdict outside the band — 1613 books zero rather than
     its last close. The 98.7 % above is unchanged by this and should be: it is a
     fact about the cuts, and booking the value a label already settled does not
-    make the cuts better. The counts a study meets are **41 `failed`, 11
-    `consideration`, 103 `substituted`, 9 `undecided`**, and they are asserted
+    make the cuts better. The counts a study meets are **41 `failed`, 19
+    `consideration`, 95 `substituted`, 9 `undecided`**, and they are asserted
     rather than quoted: the previous pair of them was a name apart from what the
     code returned, and survived because the four numbers were only ever printed
     in a check's message and never compared to anything.
@@ -1195,11 +1239,46 @@ ohlcv_all = pd.concat(
     股份轉換 or 合併 that ended the listing between 99 and 648 days later — and
     what a holder who did *not* tender received is the squeeze-out's price, which
     this table does not carry. Their tender prices sit from **−5.8 %** (3144
-    新揚科) to **+11.1 %** (5820 日盛金) against the last close, so assuming the two
-    steps priced alike would import a spread wider than the bias being measured.
-    The remaining four are offers the table itself says did not end the listing:
-    2823 中壽 was tendered twice, at NT$35 and NT$23.6, and left by a 股份轉換
-    four years after the first.
+    新揚科) to **+11.1 %** (5820 日盛金) against the last close. The remaining four
+    are offers the table itself says did not end the listing: 2823 中壽 was
+    tendered twice, at NT$35 and NT$23.6, and left by a 股份轉換 four years after
+    the first.
+
+    **Booking the tender price for those eight was considered and declined, and
+    the reason is not the size of the spread.** A tender price is what the
+    holders who tendered received; the ones who did not were squeezed out at the
+    second step's terms, and 5820 is the case that makes the distinction
+    concrete — 2.03bn shares came in against a 3.77bn ceiling, so a large
+    minority went to the merger. No assumption turns the first price into the
+    second. That reason is one of kind, so it holds whatever the spread turns
+    out to be, which matters because the spread has since been measured against
+    the wrong yardstick: the eight sit at a median |error| of **3.2 %**, between
+    the cash deals' 0.75 % and the swaps' 7.9 %, not outside the range being
+    measured as this paragraph used to say.
+
+    Where they *do* differ from the swaps is in shape, and that is the finding.
+    The gap between the offer closing and the exit orders the eight residuals at
+    **ρ = +0.86 in absolute value and +0.36 signed** — the last close gets
+    noisier the longer the second step takes and does not drift one way, where
+    the swap side's gap orders the *signed* error at +0.85. A two-step target
+    keeps trading after the offer's terms are public, so its last close is a
+    post-announcement price and the market has already done the arithmetic; a
+    swap's last close is a pre-announcement one. Replacing an unbiased wide
+    substitute with a narrow one belonging to a different holder is the trade
+    that was declined.
+
+    **The exclusion is five names, not eight.** The second step is a 合併 or
+    股份轉換 that the *buyer* files, and three of the eight were bought by a
+    company whose filings are still served — 6422 by 國巨 2327, 4725 by 台泥 1101,
+    and 5820 日盛金 by 富邦金 2881, which is the largest residual of the eight.
+    Those three are the same defined lookup `swap_ratios.py` already performs,
+    and they are not done here only because they change no gate: none of the
+    eight is labelled, none is held out, and the price shape calls all eight
+    payouts — 8497 格威傳媒 being the one the filings overturn to a failure, which
+    is where it is already reported. The other five were bought by
+    unlisted or foreign vehicles — a Cayman company, a Japanese one, three
+    private holdcos — which file nothing on 公開資訊觀測站 and are the standing
+    part of the gap.
 
     Where the two sources meet they agree. 4965's hand label already read
     「PChome bought in minorities at NT$44/share」 and the exchange's table says

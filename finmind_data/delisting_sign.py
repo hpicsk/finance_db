@@ -475,7 +475,7 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     A swap is worth the successor's price, so it is priced on the panel at the
     delisting date rather than taken from the filing.
 
-    Eleven of the 35 payout labels are recorded here, nine of them cash. Four
+    Nineteen of the 35 payout labels are recorded here, nine of them cash. Four
     were read during labelling; three are the going-private tender offers in
     ``tender_offers.parquet``, where the exchange's own filing summary states a
     per-share price and the offer opened on the day the shares stopped trading,
@@ -483,13 +483,29 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     from ``delisting_labels.csv``, whose ``source`` already carried a per-share
     cash price read at labelling.
 
-    The swap convention stays at two and cannot be grown the same way. A dozen
-    swap labels do state a ratio, but in conventions that disagree row to row —
-    ``0.3562:1``, ``1:1.68``, ``3.15:1``, a bare ``1.39`` — and the only way to
-    pick a direction without the filing is to take whichever one lands the
-    implied consideration near the last close, which is the quantity
-    ``substitute_error`` below exists to measure. So those stay unread until the
-    filing is, and the tender table cannot help: a tender is paid in cash.
+    The swap side is where the direction had to be bought, and ``swap_ratios.py``
+    is what bought it: the target deregistered on the way out and MOPS seals its
+    說明, but the buyer is still 公開發行 and files the same ratio in a sentence
+    that fixes which side is which — 「每3.1560股雷凌科技普通股股票換發1股本公司
+    增資普通股股票」. Six of the ten in-frame swaps are read there. One more, 5854,
+    is read from its own filing, because a bank converting into a holding company
+    keeps its registration and is among the few MOPS still serves; and 5491 is a
+    1:1, which reads the same in both directions and needs no filing to settle.
+    Every ``source`` here quotes the sentence it came from, so the convention is
+    auditable per row rather than assumed per file.
+
+    Seven in-frame swaps are still out, and the reason is the same gate one
+    company over. Five had a buyer that was itself later bought — 2448, 3698,
+    2456, 5317 — and are refused in the words the targets are refused in; two
+    went into a holding company that did not exist until the conversion, so
+    there is no earlier filing of its to read. Their labels do state a ratio, in
+    the conventions that disagree row to row, and those stay unread: for the odd
+    ratios the reading that lands nearer the last close is off by an order of
+    magnitude either way, but for a ratio near 1 — ``0.93:1``, ``1.07:1`` — the
+    two readings are close and picking between them is fitting the answer to the
+    hypothesis ``substitute_error`` below exists to test. The shortcut is safe
+    exactly where it is not needed. The tender table cannot help either: a
+    tender is paid in cash.
     """
     c = pd.read_csv(_CONSIDERATION_FILE,
                     dtype={"stock_id": str, "successor": str})
@@ -538,44 +554,41 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     are already recorded for the names looked up during labelling, and the
     successors are already priced in the panel.
 
-    ``gap`` is the days between the last trade and the formal date, and it is
-    here to be ruled out rather than used. The obvious reading of a one-sided
-    error is that the last close is *stale* — a swap's value goes on moving with
-    the acquirer while the target no longer trades, so a longer gap should carry
-    a larger error, and the gap would then price the bias on a name whose
-    acquirer cannot be identified. It does not, twice over. The gap barely
-    varies: 13 and 14 days across the swaps against a residual spread of
-    +9.9 % to +12.5 %, and 87 % of the 98 payout-shaped names sit in 7-14 days,
-    because the gap is the settlement calendar rather than anything about the
-    deal. And the mechanism cannot have run at all — ``overlap`` counts the
-    successor's sessions on or before the target's last trade and it is zero on
-    every swap here, so there was no acquirer price to drift. Both are
-    holding-company conversions, whose successor first trades on the day the
-    target leaves. That is a property of the selection above and not a
-    coincidence: a share exchange stated 1:1 or as a flat share count is what a
-    conversion looks like, while a third-party acquisition for stock is the case
-    that carries the odd ratio excluded here — so the staleness account is
-    untested rather than refuted, and it is untestable on the deals in hand.
-    Across the eleven the rank correlation with the gap is 0.10, and its
-    history is half the argument. It read 0.80 at n=4, 0.51 once the three
-    tender offers were added and 0.10 once the four label transcriptions were,
-    because it was never a relationship: it was two clusters, cash settling in
-    1 to 9 days and the two swaps in 13 and 14, and every cash deal added pulls
-    the pooled figure toward nothing.
+    ``gap`` is the days between the last trade and the formal date, and it used
+    to be here to be ruled out. The obvious reading of a one-sided error is that
+    the last close is *stale* — a swap's value goes on moving with the acquirer
+    while the target no longer trades, so a longer gap should carry a larger
+    error. On two swaps that account could not be tested: ``overlap`` counts the
+    successor's sessions on or before the target's last trade, it was zero on
+    both, and a successor that has never traded cannot have drifted. Both were
+    holding-company conversions, which is what a 1:1 or a flat share count is,
+    and the third-party acquisitions that carry an odd ratio were the ones
+    excluded for want of a direction.
 
-    The other half is what nine cash deals can now be asked and two could not.
-    Staleness is a claim about ordering *within* a cluster — a close nine days
-    old should have drifted further than one a day old — and the ordering runs
-    the other way: the rank correlation of gap against residual is −0.70 across
-    the nine. Nine is few and the sign is what to take from it, but it is the
-    sign staleness forbids, measured where the pooled correlation could only
-    ever have reported the deal form back.
+    Reading those directions off the filings put six such acquisitions into the
+    sample and the account is now testable on the deals it was always about.
+    ``overlap`` runs to thousands of sessions on those six, the gap spreads
+    over 7 to 16 days instead of 13 and 14, and the rank correlation of gap
+    against residual across the ten swaps is +0.85 — the sign staleness
+    predicts. Read it as a measurement and not as a mechanism: it is ten deals,
+    the reading was adopted after the sample was assembled rather than before,
+    and the same correlation on the nine cash deals is −0.70, which is the sign
+    staleness forbids. What can be said is that the two forms order against the
+    gap in opposite directions, and that pooling them reports the deal form back
+    under another name — the pooled figure read 0.80 at n=4, 0.51 with the
+    tender offers, 0.10 with the label transcriptions, and moves again now,
+    because it was never one relationship.
 
-    Ruling that out leaves the direction measured and the mechanism open. A
-    liquidity discount on a name whose exit is already fixed, terms revised
-    upward between announcement and effect, and eleven deals falling one way all
-    fit these residuals equally, and no caller should read a cause into the
-    column: ``residual`` is a bias to disclose, not a factor to divide out.
+    What the wider sample did settle is the direction, by refuting it. Ten swaps
+    do not fall one way: 4944 兆遠 was paid 0.02 of a 環球晶 share, worth NT$9.99
+    against a last close of NT$11.60, and it is −13.9 % rather than short of the
+    mark. The name ran from 9.62 to 12.75 in its final five sessions on a float
+    that was about to disappear, and pricing the swap on the last trade date
+    instead of the formal one puts it at −17.8 %, so the sign is not an artefact
+    of the seven-day gap. A liquidity discount, terms revised between
+    announcement and effect, and a squeeze into a closing float all fit
+    somewhere in these residuals, and no caller should read a cause into the
+    column: ``residual`` is an error to disclose, not a factor to divide out.
     """
     c = considerations(f)
     e = f[["stock_id", "last_close", "suspension_days"]].merge(c, on="stock_id")
@@ -617,7 +630,7 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
         NaN, and the only NaN. The sign is what the band does not know, and a
         substitute there would be a guess at the direction, not at the size —
         the two other bases are guesses at a size at worst. A caller that hits
-        one resolves it or drops it, and there are twelve of them.
+        one resolves it or drops it, and there are nine of them.
 
     The distinction that matters is the last two: both are missing something,
     they are missing different things, and the work that closes them is

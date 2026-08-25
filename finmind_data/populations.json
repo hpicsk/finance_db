@@ -43,10 +43,6 @@
     "bound": "exact",
     "n": 164
   },
-  "test_taiwan_delisting_substitute_is_biased_low": {
-    "bound": "monotone",
-    "n": 11
-  },
   "test_taiwan_delisting_table_has_no_reason": {
     "bound": "monotone",
     "n": 723
@@ -159,13 +155,21 @@
     "bound": "monotone",
     "n": 93527
   },
+  "test_taiwan_substitute_error_splits_by_deal_form": {
+    "bound": "monotone",
+    "n": 19
+  },
   "test_taiwan_survivorship_hole_is_rebuilt": {
     "bound": "exact",
     "n": 60371
   },
+  "test_taiwan_swap_ratio_quotes_the_filing_it_names": {
+    "bound": "monotone",
+    "n": 7
+  },
   "test_taiwan_tree_readers_import_the_window": {
     "bound": "monotone",
-    "n": 9
+    "n": 10
   },
   "test_taiwan_universe_excludes_the_instruments_it_claims_to": {
     "bound": "monotone",

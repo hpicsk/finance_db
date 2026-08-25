@@ -1,10 +1,10 @@
 stock_id,stock_name,delist_date,drawdown,call,halt_call,label,source
-6289,華上,2022-09-26,0.35064935064935066,distress,merger,,
+6289,華上,2022-09-26,0.3506493506493506,distress,merger,,
 3642,駿熠電,2023-06-27,0.3775609756097561,distress,distress,,
 2499,東貝,2020-11-10,0.390521327014218,distress,distress,,
-6172,互億,2022-06-29,0.45067264573991034,distress,distress,,
-6131,鈞泰,2021-07-05,0.48867924528301887,distress,distress,,
+6172,互億,2022-06-29,0.4506726457399103,distress,distress,,
+6131,鈞泰,2021-07-05,0.4886792452830188,distress,distress,,
 4712,南璋,2024-09-25,0.5512572533849129,merger,distress,,
 2443,昶虹,2024-11-19,0.5622047244094488,merger,distress,,
-3561,昇陽光電,2018-10-01,0.6268656716417911,merger,merger,,
-6298,崴強科技股份有限公司,2018-10-01,0.6502835538752363,merger,merger,,
+3561,昇陽光電,2018-10-01,0.6268656716417911,merger,merger,merger,3576 filing 107/01/29 「昇陽股東按所持有已發行普通股每1股換發本公司普通股1.17股」; read while transcribing 3514's ratio from the same three-way merger
+6298,崴強科技股份有限公司,2018-10-01,0.6502835538752363,merger,merger,merger,"3428 filing 107/05/09 「與勁永國際股份有限公司及崴強科技股份有限公司共同以股份轉換方式成立新設投控公司」; read while transcribing 3428/6145, the other two targets of the same 股份轉換"

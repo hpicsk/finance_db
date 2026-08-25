@@ -990,111 +990,134 @@ def test_taiwan_single_cut_is_registered_unscored():
             len(band))
 
 
-def test_taiwan_delisting_substitute_is_biased_low():
-    """README caveat 8: the last close understates a payout, and by how much.
+def test_taiwan_substitute_error_splits_by_deal_form():
+    """README caveat 8: what the last close costs, and how it splits by form.
 
     The substitute a study books for a delisted payout name is its last traded
-    close, and the question is not whether that is imprecise but whether it is
-    wrong in a fixed direction — noise averages out of a portfolio, a bias does
-    not. It is one-directional here on every deal measured, which is what the
-    assertion pins; the size splits by deal type and the split is the finding,
-    because it decides which lookups are worth doing.
+    close, and the question is how wrong that is. The answer is not one number,
+    it is two, and the split is the finding because it decides which lookups are
+    worth doing: a cash consideration lands the last close within 1.5 % every
+    time, and a share swap misses it by anything from −13.9 % to +24.8 %.
 
-    Eleven deals is still few, and the direction is the part that survives
-    that. Two of the original six delisted before the coverage start and left
-    the frame with the window; they stay in `delisting_consideration.csv` as the
-    record of what was read. The sample was grown twice. Three came from the
-    going-private tender offers in `tender_offers.parquet`, taking cash from n=2
-    to n=5 and the worst cash residual from under 1 % to +1.34 % — the direction
-    held and the bound did not, which is what growing a sample is for. Four more
-    came off `delisting_labels.csv`, whose `source` already carried a per-share
-    cash price read at labelling, and all four landed inside the band the tender
-    offers had already widened.
+    The check used to assert a bias — every deal one way — and that claim was
+    true of the deals it could see. It could see two swaps, because the other
+    ten state a ratio in conventions that disagree row to row and the direction
+    had to come off a filing. `swap_ratios.py` went and got eight of them from
+    the acquirer's own announcement, and the first thing the wider sample did
+    was refute the direction: 4944 兆遠 was paid 0.02 of a 環球晶 share against a
+    last close it had just run 32 % into, and sits at −13.9 %. What survives is
+    the cash half, and the width of the swap half is now a fact rather than a
+    two-point estimate.
 
-    The swap side is stuck at n=2 and the reason is worth stating, because the
-    labels appear to carry ratios for a dozen more. They carry them in
-    inconsistent conventions — `0.3562:1`, `1:1.68`, `3.15:1`, a bare `1.39` —
-    and picking a direction per row would mean choosing the one whose implied
-    consideration sits near the last close. That is fitting the answer to the
-    hypothesis this check tests. The direction has to come off the filing, which
-    is the one-at-a-time work caveat 8 describes, and until it does the swap
-    convention stays at two.
+    The staleness account moves the same way. It was dismissed on the ground
+    that a holding-company successor has no price to drift against, which was a
+    property of *which* swaps could be priced and not of swaps: the deals with
+    an odd ratio are third-party acquisitions whose acquirer has traded for
+    years, and six of them are now in the sample with `overlap` in the
+    thousands. The gap spreads over six values instead of two and orders with
+    the residual at +0.85, the sign staleness predicts — asserted here as a
+    measurement, because it was read after the sample was assembled and the
+    cash side still runs the other way at −0.70. Two forms ordering against the
+    gap in opposite directions is what the pooled correlation was reporting all
+    along.
 
-    The `overlap` assertion is the one that will fire on such an addition, and
-    it should. Zero acquirer sessions before the target's last trade is what
-    makes the caveat's "not staleness" claim true, and it holds because a swap
-    stated without a ratio convention is a holding-company conversion. A
-    third-party acquisition for stock would break it, and that is the deal the
-    staleness account could finally be tested on — so the failure is an
-    instruction to measure, not a regression.
+    Seven in-frame swaps are still unpriced and the gate is one company over:
+    five had a buyer that was itself later bought, and MOPS refuses a
+    deregistered acquirer in the same words it refuses the targets; two went
+    into a holding company that did not exist before the conversion, so it filed
+    nothing to read. Those seven are what would move these numbers next, and
+    which of them are out is recorded in `mops_acquirer_refusals.csv` rather
+    than described here.
     """
     from finmind_data.delisting_sign import (
         band_holdout, features, substitute_error, terminal_value)
 
     f = features()
     e = substitute_error(f)
-    assert (e["residual"] > 0).all(), (
-        f"README caveat 8 says the last close understates the consideration on "
-        f"every deal measured, so the substitute is a downward bias rather "
-        f"than noise; "
-        f"{e.loc[e['residual'] <= 0, 'stock_id'].tolist()} now sit at or above "
-        f"what was paid"
-    )
     cash = e.loc[e["kind"] == "cash", "residual"]
     swap = e.loc[e["kind"] == "swap", "residual"]
-    assert cash.max() < 0.015, (
-        f"README caveat 8 says a cash consideration is within 1.5 % of the last "
-        f"close, which is why cash deals need no lookup; the worst is now "
-        f"{cash.max():+.2%}"
+
+    assert (cash > 0).all() and cash.max() < 0.015, (
+        f"README caveat 8 says a cash consideration is above the last close "
+        f"every time and within 1.5 % of it, which is why cash deals need no "
+        f"filing pulled; {len(cash)} deals now run "
+        f"{cash.min():+.2%} to {cash.max():+.2%}"
+    )
+    # The refutation, pinned so it cannot quietly revert. A one-directional
+    # claim is what the two-swap sample supported and what ten swaps overturned,
+    # and an assertion that only bounded the spread would pass either way.
+    assert swap.min() < 0, (
+        f"README caveat 8 says the swap substitute is two-sided — 4944 兆遠 at "
+        f"−13.9 % is paid *less* than its last close, which is what retired the "
+        f"claim that the last close understates every deal. The worst swap is "
+        f"now {swap.min():+.2%}, so either that row has left the sample or the "
+        f"caveat's own history is wrong"
+    )
+    assert math.isclose(swap.min(), -0.139, abs_tol=0.01) and \
+        math.isclose(swap.max(), 0.248, abs_tol=0.01), (
+        f"README caveat 8 puts the swap residuals from −13.9 % to +24.8 % on "
+        f"{len(swap)} deals; they now run {swap.min():+.1%} to {swap.max():+.1%}"
+    )
+    assert math.isclose(swap.median(), 0.079, abs_tol=0.02), (
+        f"README caveat 8 puts the median swap residual near +8 %, down from "
+        f"the +11.2 % two deals showed; it is now {swap.median():+.1%}"
     )
     # The split is the finding, not either level: it is what decides that a swap
-    # is worth a filing and a cash deal is not. Pinned as a ratio so a sample
-    # that grows on either side has to keep them an order of magnitude apart.
-    assert swap.min() > 5 * cash.max(), (
-        f"README caveat 8 rests on cash and swap understatements being an order "
-        f"of magnitude apart — {len(cash)} cash deals at most {cash.max():+.2%} "
-        f"against {len(swap)} swaps from {swap.min():+.1%}. They are now within "
-        f"a factor of {swap.min() / cash.max():.1f}, so the lookup priority the "
-        f"caveat sets no longer follows from the measurement"
+    # is worth a filing and a cash deal is not. Pinned on the typical swap
+    # against the worst cash deal, in absolute value, because the swap side is
+    # no longer signed.
+    assert swap.abs().median() > 5 * cash.max(), (
+        f"README caveat 8 rests on cash and swap errors being an order of "
+        f"magnitude apart — {len(cash)} cash deals at most {cash.max():+.2%} "
+        f"against a typical swap miss of {swap.abs().median():.1%}. They are "
+        f"now within a factor of {swap.abs().median() / cash.max():.1f}, so the "
+        f"lookup priority the caveat sets no longer follows from the measurement"
     )
-    assert math.isclose(swap.median(), 0.112, abs_tol=0.02), (
-        f"README caveat 8 puts the share-swap understatement near 11 %; the "
-        f"median is now {swap.median():+.1%}. That number is what makes a "
-        f"swap worth resolving and a cash deal not"
+
+    # Staleness, now that there is something to read it on. Within-cluster
+    # ordering is the whole claim, so the two forms are asked separately and
+    # neither is pooled with the other.
+    rho_cash = float(e[e["kind"] == "cash"][["gap", "residual"]]
+                     .corr(method="spearman").iloc[0, 1])
+    rho_swap = float(e[e["kind"] == "swap"][["gap", "residual"]]
+                     .corr(method="spearman").iloc[0, 1])
+    assert rho_cash < -0.5 < 0.5 < rho_swap, (
+        f"README caveat 8 says the two deal forms order against the gap in "
+        f"opposite directions — cash at −0.70, where a close nine days old has "
+        f"drifted less rather than more, and swaps at +0.85, the sign staleness "
+        f"predicts. They are now {rho_cash:+.2f} and {rho_swap:+.2f}, so the "
+        f"caveat's account of what the pooled figure was reporting is wrong"
     )
-    # Staleness predicts an ordering *within* a cluster, and nine cash deals
-    # can now be asked for one where two could not. The pooled correlation
-    # cannot: it only ever reported cash-vs-swap back under another name.
-    within = cash.to_frame().join(e.set_index(e.index)["gap"])
-    rho = float(within.corr(method="spearman").iloc[0, 1])
-    assert rho < -0.5, (
-        f"README caveat 8 rules out staleness partly on the cash deals ordering "
-        f"against it — a close nine days old has drifted less, not more, at a "
-        f"rank correlation of -0.70 across the nine. It is now {rho:+.2f}; at or "
-        f"above zero the staleness account is live again and the caveat's "
-        f"dismissal of it does not hold"
+    # The two clusters are orders of magnitude apart on `overlap`, not adjacent,
+    # so the cut between them is not a judgement: a third-party acquirer has
+    # traded for years and a new holding company for none. 5854's single session
+    # is a stray 5880 row eight months before that code lists, and it is why the
+    # cut is drawn above a handful rather than above zero.
+    acq = e[(e["kind"] == "swap") & (e["overlap"] > 100)]
+    thin = e[(e["kind"] == "swap") & (e["overlap"] <= 100)]
+    assert len(acq) == 6 and acq["overlap"].min() > 1000 and \
+        thin["overlap"].max() <= 1, (
+        f"README caveat 8 says the staleness account became testable because "
+        f"reading the ratios off the filings put six third-party acquisitions "
+        f"into the sample, each with an acquirer that had traded for years "
+        f"before the target left, against holding companies that had traded "
+        f"for none. {len(acq)} now clear 100 sessions (thinnest "
+        f"{acq['overlap'].min() if len(acq) else 0}) and the rest reach "
+        f"{thin['overlap'].max()}"
     )
-    assert (e.loc[e["kind"] == "swap", "overlap"] == 0).all(), (
-        f"README caveat 8 says the understatement is not the last close going "
-        f"stale, because the successor of every swap measured first trades on "
-        f"the day the target leaves — no acquirer price to drift against. "
-        f"{e.loc[e['overlap'] > 0, 'stock_id'].tolist()} now overlap, which "
-        f"makes the staleness account testable and the caveat's dismissal of "
-        f"it stale in turn"
+    assert e.loc[e["kind"] == "swap", "gap"].nunique() >= 5, (
+        f"README caveat 8 says the gap spreads over six values across the "
+        f"swaps where it took two before, which is what lets it be read at "
+        f"all; it now takes {e.loc[e['kind'] == 'swap', 'gap'].nunique()}"
     )
+
     sign = f.set_index("stock_id")["sign"]
     in_band = int((e.loc[e["kind"] == "swap", "stock_id"].map(sign)
                    == "ambiguous").sum())
-    assert in_band == 1, (
-        f"README caveat 8 says one of the two swaps is a band name, so the "
-        f"+11 % is measured on a mix rather than on classifier-confirmed "
-        f"payouts alone; {in_band} are now undecided by the cuts"
-    )
-    assert e.loc[e["kind"] == "swap", "gap"].nunique() <= 2, (
-        f"README caveat 8 says the gap cannot price the bias because it barely "
-        f"varies across the swaps; it now takes "
-        f"{e.loc[e['kind'] == 'swap', 'gap'].nunique()} values, so the check "
-        f"the caveat rules out may now have something to read"
+    assert in_band == 6, (
+        f"README caveat 8 says six of the ten swaps are band names, so the "
+        f"spread is measured mostly on names the cuts do not decide rather "
+        f"than on classifier-confirmed payouts; {in_band} are now undecided"
     )
 
     t = terminal_value(f)
@@ -1120,12 +1143,13 @@ def test_taiwan_delisting_substitute_is_biased_low():
     # `substituted` were a name apart from what the code returns, and survived
     # because they were only ever printed in this check's message. Asserted now.
     basis = t["basis"].value_counts().to_dict()
-    assert basis == {"substituted": 103, "failed": 41, "undecided": 9,
-                     "consideration": 11}, (
-        f"README caveat 8 says a study meets 41 failed, 11 consideration, 103 "
+    assert basis == {"substituted": 95, "failed": 41, "undecided": 9,
+                     "consideration": 19}, (
+        f"README caveat 8 says a study meets 41 failed, 19 consideration, 95 "
         f"substituted and 9 undecided; it now meets {basis}. Recording a "
         f"consideration moves a name from substituted to consideration and "
-        f"nothing else moves at all"
+        f"nothing else moves at all — the eight swap ratios read off the "
+        f"acquirers' filings moved exactly eight"
     )
     paid = e.set_index("stock_id")["paid"]
     booked = t[t["basis"] == "consideration"].set_index("stock_id")["terminal"]
@@ -1165,10 +1189,11 @@ def test_taiwan_delisting_substitute_is_biased_low():
         "`delisting_band.csv` froze"
     )
     counts = t["basis"].value_counts().to_dict()
-    return (f"last close understates by {cash.median():+.1%} on {len(cash)} cash "
-            f"deals and {swap.median():+.1%} on {len(swap)} swaps, all one way; "
-            f"not staleness ({int(e['overlap'].sum())} acquirer sessions before "
-            f"the last trade); terminal basis {counts}",
+    return (f"last close off by {cash.median():+.1%} on {len(cash)} cash deals, "
+            f"all one way and inside 1.5 %, against {swap.min():+.1%}.."
+            f"{swap.max():+.1%} on {len(swap)} swaps; gap orders "
+            f"{rho_cash:+.2f} cash / {rho_swap:+.2f} swap; terminal basis "
+            f"{counts}",
             len(e))
 
 
@@ -2672,6 +2697,77 @@ def test_taiwan_mops_detail_gate_is_registration_not_filing():
             len(ref))
 
 
+def test_taiwan_swap_ratio_quotes_the_filing_it_names():
+    """README caveat 8: every swap ratio read off a filing is still in it.
+
+    The direction of a swap ratio is the thing this package cannot afford to
+    get from the number itself — `0.3168568` and `3.1560` are the same deal and
+    the wrong one is a 216 % error — so `swap_ratios.py` goes to the acquirer,
+    whose filing states it in a sentence, and each row's `source` carries that
+    sentence in 「」. This asserts the sentence is really there: the quote is
+    matched against the cached body of a filing on one of the dates the source
+    names, with whitespace flattened because MOPS wraps mid-clause.
+
+    That is the whole binding. A ratio whose quote no longer resolves is a
+    number with a citation and no source, which is the state the labels were in
+    before this route existed and the one thing a plausible-looking table hides
+    best.
+    """
+    quoted = re.compile("「([^」]+)」")
+    roc = re.compile(r"\b\d{2,3}/\d{2}/\d{2}\b")
+    flat = lambda s: re.sub(r"\s+", "", s or "")
+    cons = pd.read_csv(REPO / "finmind_data/delisting_consideration.csv",
+                       dtype={"stock_id": str, "successor": str})
+    rows = [r for r in cons.itertuples() if quoted.search(r.source or "")]
+
+    unresolved = []
+    for r in rows:
+        # `source` says whose filing it is: the target's own where MOPS still
+        # serves it, the acquirer's otherwise. Reading the routing out of the
+        # sentence keeps the two caches from being interchangeable by accident.
+        sub = "mops_detail" if "own filing" in r.source else "mops_acquirer_detail"
+        path = REPO / f"finmind_data/{sub}/{r.stock_id}.parquet"
+        if not path.exists():
+            raise Skipped(f"{sub}/{r.stock_id}.parquet not built — "
+                          "run `swap_ratios.py`")
+        det = pd.read_parquet(path)
+        want = flat(quoted.search(r.source).group(1))
+        on = {d for d in det.loc[det["body"].fillna("").map(
+            lambda b: want in flat(b)), "spoke_date"]}
+        if not (on & set(roc.findall(r.source))):
+            unresolved.append(f"{r.stock_id} (quote on {sorted(on) or 'nothing'},"
+                              f" source names {roc.findall(r.source)})")
+    assert not unresolved, (
+        f"README caveat 8 says each swap ratio's direction was read off the "
+        f"filing its row quotes; {unresolved} no longer resolve to a cached "
+        f"body on a date the row names, so their `per_share` is uncited"
+    )
+
+    # The route's boundary, asserted for the same reason the target-side gate
+    # is: it is a coverage figure. An acquirer that was itself later bought is
+    # refused in the same words as a target, and the five that are out are why
+    # seven of the seventeen in-frame swaps still have no ratio.
+    refused = pd.read_csv(REPO / "finmind_data/mops_acquirer_refusals.csv",
+                          dtype=str)
+    off_script = refused.loc[~refused["refusal"].str.contains(
+        "不繼續公開發行|已下市", regex=True, na=False), "target_id"]
+    assert len(refused) == 5 and not len(off_script), (
+        f"caveat 8 says five deals are out because the buyer deregistered "
+        f"after the deal, refused on the same registration sentence as a "
+        f"target; there are now {len(refused)}, {len(off_script)} of them "
+        f"refused for some other reason. Fewer means a ratio is readable that "
+        f"the caveat calls unreachable"
+    )
+    served = {r.stock_id for r in rows if "own filing" not in r.source}
+    assert not (served & set(refused["target_id"])), (
+        f"{sorted(served & set(refused['target_id']))} are recorded as both "
+        f"refused and quoted from the acquirer's body, so one of the two files "
+        f"is stale"
+    )
+    return (f"{len(rows)} ratios quote a filing on a date they name, "
+            f"{len(refused)} deals refused at the acquirer", len(rows))
+
+
 def test_taiwan_mops_reason_empties_the_undecided_band():
     """README caveat 8: the filings decide 30 of the 37 the price shape did not.
 
@@ -3094,10 +3190,71 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
         f"{sorted(set(two_step['target_id']) & set(booked['stock_id']))} are "
         f"booked anyway, which would assert a squeeze-out price nobody read"
     )
+
+    # What the exclusion costs, which is the half of it a policy has to know.
+    # `linkage` is the offeror's own 終止上市 answer and the module warns it does
+    # not decide which transaction was the exit; it is used here only for what
+    # the README claims with it — that four of the twelve are offers *the table
+    # itself* says ended nothing. The eight are the ones it says did.
+    linked = two_step[two_step["linkage"] == "yes"].copy()
+    assert len(linked) == 8, (
+        f"README caveat 8 splits the twelve into eight first steps and four the "
+        f"table says ended no listing; it now reads {len(linked)} and "
+        f"{len(two_step) - len(linked)}"
+    )
+    linked["gap"] = (linked["delist_date"] - linked["end_ts"]).dt.days
+    assert (linked["gap"].min(), linked["gap"].max()) == (99, 648), (
+        f"README caveat 8 dates the second step 99 to 648 days after the offer "
+        f"closed; the span is now {linked['gap'].min()}..{linked['gap'].max()}"
+    )
+    last = {}
+    for tid in linked["target_id"]:
+        px = pd.read_parquet(REPO / f"finmind_data/ohlcv/{tid}.parquet")
+        last[tid] = float(px.loc[pd.to_datetime(px["date"]).idxmax(), "close"])
+    # Signed the way the README quotes it: the tender price against the last
+    # close, so 5820's +11.1 % means the offer was above the tape.
+    linked["err"] = [r.per_share / last[r.target_id] - 1
+                     for r in linked.itertuples()]
+    lo, hi = linked["err"].min(), linked["err"].max()
+    assert math.isclose(lo, -0.0576, abs_tol=5e-4) and \
+        math.isclose(hi, 0.1111, abs_tol=5e-4), (
+        f"README caveat 8 puts the eight tender prices from −5.8 % (3144) to "
+        f"+11.1 % (5820) against the last close; they now run {lo:+.1%}..{hi:+.1%}"
+    )
+    # The shape of that spread is what decides the policy, and it is not the
+    # swaps'. There the error is a bias — the gap orders the signed residual at
+    # +0.85. Here the gap orders the *absolute* one and leaves the sign alone,
+    # so the last close is unbiased and only gets noisier the longer the second
+    # step takes. A tender price booked in its place would trade a wide unbiased
+    # substitute for a narrow one that is the wrong holder's, so the eight stay
+    # out on a reason that does not move when the spread does.
+    rho_abs = linked["gap"].corr(linked["err"].abs(), method="spearman")
+    rho_signed = linked["gap"].corr(linked["err"], method="spearman")
+    assert rho_abs > 0.5 > abs(rho_signed), (
+        f"README caveat 8 reads the two-step residual as dispersion that grows "
+        f"with the wait rather than as a bias — the gap orders |error| at +0.86 "
+        f"and the signed error at +0.36. They are now {rho_abs:+.2f} and "
+        f"{rho_signed:+.2f}, so the account of why a tender price is not a "
+        f"better substitute than the last close is wrong"
+    )
+    # Reachability, which is what makes the exclusion temporary rather than a
+    # rule: an offeror the sheet marks 上市 is still 公開發行 and files the second
+    # step the way `swap_ratios.py` reads a swap. Counted off the sheet's own
+    # 上市/上櫃 marking, so a buyer that was itself later bought still counts and
+    # the figure is an upper bound on what the route can reach.
+    listed = linked["offeror"].str.contains("上市|上櫃", na=False)
+    assert int(listed.sum()) == 3, (
+        f"README caveat 8 says three of the eight were bought by a company "
+        f"whose own filings are served — 6422 by 國巨 2327, 4725 by 台泥 1101 "
+        f"and 5820 by 富邦金 2881; {int(listed.sum())} now carry a 上市/上櫃 "
+        f"offeror, so the count of deals the route could still price has moved"
+    )
     return (f"{len(d)} tender offers from ROC105/11, {len(on_frame)} on the "
             f"frame; 3 booked because they opened on the delisting date, "
-            f"{len(two_step)} left because the tender preceded the exit",
-            len(on_frame))
+            f"{len(two_step)} left because the tender preceded the exit — 8 of "
+            f"them first steps at {lo:+.1%}..{hi:+.1%}, |error| ordered by the "
+            f"gap at {rho_abs:+.2f} and the sign at {rho_signed:+.2f}, 3 with a "
+            f"listed offeror", len(on_frame))
 
 
 def test_taiwan_short_sale_series_has_no_regime_gap():
@@ -3220,6 +3377,7 @@ CHECKS = [
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_mops_covers_every_delisted_name,
     test_taiwan_mops_detail_gate_is_registration_not_filing,
+    test_taiwan_swap_ratio_quotes_the_filing_it_names,
     test_taiwan_mops_reason_empties_the_undecided_band,
     test_taiwan_mops_overturns_only_failures_the_tape_missed,
     test_taiwan_mops_reason_scored_against_the_hand_labels,
@@ -3231,7 +3389,7 @@ CHECKS = [
     test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,
-    test_taiwan_delisting_substitute_is_biased_low,
+    test_taiwan_substitute_error_splits_by_deal_form,
     test_taiwan_booked_tender_offers_opened_on_the_delisting_date,
     test_taiwan_cash_payouts_land_outside_the_band,
     test_taiwan_fundamentals_are_fiscal_dated,

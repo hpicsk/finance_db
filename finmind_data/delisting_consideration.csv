@@ -5,10 +5,18 @@ stock_id,stock_name,delist_date,kind,successor,per_share,source
 4733,上緯,2016-08-31,swap,3708,1.0,share swap 1 share of holding co 3708 per share
 2391,合勤科技,2010-08-16,swap,3704,1.0,share swap 1 share of holding co 3704 per share
 3698,隆達,2021-01-06,swap,3714,0.275,share swap 0.275 shares of Ennostar 3714 per share
-4762,三汰-KY,2017-08-01,cash,,58.27,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 58.27 元"
-4965,商店街,2018-06-22,cash,,44.0,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 44 元"
-5304,鼎創達,2020-11-20,cash,,3.35,"going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 3.35 元"
+4762,三汰-KY,2017-08-01,cash,,58.27,going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 58.27 元
+4965,商店街,2018-06-22,cash,,44.0,going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 44 元
+5304,鼎創達,2020-11-20,cash,,3.35,going-private 公開收購 opened on the delisting date and ran the statutory 50 days; 公開收購申報資料彙總表 每股新台幣 3.35 元
 8913,全銓租賃股份有限公司,2020-01-20,cash,,13.4,"share transfer to 宏育管理顧問 for cash; price read at labelling, delisting_labels.csv source"
 6211,福登精密工業股份有限公司,2016-01-04,cash,,21.59,"tender by BOOTHBAY PTE LTD; price read at labelling, delisting_labels.csv source"
 3315,宣昶,2017-10-01,cash,,27.0,"acquired by WT Micro 3036 for NT$1.897bn cash; price read at labelling, delisting_labels.csv source"
 8266,中日新科技股份有限公司,2016-11-15,cash,,21.4,"parent 台灣顯示器 bought in minorities for cash; price read at labelling, delisting_labels.csv source"
+3534,雷凌,2011-10-01,swap,2454,0.3168568,股份轉換; 2454 filing 100/08/04 「調整為每3.1560股雷凌科技普通股股票換發1股本公司增資普通股股票」
+3367,英華達,2011-10-07,swap,2356,1.68,股份轉換; 2356 filing 100/03/22 「本公司增資普通股每1.68股換發英華達公司1股普通股」
+5854,合庫,2011-12-01,swap,5880,1.0,"共同股份轉換; 5854's own filing 100/10/05 「合庫銀行普通股1股換發合庫金控普通股1股」, unmoved by the REAR adjustment"
+3389,志遠電子股份有限公司,2012-02-01,swap,3036,0.547,股份轉換; 3036 filings 100/08/03 and 100/12/09 「以本公司普通股0.547股換發志遠電子普通股1股」
+5280,F-敦泰,2015-01-02,swap,3545,4.8,併購及股份轉換; 3545 filing 103/04/07 「以敦泰科技普通股1股換發本公司普通股4.8股」
+5491,連展科技股份有限公司,2017-12-29,swap,3710,1.0,股份轉換 into a new holdco; 1:1 in delisting_labels.csv and direction-free either way
+3514,昱晶,2018-10-01,swap,3576,1.39,"三方合併; ratio set in 3576 filing 107/01/29 and restated at the share-count filing 107/08/03 「每一股昱晶能源普通股換發1.39股本公司增資發行新股」, alongside 昇陽光電 at 1.17"
+4944,兆遠,2023-11-01,swap,6488,0.02,"股份轉換; 6488 filing 112/05/02 「兆遠公司普通股每1股換發本公司新發行普通股0.02股」; 112/09/08 moved the share count, not the ratio"
