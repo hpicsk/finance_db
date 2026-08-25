@@ -2667,17 +2667,24 @@ def test_taiwan_statements_are_published_after_their_deadline():
 
 
 def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
-    """README caveat 9: the table's 第二季 boundary is a year ahead of the data.
+    """README caveat 9: the table's 第二季 rule outruns the report it governs.
 
-    Asserted rather than fixed, because `filing_deadlines.csv` is sourced
-    legislation and a measurement is not a citation. What this holds is the
-    discrepancy: the 45-day rule the table applies to FY2012 half-years is one
-    the filings say nobody was keeping, and 98 % of them come back late against
-    it. If the row is corrected, this check fails and is deleted along with the
-    paragraph it guards; if the filings change, it fails and the paragraph is
-    wrong. Either way the two stop disagreeing silently.
+    The row is right as legislation — 證交法 §183 puts the amended §36 in force
+    on 一百零一年一月一日 — and the annual rule bites exactly there. The 第二季
+    rule does not, and the report says why rather than the deadline: §36 I(2)
+    governs a 第二季財務報告, and through FY2012 the mid-year document is still
+    the 我國GAAP 半年度財務報告, which the IFRSs consolidated report replaces at
+    一百零二會計年度. So the table applies a 45-day rule to a quarter the rule
+    had not yet reached, and 98 % of that quarter comes back late.
+
+    Asserted rather than fixed: what is missing is the instrument that governed
+    the 一百零一會計年度 半年報, which is a citation to find and not a number to
+    measure. If the row gains a transitional line this check fails and is
+    deleted with the paragraph it guards; if the filings change, it fails and
+    the paragraph is wrong. Either way the two stop disagreeing silently.
     """
     from finmind_data.available_date import available_date
+    from finmind_data.filing_dates import CLASS_CONSOLIDATED
 
     path = REPO / "finmind_data/filing_dates.parquet"
     if not path.exists():
@@ -2699,8 +2706,20 @@ def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
         f"days, against the 45 the table applies; the median is now {med}"
     )
 
+    # The lag is the symptom; the report type is the cause the paragraph names.
+    was = q2["class_code"].value_counts().idxmax()
+    now = (d[d["period_end"] == pd.Timestamp("2013-06-30")]["class_code"]
+           .value_counts().idxmax())
+    assert was != CLASS_CONSOLIDATED and now == CLASS_CONSOLIDATED, (
+        f"README caveat 9 reads the FY2012 boundary off the document, not the "
+        f"date: the mid-year filing is a 我國GAAP 半年度財務報告 through FY2012 "
+        f"and the IFRSs consolidated report ({CLASS_CONSOLIDATED}) from FY2013. "
+        f"The modal class is {was} then {now}, so that reading is gone and the "
+        f"row is a plain disagreement again"
+    )
     return (f"FY2012 第二季: {late.sum()}/{len(q2)} = {late.mean():.1%} late "
-            f"against the table, median lag {med}d", len(q2))
+            f"against the table, median lag {med}d; modal report {was} then "
+            f"{now} at FY2013", len(q2))
 
 
 CHECKS = [

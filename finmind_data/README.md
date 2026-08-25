@@ -1230,19 +1230,30 @@ ohlcv_all = pd.concat(
     tight — the on-time filings land a median of 3 days ahead of it — so it
     remains a good bound and a bad date.
 
-    **The filings also falsify a row of `filing_deadlines.csv`.** The table puts
-    the 45-day 第二季 rule in force from `2011-12-31`, so it scores FY2012's
-    half-year against 45 days. The filings say the regime changed a year later:
-    the median 第二季 lag is 59, 59, 61, 61 and 61 days for 2008 through 2012 and
-    then 44 days from 2013, and the 第一季/第三季 lag steps from 29-30 days to 44
-    on the same boundary. Read against the table as it stands, 1,592 of the 1,621
-    FY2012 half-years are late — 98.2 %, which is a table failing rather than a
-    market failing. Moving the rule to first apply to FY2013 leaves 31, and takes
-    the window's late count from 7,699 to the 6,138 quoted above. The annual rule
-    is right where the table puts it: the 第四季 lag drops from 117 days to 89 at
-    FY2011, exactly where the three-month amendment bites. The row is sourced
-    legislation and is corrected against a citation rather than against this
-    measurement, so it is recorded here and left standing.
+    **The filings also outrun a row of `filing_deadlines.csv`, and the document
+    type says why.** The table puts the 45-day 第二季 rule in force from
+    `2011-12-31`, so it scores FY2012's half-year against 45 days. That date is
+    right as legislation — 證交法 §183 reads 「九十九年六月二日修正公布之第三十六
+    條，自一百零一年一月一日施行」 — and the annual rule bites exactly there: the
+    第四季 lag drops from 117 days to 89 at FY2011, where the three-month
+    amendment lands. The 第二季 rule does not. Its median lag is 59, 59, 61, 61
+    and 61 days for 2008 through 2012 and then 44 from 2013, and the filings
+    name the reason instead of leaving it to be inferred: through FY2012 the
+    mid-year document is `A01 母公司財報`, the 我國GAAP 半年度財務報告, and from
+    FY2013 it is `AI1 IFRSs合併財報`. §36 I(2) governs a 第二季財務報告, and for
+    these companies that report begins with IFRS adoption at 一百零二會計年度. The
+    table is therefore applying a rule to a quarter the rule had not yet
+    reached: 1,592 of the 1,621 FY2012 half-years come back late — 98.2 %, a
+    table failing rather than a market failing — where a transitional line
+    first applying it to FY2013 leaves 31, and takes the window's late count
+    from 7,699 to the 6,138 quoted above.
+
+    The row is left standing all the same. What it is missing is the instrument
+    that governed the 一百零一會計年度 半年報 in the gap between the statute's
+    start and the report type's — a citation this package has not found, not a
+    number it can measure — and correcting sourced legislation against a
+    measurement is the move this file exists to refuse. Recorded, asserted, and
+    left for the citation.
 
     Two silent failures were caught in the collecting, both of which returned
     HTTP 200 and parsed to zero rows. The server throttles by serving
