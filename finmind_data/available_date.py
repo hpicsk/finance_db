@@ -1,4 +1,4 @@
-"""When a fundamental figure could first have been read, as a bound.
+"""When a fundamental figure could first have been read: the deadline, or the filing.
 
 ``fin_is/``, ``fin_bs/`` and ``fin_cf/`` are keyed on the quarter that closed —
 2005-03-31, 2005-06-30, … — not on the day the filing became public, and carry
@@ -6,15 +6,17 @@ no column for the latter. ``month_rev/`` has a ``create_time`` field that would,
 and it is blank on every row. Joining any of them to prices on ``date`` hands a
 trader figures weeks before they existed.
 
-There is no announcement date to be had from this package, so what is computed
-here is the statutory filing deadline: the **latest** date by which the figure
+Two answers to that, and they answer different questions. ``available_date``
+computes the statutory filing deadline: the **latest** date by which the figure
 had to be public. That is a bound in the safe direction — assume a figure
 arrived at its deadline and you can never use it before it existed — and it is
-deliberately loose in two places named at the bottom.
+deliberately loose in two places named at the bottom. ``observed_date`` reads
+the day the filing actually landed instead, which is tighter wherever the
+document server carried the report and absent where it did not.
 
-``date`` is never overwritten. ``available_date`` is a new column beside it, so
-the fiscal period a row describes and the day it could be traded on stay
-separate facts.
+``date`` is never overwritten. ``available_date`` and ``observed_date`` are new
+columns beside it, so the fiscal period a row describes and the day it could be
+traded on stay separate facts.
 
 **The window spans a regime change**, which is why the deadlines live in
 ``filing_deadlines.csv`` rather than in constants here. The 2010-06-02 amendment
@@ -58,15 +60,19 @@ to either would need its own rows before this module could be trusted on them.
 the company did. A company that filed late — or one granted a 不可抗力 extension,
 which both regimes allow on application within three days — published after the
 date computed here, and joining on it hands a trader that figure before it
-existed. That is the one direction this module cannot bound away on its own. The
-announcement dates exist: ``filing_dates.parquet`` carries the 上傳日期 of the
-report that first made each company-quarter public, collected by
-``filing_dates.py`` from TWSE's document server. Against it, 6.56 % of the
-window's company-quarters were published after the date computed here (README
-caveat 9). This module is still the right default — it is what the law required,
-it needs no external file, and where it holds it is tight — but a study that
-cannot afford a look-ahead on one quarter in fifteen should join the observed
-date instead of this one.
+existed. That is the one direction the deadline cannot bound away on its own,
+and it is what ``observed_date`` below is for. ``filing_dates.parquet`` carries
+the 上傳日期 of the report that first made each company-quarter public, collected
+by ``filing_dates.py`` from TWSE's document server, and against it 6.56 % of the
+window's company-quarters were published after their deadline (README caveat 9).
+
+The tradable gap is wider than the published one, because three quarters of
+reports are uploaded after the session closes: **14.66 %** of the window's
+company-quarters could not be traded on by their deadline, against the 6.56 %
+that were filed after it. The deadline is still the right default — it is what
+the law required, it needs no external file, and where it holds it is tight, a
+median three days ahead — but a study that cannot afford a look-ahead on one
+quarter in seven should join ``observed_date`` instead.
 
 The result carries the index of what was passed in, so
 ``d['deadline'] = available_date(d.period_end)`` lands on a filtered frame
@@ -80,6 +86,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 DEADLINES_PATH = ROOT / 'filing_deadlines.csv'
+FILING_DATES_PATH = ROOT / 'filing_dates.parquet'
 
 # Quarter-end month → the rule row that governs it. `fin_*` is dated on exactly
 # these four; a 12-31 row is the annual report, not a fourth quarterly one.
@@ -193,6 +200,104 @@ def with_available_date(df: pd.DataFrame, kind: str = 'financial_statement',
     return out
 
 
+# TWSE's regular session ends at 13:30 and has for the whole window, so a report
+# uploaded after it could not be acted on at that day's close and the first
+# close that can be traded on its figures is the next session's. Three quarters
+# of filings land after this hour, which is why the observed date is a roll and
+# not a `.dt.normalize()` — README caveat 9. After-hours odd-lot trading at
+# 14:00 settles at the closing price already set, so it does not move the hour;
+# and rolling a borderline filing forward errs later, which is the direction
+# this module errs in throughout.
+SESSION_CLOSE = pd.Timedelta(hours=13, minutes=30)
+
+
+def _filings() -> pd.DataFrame:
+    """The collected 上傳日期 panel, one row per company-quarter."""
+    if not FILING_DATES_PATH.exists():
+        raise FileNotFoundError(
+            f'{FILING_DATES_PATH} is missing — it is collected by '
+            f'filing_dates.py, one request per company against TWSE\'s document '
+            f'server and then --consolidate. There is nothing to fall back on: '
+            f'the deadline is a different answer, and it is what '
+            f'available_date returns.')
+    d = pd.read_parquet(FILING_DATES_PATH,
+                        columns=['stock_id', 'period_end', 'first_public'])
+    dup = int(d.duplicated(['stock_id', 'period_end']).sum())
+    if dup:
+        raise ValueError(
+            f'{dup} company-quarters appear twice in {FILING_DATES_PATH.name}; '
+            f'a left join on a duplicated key multiplies rows rather than '
+            f'dating them, so the panel is rebuilt rather than joined as is.')
+    return d
+
+
+def observed_date(stock_id, period_end) -> pd.Series:
+    """First date each company-quarter's figures could be traded on, as observed.
+
+    ``available_date`` returns what the law required; this returns what the
+    company did. The 上傳日期 of the earliest Chinese report for the period comes
+    from ``filing_dates.parquet``, and a filing that landed after
+    ``SESSION_CLOSE`` is dated to the next day, because the first close its
+    figures can be traded at is the following session's.
+
+    ``NaT`` where the panel carries no filing for that company-quarter — 19 of
+    the 94,772 in-window quarters ``fin_is`` holds, almost all of them an annual
+    report from before the company listed or after it left, which the vendor
+    kept and the document server never carried. They are left undated rather
+    than dated by the deadline: substituting the bound there would put back
+    exactly the look-ahead this function exists to remove, and a ``NaT`` drops
+    the row from a join where a substituted date trades it.
+
+    Financial statements only. ``filing_dates.parquet`` is 財務報告書, so monthly
+    revenue has no observed date here and its period ends are refused rather
+    than returned as an all-``NaT`` column that looks like missing data.
+    """
+    sid_in, pe_in = pd.Series(stock_id), pd.Series(period_end)
+    if len(sid_in) != len(pe_in):
+        raise ValueError(f'stock_id and period_end must be the same length, '
+                         f'not {len(sid_in)} and {len(pe_in)}')
+    # Internals run on a fresh RangeIndex for the same reason available_date
+    # does — a merge reindexes, and a duplicated label in a concatenated panel
+    # would scatter the result — and the caller's index goes back on at the end.
+    keys = pd.DataFrame({'stock_id': sid_in.astype(str).to_numpy(),
+                         'period_end': pd.to_datetime(pe_in).to_numpy()})
+    qe = keys['period_end']
+    bad = keys[~(qe.dt.month.isin(_RULE_BY_MONTH)
+                 & (qe == qe + pd.offsets.MonthEnd(0)))]
+    if len(bad):
+        raise ValueError(
+            f'{len(bad)} period ends are not quarter ends — '
+            f'{sorted(bad["period_end"].dt.strftime("%Y-%m-%d").unique())[:3]}. '
+            f'{FILING_DATES_PATH.name} dates 財務報告書 and is keyed on 03-31, '
+            f'06-30, 09-30 and 12-31; month_rev has no filing date here.')
+
+    filed = keys.merge(_filings(), on=['stock_id', 'period_end'],
+                       how='left')['first_public']
+    day = filed.dt.normalize()
+    # NaT stays NaT: the comparison is False on a missing filing, so the roll
+    # adds nothing and the absence survives instead of becoming a date.
+    return (day + pd.to_timedelta(((filed - day) > SESSION_CLOSE).astype(int),
+                                  unit='D')).set_axis(sid_in.index)
+
+
+def with_observed_date(df: pd.DataFrame) -> pd.DataFrame:
+    """``df`` with an ``observed_date`` column beside its ``date``.
+
+    ``date`` is untouched, as in ``with_available_date``: the fiscal period the
+    row describes and the day it became tradable are two separate facts.
+    """
+    if 'observed_date' in df.columns:
+        raise ValueError('df already carries an observed_date column')
+    missing = [c for c in ('stock_id', 'date') if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f'df is missing {missing} — an observed date is per company as well '
+            f'as per period, unlike the deadline, which the period alone fixes.')
+    out = df.copy()
+    out['observed_date'] = observed_date(out['stock_id'], out['date']).to_numpy()
+    return out
+
+
 if __name__ == '__main__':
     for kind, pat in (('financial_statement', 'fin_is/2330.parquet'),
                       ('monthly_revenue', 'month_rev/2330.parquet')):
@@ -206,3 +311,13 @@ if __name__ == '__main__':
         print('  ...')
         print(s.tail(3).to_string(index=False))
         print(f'  lag in days: {sorted(int(x) for x in s["lag"].unique())}')
+
+    d = with_observed_date(pd.read_parquet(ROOT / 'fin_is/2330.parquet'))
+    d = with_available_date(d)
+    s = (d[['date', 'available_date', 'observed_date']].drop_duplicates()
+         .assign(bound_early=lambda x: (x['available_date']
+                                        - x['observed_date']).dt.days))
+    print(f'\nfin_is/2330.parquet  deadline against filing, {len(s)} periods')
+    print(s.tail(4).to_string(index=False))
+    print(f'  deadline precedes the filing on '
+          f'{int((s["bound_early"] < 0).sum())} of {len(s)}')

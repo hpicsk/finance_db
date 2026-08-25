@@ -1158,9 +1158,9 @@ ohlcv_all = pd.concat(
    shows what the others lack: it carries `AnnouncementDate` and
    `AnnouncementTime`, so its events align point-in-time as delivered.
 
-    `available_date.py` is the in-package correction, and it is a **bound**
-    rather than a date — the statutory filing deadline, i.e. the latest day by
-    which the figure had to be public:
+    `available_date.py` is the in-package correction, and it answers in two
+    ways. The first is a **bound** rather than a date — the statutory filing
+    deadline, i.e. the latest day by which the figure had to be public:
 
     ```python
     from finmind_data.available_date import with_available_date
@@ -1229,6 +1229,41 @@ ohlcv_all = pd.concat(
     trader a figure that did not yet exist. Where the deadline does hold it is
     tight — the on-time filings land a median of 3 days ahead of it — so it
     remains a good bound and a bad date.
+
+    **`observed_date` is how a study joins on it.** Given a `stock_id` and the
+    period end it returns the day that quarter's figures became tradable, and
+    `with_observed_date` puts the column beside `date` the way
+    `with_available_date` does:
+
+    ```python
+    from finmind_data.available_date import with_observed_date
+
+    fin = with_observed_date(pd.read_parquet(".../fin_is/2330.parquet"))
+    ```
+
+    It is a **roll, not a truncation**, and that is where most of the exposure
+    turns out to sit. TWSE's regular session closes at 13:30 and **74.9 %** of
+    reports are uploaded after it, so a report filed on its deadline at 17:00
+    cannot be acted on until the next session. Counting that, **13,710 —
+    14.66 %** — of the window's company-quarters could not be traded on by the
+    deadline this package computes, against the 6,138 that were filed after it.
+    More than double, on the same frame and the same deadline, and 2330 is the
+    case in miniature: it filed after its deadline exactly **once** in 56
+    in-window quarters and is still a session late on **14** of them.
+
+    **19 quarters come back `NaT`, and are left there.** Of the 94,772 in-window
+    company-quarters `fin_is` holds, 94,753 carry an observed date. The 19 that
+    do not fall over 18 companies, and 15 of them sit outside the span the
+    document server holds for their company — an annual filed before the
+    company listed or after it stopped filing, which the vendor kept and the
+    server never carried; the remaining four are absent from inside a span the
+    server does hold. They are not backfilled with the deadline. Substituting
+    the bound there would put back exactly the look-ahead the column exists to
+    remove, and it would be invisible while doing it, because the column would
+    be full and the rows would trade — a `NaT` drops them from the join
+    instead. `month_rev` has no observed date at all, the document server
+    carrying 財務報告書 only, so its period ends are refused rather than returned
+    as an all-`NaT` column that reads as missing data.
 
     **The filings also outrun a row of `filing_deadlines.csv`, and the document
     type says why.** The table puts the 45-day 第二季 rule in force from

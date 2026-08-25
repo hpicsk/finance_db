@@ -95,6 +95,14 @@
     "bound": "monotone",
     "n": 5883919
   },
+  "test_taiwan_observed_date_leaves_the_undatable_undated": {
+    "bound": "monotone",
+    "n": 94772
+  },
+  "test_taiwan_observed_date_rolls_past_the_session_close": {
+    "bound": "monotone",
+    "n": 93527
+  },
   "test_taiwan_ohlcv_is_raw": {
     "bound": "monotone",
     "n": 18276

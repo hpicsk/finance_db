@@ -2735,6 +2735,118 @@ def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
             f"{now} at FY2013", len(q2))
 
 
+def test_taiwan_observed_date_leaves_the_undatable_undated():
+    """README caveat 9: the observed date covers `fin_is` bar 19 quarters.
+
+    `observed_date` is only usable as a default if what it cannot date is both
+    small and known, and the caveat claims it is: 19 of the window's 94,772
+    `fin_is` company-quarters carry no filing, 15 of them an annual report from
+    outside the span the document server holds for that company — filed before
+    it listed, or after it stopped filing. Pinning the count means a panel that
+    quietly loses coverage fails here, rather than dropping those rows out of a
+    join that still looks like it ran.
+
+    That they come back `NaT` rather than as the deadline is the other half of
+    the claim, and the half that would be invisible if it broke: a substituted
+    bound fills the column, and the rows then trade on a date nobody observed.
+    """
+    from finmind_data.available_date import observed_date
+
+    if not (REPO / "finmind_data/filing_dates.parquet").exists():
+        raise Skipped("filing_dates.parquet not built")
+    frames = []
+    for f in sorted((REPO / "finmind_data/fin_is").glob("*.parquet")):
+        d = _tree(f)
+        if not len(d) or "date" not in d.columns:
+            continue
+        frames.append(pd.DataFrame({"stock_id": f.stem,
+                                    "period_end": d["date"].drop_duplicates()}))
+    p = pd.concat(frames, ignore_index=True)
+    obs = observed_date(p["stock_id"], p["period_end"])
+    undated = p[obs.isna()]
+    assert len(undated) == 19, (
+        f"README caveat 9 says 19 of the window's {len(p):,} fin_is "
+        f"company-quarters have no observed filing date; {len(undated)} do. "
+        f"A drop means the panel gained coverage and the caveat undersells it; "
+        f"a rise means it lost some, and the rows it lost leave a join silently"
+    )
+    assert undated["stock_id"].nunique() == 18, (
+        f"README caveat 9 spreads the 19 over 18 companies; they now fall on "
+        f"{undated['stock_id'].nunique()}"
+    )
+
+    # The caveat explains them as periods outside what the server holds for the
+    # company, not as a collector that missed rows. Asserted, because the two
+    # have the same count and only one of them is a reason to go back.
+    span = (pd.read_parquet(REPO / "finmind_data/filing_dates.parquet")
+              .groupby("stock_id")["period_end"].agg(["min", "max"]))
+    j = undated.join(span, on="stock_id")
+    outside = int(((j["period_end"] < j["min"])
+                   | (j["period_end"] > j["max"])).sum())
+    assert outside == 15, (
+        f"README caveat 9 puts 15 of the 19 outside the span the document "
+        f"server holds for their company — a pre-listing or post-delisting "
+        f"report the vendor kept and the server never carried; {outside} are "
+        f"now. The rest sit inside the span and are absent from it, which is a "
+        f"collection gap rather than a structural one"
+    )
+    return (f"{len(p) - len(undated):,}/{len(p):,} in-window fin_is quarters "
+            f"carry an observed date; the {len(undated)} that do not are NaT, "
+            f"{outside} of them outside their company's filing span", len(p))
+
+
+def test_taiwan_observed_date_rolls_past_the_session_close():
+    """README caveat 9: 14.66 % are untradable by the deadline, not 6.56 %.
+
+    Three quarters of reports are uploaded after TWSE's 13:30 close, so a
+    filing that lands *on* its deadline is not tradable until the next session
+    and the deadline is a look-ahead for it. That is why `observed_date` rolls
+    rather than truncating, and it is the difference between the 6.56 % of
+    quarters filed late and the 14.66 % that could not be traded on in time —
+    more than double, on the same frame and the same deadline.
+
+    The 第二季 rule is scored on the boundary the filings support rather than
+    the one the table carries, for the reason the check above it gives.
+    """
+    from finmind_data.available_date import (available_date, observed_date,
+                                             SESSION_CLOSE)
+
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists():
+        raise Skipped("filing_dates.parquet not built")
+    d = pd.read_parquet(path)
+    w = d[(d["period_end"] >= pd.Timestamp("2011-12-31"))
+          & (d["period_end"] <= pd.Timestamp("2024-12-31"))].reset_index(drop=True)
+    rolled = (w["first_public"] - w["first_public"].dt.normalize()) > SESSION_CLOSE
+    assert math.isclose(rolled.mean(), 0.749, abs_tol=0.02), (
+        f"README caveat 9 says three quarters of filings land after the 13:30 "
+        f"close, which is what makes the roll worth doing; the share is now "
+        f"{rolled.mean():.1%} ({int(rolled.sum()):,} of {len(w):,})"
+    )
+
+    dl = available_date(w["period_end"])
+    early_q2 = (w["period_end"].dt.quarter == 2) & (w["period_end"].dt.year <= 2012)
+    dl = dl.where(~early_q2, w["period_end"] + pd.Timedelta(days=75))
+    untradable = ((observed_date(w["stock_id"], w["period_end"]) - dl).dt.days > 0)
+    late = ((w["first_public"].dt.normalize() - dl).dt.days > 0)
+    rate = untradable.mean()
+    assert math.isclose(rate, 0.1466, abs_tol=0.005), (
+        f"README caveat 9 says 14.66 % of the window's company-quarters could "
+        f"not be traded on by their deadline; the rate is now {rate:.2%} "
+        f"({int(untradable.sum()):,} of {len(w):,})"
+    )
+    assert untradable.sum() > 2 * late.sum(), (
+        f"README caveat 9 says the untradable share is more than double the "
+        f"{late.mean():.2%} filed late, which is the whole reason the observed "
+        f"date rolls; it is now {untradable.sum():,} against {late.sum():,}. If "
+        f"the two have converged, the close-time roll is no longer load-bearing"
+    )
+    return (f"{int(rolled.sum()):,}/{len(w):,} = {rolled.mean():.1%} filed after "
+            f"the close; {int(untradable.sum()):,} = {rate:.2%} untradable by "
+            f"their deadline against {int(late.sum()):,} = {late.mean():.2%} "
+            f"filed after it", len(w))
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -2764,6 +2876,8 @@ CHECKS = [
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
     test_taiwan_filing_deadline_q2_rule_starts_a_year_early,
+    test_taiwan_observed_date_leaves_the_undatable_undated,
+    test_taiwan_observed_date_rolls_past_the_session_close,
     test_taiwan_delisting_sign_sample_is_preregistered,
     test_taiwan_delisting_sign_accuracy,
     test_taiwan_single_cut_is_registered_unscored,
