@@ -33,8 +33,8 @@ before 2026-08-17, on the reading that the truth turns over near a drawdown of
 0.50. That boundary was read off the same labels any rate at it would be scored
 against, so it was never adopted here — it is *registered* here, which is the
 second half of this file. On the corrected frame the reading has weakened and
-the alternative registered beside it has overtaken it: 0.50 is right on 19 of
-the 28 labelled band names and the free halt rule on 24.
+the alternative registered beside it has overtaken it: 0.50 is right on 20 of
+the 28 labelled band names and the free halt rule on 25.
 
 ``_DD_SINGLE`` and the gate below are committed before the labels that will test
 them exist, exactly as the two cuts were. Twenty-eight of the 37 undecided names
@@ -70,9 +70,14 @@ Parameters, per the repo's degrees-of-freedom convention:
     CHOSEN, structural, and pre-registered since it also sets the halt rule's
     calls. The routine gap between a last trade and the formal date is 7-14 days
     for 73 of the priced delistings; anything past a month is a halt, not
-    paperwork. The held-out names' halts run 3, 14, 14, 70 days and then past
-    150, so a move inside 15..69 changes nothing and passes unnoticed — the
-    registration binds where it can see, which is where a call moves.
+    paperwork. The held-out names' halts run 3, 14, 14 days and then past 200,
+    so a move anywhere inside 14..217 leaves every held-out call where it is —
+    the registration binds where it can see, which is where a call moves. What
+    sees the rest of that interval is the labelled band, whose halt score holds
+    only across 16..75, so between the two the cut is pinned to the narrower
+    range. Both bounds are recomputed from the features in the assertion and
+    compared against this sentence, because the sentence is the part with nothing
+    else holding it — the cut moved once already and the range around it did not.
 ``_STRATUM_BRACKET``
     CHOSEN, structural. How far either side of a cut the draw treats as its
     boundary. Its value matters less than its being applied to both cuts, which
@@ -83,16 +88,17 @@ Parameters, per the repo's degrees-of-freedom convention:
     on the nine that are not.
 ``_GATE_NULL``
     MEASURED, by this script, from the labelled band: the larger label class is
-    16 of 28. It is what a reader gets inside the band for free by calling every
+    17 of 28. It is what a reader gets inside the band for free by calling every
     name a payout, so it is the rate 0.50 has to beat rather than 0.50 %.
 ``_GATE_ALPHA``, ``_GATE_MIN_LABELS``
     CHOSEN, pre-registered; the second DERIVED from the first two rather than
-    picked. Below ten labels the criterion can only be met by a perfect score,
-    which is not a test of a rule but of whether it ever errs; ten is the
-    smallest sample at which nine of ten clears the null. ``_gate_threshold``
+    picked. Below eleven labels the criterion can only be met by a perfect
+    score, which is not a test of a rule but of whether it ever errs; eleven is
+    the smallest sample at which ten of eleven clears the null. ``gate_threshold``
     derives it, and the assertion re-derives it, so it moves if the other two
-    do. On this frame the held-out set is nine, one short, which is why the
-    gate reports itself unreadable instead of returning a threshold.
+    do — as it did, from ten to eleven, when the 8420 correction lifted the null.
+    On this frame the held-out set is nine, two short, which is why the gate
+    reports itself unreadable instead of returning a threshold.
 ``_SAMPLE_SEED``, ``_ALLOCATION``
     CHOSEN, pre-registered. Stratified because a uniform draw would spend most
     of its labels in the ``clear`` band where the shape is least in doubt; the

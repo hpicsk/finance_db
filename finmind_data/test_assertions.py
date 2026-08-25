@@ -860,14 +860,20 @@ def test_taiwan_single_cut_is_registered_unscored():
 
     What this catches is an edit that changes a call, which is not the same as
     any edit: the held-out names' suspensions run 3, 14, 14 days and then past
-    200, so `_LONG_SUSPENSION_DAYS` can be moved anywhere inside 15..217
-    without moving a call, and that move passes here. The claim is bounded to
-    what it can see, and the alternative — asserting the constants themselves —
-    would only restate them.
+    200, so `_LONG_SUSPENSION_DAYS` can be moved anywhere inside 14..217 without
+    moving a held-out call. That is not the same as passing here, and the
+    difference is the useful half — the labelled band's halt score holds only
+    across 16..75, so a move outside that fails on caveat 8 while the
+    pre-registration sees nothing at all. The blind spot is real and it is the
+    wider range; what covers most of it is a check written for something else.
+    Both bounds are recomputed here from the features rather than quoted, so the
+    two docstrings stating them fail together when the halts underneath move.
+    Asserting the constant itself would restate it; asserting how far it can
+    travel is the part neither docstring can hold up on its own.
     """
     from finmind_data.delisting_sign import (
-        _DD_SINGLE, _GATE_MIN_LABELS, _GATE_NULL, band_holdout, features,
-        gate_threshold, single_cut_gate)
+        _DD_SINGLE, _GATE_MIN_LABELS, _GATE_NULL, _LONG_SUSPENSION_DAYS,
+        band_holdout, features, gate_threshold, single_cut_gate)
 
     f = features()
     labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
@@ -914,8 +920,46 @@ def test_taiwan_single_cut_is_registered_unscored():
         {True: "distress", False: "merger"}) == scored["label"]).sum())
     assert (dd50, halt) == (20, 25), (
         f"README caveat 8 says the halt rule is right 25 times on the 28 "
-        f"labelled band names against 0.50's 19, which is why both are "
+        f"labelled band names against 0.50's 20, which is why both are "
         f"registered; they now score {dd50} and {halt} of {len(scored)}"
+    )
+
+    # How far `_LONG_SUSPENSION_DAYS` can move before one of the two facts above
+    # moves with it, derived by walking the cut outwards from the value in force
+    # rather than quoted from the docstrings that state it. The two bounds differ
+    # and the difference is the point: no held-out name has a tail, so the
+    # pre-registration's bound on each side is just the nearest halt length,
+    # while the labelled band has tails and pins the cut far tighter.
+    held = fresh[["stock_id"]].merge(
+        f[["stock_id", "suspension_days", "has_tail"]], on="stock_id")
+    registered = dict(zip(fresh["stock_id"], fresh["halt_call"]))
+    # Bounded by the data, so a feature set on which the cut changed nothing
+    # would report the whole range instead of walking forever.
+    ceiling = int(f["suspension_days"].max()) + 1
+
+    def widest(holds):
+        lo = hi = _LONG_SUSPENSION_DAYS
+        assert holds(lo), "the cut in force is the one the two facts were read at"
+        while lo > 0 and holds(lo - 1):
+            lo -= 1
+        while hi < ceiling and holds(hi + 1):
+            hi += 1
+        return lo, hi
+
+    blind = widest(lambda cut: registered == {
+        sid: "distress" if tail or days > cut else "merger"
+        for sid, days, tail in zip(held["stock_id"], held["suspension_days"],
+                                   held["has_tail"])})
+    seen = widest(lambda cut: halt == int(
+        ((scored["has_tail"] | (scored["suspension_days"] > cut)).map(
+            {True: "distress", False: "merger"}) == scored["label"]).sum()))
+    assert (blind, seen) == ((14, 217), (16, 75)), (
+        f"both docstrings say a move inside 14..217 leaves every held-out call "
+        f"where it is, and that the labelled band's halt score holds only across "
+        f"16..75 — so the cut is pinned to the narrower of the two. The held-out "
+        f"suspensions are now {sorted(held['suspension_days'])} and the two "
+        f"ranges derive as {blind[0]}..{blind[1]} and {seen[0]}..{seen[1]}. The "
+        f"sentences are what is wrong here, not the data"
     )
 
     assert gate_threshold(_GATE_MIN_LABELS) < _GATE_MIN_LABELS, (

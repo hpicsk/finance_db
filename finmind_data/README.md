@@ -971,6 +971,30 @@ ohlcv_all = pd.concat(
     Until then the cuts leave the band undecided at 37 names, ~24 of them
     payouts.
 
+    The one candidate feature that could have decided the 9 was priced and
+    declined, and the pricing was done on the 28 so that it could not be done
+    on the 9. `TaiwanStockDispositionSecuritiesPeriod` — 處置有價證券, the only
+    full-window distress-shaped table in the catalogue — is the obvious thing to
+    reach for when a rule needs a source that is not a filing. It marks abnormal
+    *trading*: five consecutive sessions on 注意交易資訊 put a name into manual
+    matching and full prepayment, which an acquisition run-up can trigger as
+    readily as a collapse. Measured against the frame it reaches 40 of the 164
+    exits and 8 of the 37 band names in the 12 months before the last trade —
+    24 % and 22 % — and on the 9 held out it would flag 2. On the 28 labelled
+    band names it points the wrong way: 6 carry a disposition, 4 of them
+    payouts, and reading a disposition as distress is right 15 times out of 28,
+    below the 17 a reader gets by calling every band name a payout and never
+    looking. Probed 2026-08-25; the table is not stored, which is why those
+    figures carry a probe date and not an assertion.
+
+    None of that is the reason it was declined, though — it is the confirmation.
+    The binding constraint is the label count and not the feature set: 11 labels
+    are needed and 9 exist, so a rule registered on this frame returns
+    "unreadable" whatever it reads, and a feature flagging 2 of 9 cannot change
+    an arithmetic that does not mention it. Registering it after that was known
+    would have been registering a rule that cannot fail, which is the same move
+    as lowering the bar and costs the 9 labels either way.
+
     The payout's **size** is a separate gap, and smaller than it looked. A name
     classified as one books its last traded close, and against the 11 deals
     whose consideration is recorded in a form needing no ratio convention, that
@@ -1593,7 +1617,7 @@ left is read one filing at a time from MOPS and from
 
 | Reachable, not taken | What it is | Why not |
 |---|---|---|
-| `TaiwanStockDispositionSecuritiesPeriod` | 處置有價證券 — 4,832 rows, 2011-01-04 → 2024-12-31, with the exchange's own `measure` text | Full-window distress marker and the largest thing on this list. Not taken because nothing here asks a question it answers yet; it is the first place to go if the delisting sign needs a source that is not a filing |
+| `TaiwanStockDispositionSecuritiesPeriod` | 處置有價證券 — 4,832 rows, 2011-01-04 → 2024-12-31, with the exchange's own `measure` text | Full-window distress marker and the largest thing on this list. It was the first place to go when the delisting sign needed a source that is not a filing, and caveat 8 records what came back: it marks abnormal trading rather than a reason, reaches 22 % of the band, and points the wrong way on the names that can score it |
 | `TaiwanStockSuspended` | 暫停交易公告 with `resumption_date`, 7,114 rows from 2011-11-04 | Thin where it would matter: only 266 rows are 4-digit commons, across 224 names, and just 46 of the 246 in-window delisted names have one. Most of the table is warrants |
 | `TaiwanStockTradingDate` | the session calendar — 3,414 in-window sessions | Already held. It matches a continuously-listed name's tape exactly: 0 sessions either way against 2330's `ohlcv/`. Worth knowing it exists, not worth storing twice |
 | `TaiwanStockMarginShortSaleSuspension`, `TaiwanStockDayTradingSuspension` | 暫停融券賣出 / 暫停當沖, ~30k rows each | Routine rather than distress — the modal `reason` is 分配收益, the ordinary pre-ex-dividend suspension |
