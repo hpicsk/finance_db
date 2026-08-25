@@ -21,9 +21,17 @@ traded on stay separate facts.
 **The window spans a regime change**, which is why the deadlines live in
 ``filing_deadlines.csv`` rather than in constants here. The 2010-06-02 amendment
 to 證券交易法 §36 took effect 自一百零一年一月一日 (2012-01-01) and shortened the
-annual report from four months to three and the half-year report from a
-75-day consolidated back-stop to 45 days. A single constant fitted to either
-side of that is wrong for a third of the window.
+annual report from four months to three. A single constant fitted to either side
+of that is wrong for a third of the window.
+
+**The half-year breaks a year later than the rest of it.** §36 I(2) reads
+第一季、第二季及第三季終了後四十五日內, and the 第二季 in it arrives with the
+一百零一年一月四日 amendment, which §183 defers 自一百零二會計年度. So the
+一百零一會計年度 mid-year document is still the 半年度財務報告 on the pre-2012
+terms — 2 months, 75 days consolidated — and the table carries the two as
+separate rows rather than one boundary. The filings agree with the statute about
+where the break is: the FY2012 half-year files at a median 61 days like FY2011,
+and FY2013 at 44.
 
 **Consolidated, not parent-only.** Under the pre-2012 regime a first- or
 third-quarter report was due one month after quarter end, with the *consolidated*

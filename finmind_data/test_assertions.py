@@ -2383,12 +2383,14 @@ def test_taiwan_filing_deadline_table_covers_the_data():
         )
 
     # 證交法 §36 as amended 2010-06-02, in force 2012-01-01: the annual report
-    # goes from four months to three and the half-year from a 75-day
-    # consolidated back-stop to 45 days. A constant fitted to either side is
-    # wrong for a third of the window.
+    # goes from four months to three. The half-year goes from a 75-day
+    # consolidated back-stop to 45 days a year later — §183 defers §36 I(2) to
+    # 一百零二會計年度 — so the two rules break in different years and a constant
+    # fitted to either side is wrong for a third of the window. 2012-06-30 is
+    # the quarter that separates the two readings and is pinned for that.
     want = {"2010-12-31": "2011-04-30", "2011-06-30": "2011-09-13",
-            "2011-12-31": "2012-03-31", "2012-06-30": "2012-08-14",
-            "2024-12-31": "2025-03-31"}
+            "2011-12-31": "2012-03-31", "2012-06-30": "2012-09-13",
+            "2013-06-30": "2013-08-14", "2024-12-31": "2025-03-31"}
     got = available_date(pd.to_datetime(list(want)))
     for (pe, exp), g in zip(want.items(), got):
         assert g == pd.Timestamp(exp), (
@@ -2665,10 +2667,13 @@ def test_taiwan_statements_are_published_after_their_deadline():
     is computed here against the deadline the module actually returns, so a
     change to `filing_deadlines.csv` moves it and this check says by how much.
 
-    The 第二季 rule is scored on the boundary the filings support rather than
-    the one the table carries, because the table's is a year early and scoring
-    against it would report a table error as a market fact — see the same
-    caveat, and the check below that holds the table to it.
+    Scored on whatever `filing_deadlines.csv` returns, with no correction
+    applied here. There used to be one: the table put the 第二季 45-day rule a
+    year early, this check patched the FY2012 half-year back to 75 days so a
+    table error would not be reported as a market fact, and the rate below was
+    always the corrected one. The table now carries §183's deferral itself, so
+    the patch is gone and the number is unchanged — which is the evidence that
+    it was the same correction in both places.
     """
     from finmind_data.available_date import available_date
 
@@ -2679,8 +2684,6 @@ def test_taiwan_statements_are_published_after_their_deadline():
     w = d[(d["period_end"] >= pd.Timestamp("2011-12-31"))
           & (d["period_end"] <= pd.Timestamp("2024-12-31"))].reset_index(drop=True)
     dl = available_date(w["period_end"])
-    early_q2 = (w["period_end"].dt.quarter == 2) & (w["period_end"].dt.year <= 2012)
-    dl = dl.where(~early_q2, w["period_end"] + pd.Timedelta(days=75))
     late = (w["first_public"].dt.normalize() - dl).dt.days
     n_late = int((late > 0).sum())
     rate = n_late / len(w)
@@ -2703,22 +2706,22 @@ def test_taiwan_statements_are_published_after_their_deadline():
             f"{med}d; on-time filings land {on_time}d early", len(w))
 
 
-def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
-    """README caveat 9: the table's 第二季 rule outruns the report it governs.
+def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
+    """README caveat 9: the 第二季 rule starts a year after the rest of §36.
 
-    The row is right as legislation — 證交法 §183 puts the amended §36 in force
-    on 一百零一年一月一日 — and the annual rule bites exactly there. The 第二季
-    rule does not, and the report says why rather than the deadline: §36 I(2)
-    governs a 第二季財務報告, and through FY2012 the mid-year document is still
-    the 我國GAAP 半年度財務報告, which the IFRSs consolidated report replaces at
-    一百零二會計年度. So the table applies a 45-day rule to a quarter the rule
-    had not yet reached, and 98 % of that quarter comes back late.
+    The 2010-06-02 amendment to 證交法 §36 is in force 一百零一年一月一日 and the
+    annual rule bites exactly there. The 第二季 rule does not, and §183 is where
+    it says so: 一百零一年一月四日修正公布之第三十六條第一項第二款、自一百零二會計
+    年度施行. That is the clause naming a 第二季財務報告, so through FY2012 the
+    mid-year document is still the 半年度財務報告 on pre-2012 terms, and
+    `filing_deadlines.csv` carries the two as separate rows.
 
-    Asserted rather than fixed: what is missing is the instrument that governed
-    the 一百零一會計年度 半年報, which is a citation to find and not a number to
-    measure. If the row gains a transitional line this check fails and is
-    deleted with the paragraph it guards; if the filings change, it fails and
-    the paragraph is wrong. Either way the two stop disagreeing silently.
+    Read as a deadline the table was wrong for exactly one quarter and wrong by
+    a lot — it scored 98 % of the FY2012 half-years late. What keeps this a
+    check rather than a correction already banked is that the statute and the
+    filings have to agree about *where* the boundary falls: FY2012 must score
+    like FY2011 and FY2013 must not. A table edited until one quarter passed
+    would still fail here if it put the break in the wrong year.
     """
     from finmind_data.available_date import available_date
     from finmind_data.filing_dates import CLASS_CONSOLIDATED
@@ -2727,36 +2730,43 @@ def test_taiwan_filing_deadline_q2_rule_starts_a_year_early():
     if not path.exists():
         raise Skipped("filing_dates.parquet not built")
     d = pd.read_parquet(path)
-    q2 = d[d["period_end"] == pd.Timestamp("2012-06-30")].reset_index(drop=True)
-    late = ((q2["first_public"].dt.normalize()
-             - available_date(q2["period_end"])).dt.days > 0)
-    assert late.mean() > 0.9, (
-        f"README caveat 9 says the table scores 98 % of FY2012 half-years as "
-        f"late, which is the sign its 第二季 boundary is a year early; the rate "
-        f"is now {late.mean():.1%}. If the row was corrected, delete this check "
-        f"and the paragraph it guards"
-    )
-    med = int((q2["first_public"].dt.normalize()
-               - q2["period_end"]).dt.days.median())
-    assert 55 <= med <= 70, (
-        f"README caveat 9 reads the FY2012 第二季 regime off a median lag of 61 "
-        f"days, against the 45 the table applies; the median is now {med}"
-    )
 
-    # The lag is the symptom; the report type is the cause the paragraph names.
-    was = q2["class_code"].value_counts().idxmax()
-    now = (d[d["period_end"] == pd.Timestamp("2013-06-30")]["class_code"]
-           .value_counts().idxmax())
-    assert was != CLASS_CONSOLIDATED and now == CLASS_CONSOLIDATED, (
-        f"README caveat 9 reads the FY2012 boundary off the document, not the "
-        f"date: the mid-year filing is a 我國GAAP 半年度財務報告 through FY2012 "
-        f"and the IFRSs consolidated report ({CLASS_CONSOLIDATED}) from FY2013. "
-        f"The modal class is {was} then {now}, so that reading is gone and the "
-        f"row is a plain disagreement again"
+    def half(year):
+        q = d[d["period_end"] == pd.Timestamp(f"{year}-06-30")]
+        late = ((q["first_public"].dt.normalize()
+                 - available_date(q["period_end"])).dt.days > 0)
+        lag = int((q["first_public"].dt.normalize()
+                   - q["period_end"]).dt.days.median())
+        return len(q), float(late.mean()), lag
+
+    n11, late11, lag11 = half(2011)
+    n12, late12, lag12 = half(2012)
+    n13, late13, lag13 = half(2013)
+    assert late11 < 0.05 and late12 < 0.05 and lag11 == lag12 == 61, (
+        f"README caveat 9 puts the FY2012 half-year under the same 75-day rule "
+        f"as FY2011 — §183 defers §36 I(2) to 一百零二會計年度 — so the two should "
+        f"score alike; FY2011 is {late11:.1%} late at a median {lag11}d and "
+        f"FY2012 is {late12:.1%} at {lag12}d"
     )
-    return (f"FY2012 第二季: {late.sum()}/{len(q2)} = {late.mean():.1%} late "
-            f"against the table, median lag {med}d; modal report {was} then "
-            f"{now} at FY2013", len(q2))
+    assert lag13 == 44 and late13 > 2 * max(late11, late12), (
+        f"README caveat 9 reads the regime break off the filings at FY2013, "
+        f"where the median lag drops to the 45-day rule; FY2013 files at a "
+        f"median {lag13}d and is {late13:.1%} late against FY2012's {late12:.1%}"
+    )
+    # The lag is the symptom; the report type is the cause the paragraph names.
+    was = d[d["period_end"] == pd.Timestamp("2012-06-30")]["class_code"].value_counts().idxmax()
+    now = d[d["period_end"] == pd.Timestamp("2013-06-30")]["class_code"].value_counts().idxmax()
+    assert was != CLASS_CONSOLIDATED and now == CLASS_CONSOLIDATED, (
+        f"README caveat 9 reads the FY2012 boundary off the document as well as "
+        f"the statute: the mid-year filing is a 我國GAAP 半年度財務報告 through "
+        f"FY2012 and the IFRSs consolidated report ({CLASS_CONSOLIDATED}) from "
+        f"FY2013. The modal class is {was} then {now}, so that corroboration is "
+        f"gone and the boundary rests on §183 alone"
+    )
+    return (f"FY2011/FY2012 half-years {late11:.1%}/{late12:.1%} late at a "
+            f"median {lag12}d under the 75-day rule; FY2013 {late13:.1%} at "
+            f"{lag13}d under the 45-day one; modal report {was} then "
+            f"{now}"), n11 + n12 + n13
 
 
 def test_taiwan_observed_date_leaves_the_undatable_undated():
@@ -2829,8 +2839,8 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
     quarters filed late and the 14.66 % that could not be traded on in time —
     more than double, on the same frame and the same deadline.
 
-    The 第二季 rule is scored on the boundary the filings support rather than
-    the one the table carries, for the reason the check above it gives.
+    Scored on whatever `filing_deadlines.csv` returns, with no correction
+    applied here — for the reason the check above it gives.
     """
     from finmind_data.available_date import (available_date, observed_date,
                                              SESSION_CLOSE)
@@ -2849,8 +2859,6 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
     )
 
     dl = available_date(w["period_end"])
-    early_q2 = (w["period_end"].dt.quarter == 2) & (w["period_end"].dt.year <= 2012)
-    dl = dl.where(~early_q2, w["period_end"] + pd.Timedelta(days=75))
     untradable = ((observed_date(w["stock_id"], w["period_end"]) - dl).dt.days > 0)
     late = ((w["first_public"].dt.normalize() - dl).dt.days > 0)
     rate = untradable.mean()
@@ -2986,7 +2994,6 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
             f"{ratio:.2f}x the 2019 mean"), len(d)
 
 
-
 def test_taiwan_par_value_changes_are_priced():
     """README caveat 5: the rebuild steps across a 面額變更 rather than through it.
 
@@ -3044,7 +3051,6 @@ def test_taiwan_par_value_changes_are_priced():
             f"-30 %, all {matched} rebuilt to the vendor within 1e-3"), n
 
 
-
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -3074,7 +3080,7 @@ CHECKS = [
     test_taiwan_mops_reason_scored_against_the_hand_labels,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
-    test_taiwan_filing_deadline_q2_rule_starts_a_year_early,
+    test_taiwan_filing_deadline_q2_boundary_is_fy2013,
     test_taiwan_observed_date_leaves_the_undatable_undated,
     test_taiwan_observed_date_rolls_past_the_session_close,
     test_taiwan_delisting_sign_sample_is_preregistered,

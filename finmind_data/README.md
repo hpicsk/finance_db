@@ -1242,10 +1242,12 @@ ohlcv_all = pd.concat(
     (`rule_type`, era, `entity_class`), because **the window spans a regime
     change**: the 2010-06-02 amendment to 證券交易法 §36 took effect
     自一百零一年一月一日 (2012-01-01) and cut the annual report from four months
-    to three and the half-year report from a 75-day consolidated back-stop to
-    45 days. FY2010 resolves to 2011-04-30 and FY2011 to 2012-03-31; H1 2011 to
-    2011-09-13 and H1 2012 to 2012-08-14. A single constant is wrong for the
-    window's first eleven months. Pre-2012 the quarterly deadlines used are the
+    to three. The half-year went from a 75-day consolidated back-stop to 45 days
+    a fiscal year later, because §183 defers §36 I(2) to 一百零二會計年度 — so the
+    two rules break in different years. FY2010 resolves to 2011-04-30 and FY2011
+    to 2012-03-31; H1 2011 and H1 2012 both to 75 days (2011-09-13, 2012-09-13)
+    and H1 2013 to 2013-08-14. A single constant is wrong for the window's first
+    eleven months, and one boundary for both rules is wrong for a quarter more. Pre-2012 the quarterly deadlines used are the
     *consolidated* back-stops (45 and 75 days) rather than the parent-only one
     month and two months, because `fin_is/` carries consolidated line items and
     the back-stop is both the binding and the later date.
@@ -1328,9 +1330,9 @@ ohlcv_all = pd.concat(
     carrying 財務報告書 only, so its period ends are refused rather than returned
     as an all-`NaT` column that reads as missing data.
 
-    **The filings also outrun a row of `filing_deadlines.csv`, and the document
-    type says why.** The table puts the 45-day 第二季 rule in force from
-    `2011-12-31`, so it scores FY2012's half-year against 45 days. That date is
+    **The filings once outran a row of `filing_deadlines.csv`, and the document
+    type said why.** The table put the 45-day 第二季 rule in force from
+    `2011-12-31`, scoring FY2012's half-year against 45 days. That date is
     right as legislation — 證交法 §183 reads 「九十九年六月二日修正公布之第三十六
     條，自一百零一年一月一日施行」 — and the annual rule bites exactly there: the
     第四季 lag drops from 117 days to 89 at FY2011, where the three-month
@@ -1341,17 +1343,30 @@ ohlcv_all = pd.concat(
     FY2013 it is `AI1 IFRSs合併財報`. §36 I(2) governs a 第二季財務報告, and for
     these companies that report begins with IFRS adoption at 一百零二會計年度. The
     table is therefore applying a rule to a quarter the rule had not yet
-    reached: 1,592 of the 1,621 FY2012 half-years come back late — 98.2 %, a
-    table failing rather than a market failing — where a transitional line
-    first applying it to FY2013 leaves 31, and takes the window's late count
-    from 7,699 to the 6,138 quoted above.
+    reached: 1,592 of the 1,621 FY2012 half-years came back late — 98.2 %, a
+    table failing rather than a market failing.
 
-    The row is left standing all the same. What it is missing is the instrument
-    that governed the 一百零一會計年度 半年報 in the gap between the statute's
-    start and the report type's — a citation this package has not found, not a
-    number it can measure — and correcting sourced legislation against a
-    measurement is the move this file exists to refuse. Recorded, asserted, and
-    left for the citation.
+    **The instrument was in §183 all along, one clause further down.** The row
+    stood for a while on the ground that correcting sourced legislation against
+    a measurement is the move this file exists to refuse, and that the statute
+    governing the 一百零一會計年度 半年報 had not been found. It is the same
+    sentence that dates the rest of the amendment: after 「九十九年六月二日修正公
+    布之第三十六條，自一百零一年一月一日施行」 §183 continues 「一百零一年一月四日
+    修正公布之第三十六條第一項第二款，自一百零二會計年度施行」. §36 I(2) is the
+    clause that names a 第二季財務報告, it was amended again on 2012-01-04, and
+    that amendment is deferred a full fiscal year — so the 45-day rule first
+    reaches a half-year at FY2013, exactly where the document type changes and
+    exactly where the filings break. `filing_deadlines.csv` now carries the two
+    as separate rows, the 75-day one running through `2012-06-30` and the
+    45-day one starting `2013-06-30`.
+
+    Nothing downstream moved, and that is the useful part of the result. Both
+    checks that quote a late rate had been patching this quarter back to 75 days
+    inline — scoring against the table would have published a table error as a
+    market fact — so the 6.56 % and the 14.66 % above were always the corrected
+    figures. Removing the two patches and re-running returns the same numbers to
+    the digit, which is what says the row and the workarounds were one
+    correction in two places rather than two guesses that happened to agree.
 
     Two silent failures were caught in the collecting, both of which returned
     HTTP 200 and parsed to zero rows. The server throttles by serving

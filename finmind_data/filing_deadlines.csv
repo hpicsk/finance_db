@@ -1,10 +1,10 @@
 rule_type,effective_from,effective_to,entity_class,lag_rule,source
 annual,2005-01-01,2011-09-30,all,months:4,"TWSE 公開發行公司應公告或向本會申報事項一覽表 (pre-2012 vintage), 年度財務報告: 每營業年度終了後四個月內 … 不得以任何理由申請延期辦理. Statutory basis 證券交易法 §36 I."
 q1,2005-01-01,2011-09-30,all,days:45,"Ibid., 第一季財務報告: 每營業年度第一季、第三季終了後一個月內 (合併財務報表若因作業不及、應於第一季及第三季終了後45日內補正公告申報). 45 days is the consolidated back-stop; see the module docstring on why it is the binding one here."
-q2,2005-01-01,2011-09-30,all,days:75,"Ibid., 半年度財務報告: 每半年營業年度終了後2個月內 (合併財務報表若因作業不及、應於半年度終了後75日內補正公告申報、惟金控公司除外)."
+q2,2005-01-01,2012-06-30,all,days:75,"Ibid., 半年度財務報告: 每半年營業年度終了後2個月內 (合併財務報表若因作業不及、應於半年度終了後75日內補正公告申報、惟金控公司除外). Still the governing instrument for the 一百零一會計年度 half-year: 證交法 §183 defers 一百零一年一月四日修正公布之第三十六條第一項第二款 — the clause that names a 第二季財務報告 — 自一百零二會計年度施行, so the mid-year document through FY2012 is the 半年度財務報告 on these terms."
 q3,2005-01-01,2011-09-30,all,days:45,"Ibid., 第一季財務報告 row covers 第三季 on the same terms."
 annual,2011-12-31,,all,months:3,"證券交易法 §36 I(1): 於每會計年度終了後三個月內、公告並申報 … 年度財務報告. Amended 2010-06-02, in force 自一百零一年一月一日施行 (2012-01-01), first applied to the FY2011 report."
 q1,2011-12-31,,all,days:45,"證券交易法 §36 I(2): 於每會計年度第一季、第二季及第三季終了後四十五日內、公告並申報 … 財務報告. Same amendment and in-force date."
-q2,2011-12-31,,all,days:45,Ibid.
+q2,2013-06-30,,all,days:45,"證券交易法 §36 I(2): 於每會計年度第一季、第二季及第三季終了後四十五日內、公告並申報 … 財務報告. §183: 一百零一年一月四日修正公布之第三十六條第一項第二款、自一百零二會計年度施行 — a year later than the 2010-06-02 amendment's own 一百零一年一月一日 in-force date, which is why this row starts at the FY2013 half-year and not the FY2012 one."
 q3,2011-12-31,,all,days:45,Ibid.
 monthly_revenue,2005-01-01,,all,next_month_day:10,"證券交易法 §36 II: 於每月十日以前、公告並申報上月份營運情形. TWSE 一覽表 每月營業收入額 row: 次月10日以前."
