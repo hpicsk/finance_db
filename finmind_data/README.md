@@ -7,9 +7,7 @@ institutional order flow, shareholding, valuation multiples (PER/PBR),
 margin + short balances, monthly revenue, fundamentals (IS/BS/CF),
 dividends, securities lending, and capital-reduction events. Plus
 market-wide reference files for delistings.
-Intended for informed-trading / return-reversal research as
-a cross-market validation of Korean-market findings (paired with
-`~/research/finance_db/fnguide_data`, which starts ~2000).
+Intended for informed-trading / return-reversal research.
 
 ## Why coverage starts on 2011-01-25
 
@@ -43,9 +41,8 @@ because an unclipped read measures the sessions outside the window into a figure
 published as being about it.
 
 The window was originally 2015-01-01 → 2024-12-31; on 2026-04-27 the start
-was rolled back to 2005-01-01 to give 20 years of overlap with fnguide, and
-on 2026-08-17 the answerable range was cut to 2011-01-25 for the reason
-above.
+was rolled back to 2005-01-01 for a 20-year span, and on 2026-08-17 the
+answerable range was cut to 2011-01-25 for the reason above.
 
 ## Universe
 
@@ -82,8 +79,8 @@ output — they are 4-digit common stocks whose *company* the live endpoint no
 longer returns, delisting inside the window per `delisted_universe.parquet`.
 They carry `type=NaN` and `industry_category=NaN`. FinMind still serves
 price/flow data for these names up to their delisting date. Without them the
-Taiwan panel would be 0 %-coverage on the delistings fnguide covers at
-~90 %, breaking cross-market symmetry.
+panel carries 0 % of its own in-window delistings — a universe assembled from
+the survivors, which is the one thing this package exists not to be.
 
 ### The overlay gate was never evidence for its own premise
 
@@ -143,43 +140,36 @@ the file is the 2026-04-27 snapshot: 675 of the retained rows still
 carry the industry the endpoint listed first rather than the one in
 force, which only a full rebuild refreshes.
 
-#### Mirroring the fnguide criterion
+#### What the filter set keeps, and why
 
-This filter set is deliberately aligned with the **fnguide root-level
-"all codes"** universe used on the Korean side
-(`~/research/finance_db/fnguide_data/data0203`–`data0208`, `data2_0203`; see
-`fnguide_data/DELISTED_COVERAGE.md` for why the root-level files, not
-the `currently_listed/` batch, are the correct Korean reference). Each fnguide
-exclusion has an explicit Taiwan counterpart here:
+The universe is **listed common stock on the two main boards** — the
+instrument an equity study prices, on the venues where it is order-driven.
+Every exclusion below removes something that is not common stock, or is
+common stock on a tier with different disclosure obligations:
 
-| fnguide exclusion (KOSPI/KOSDAQ) | Taiwan counterpart | Mechanism in `build_universe.py` |
+| Excluded | Why | Mechanism in `build_universe.py` |
 |---|---|---|
-| Preferred shares (우 / 우B / 1우 / 2우 / MF suffixes) | A / B / C-suffix preferreds | `stock_id.str.fullmatch(r"\d{4}")` drops non-numeric suffixes |
-| ETF                             | ETF                          | `industry_category == "ETF"` + 5-6-digit `00xxx` codes dropped by digit filter |
-| ETN                             | ETN                          | `industry_category == "ETN"` |
-| REIT / specialty funds (호 / 선박투자 / 리츠) | 受益證券 (beneficiary certificates) and T-suffix codes | `industry_category == "受益證券"` + digit filter |
-| Foreign DRs                     | TDRs                         | `industry_category ∈ {"存託憑證", "臺灣存託憑證"}` |
-| KONEX (separate relaxed-disclosure market) | TWSE Innovation Board   | `industry_category ∈ {"創新版股票", "創新板股票"}` |
-| TPEx 興櫃 (emerging) — not in fnguide either | TPEx 興櫃 (emerging)   | `type.isin(["twse", "tpex"])` drops `emerging` |
+| A / B / C-suffix preferreds | not common stock — different claim, different price | `stock_id.str.fullmatch(r"\d{4}")` drops non-numeric suffixes |
+| ETF | a fund, not a company | `industry_category == "ETF"` + 5-6-digit `00xxx` codes dropped by the digit filter |
+| ETN | a note, not equity | `industry_category == "ETN"` |
+| 受益證券 (beneficiary certificates), T-suffix codes | REIT and specialty-fund structures | `industry_category == "受益證券"` + digit filter |
+| TDR (存託憑證 / 臺灣存託憑證) | a receipt over a foreign listing, priced off its home market | `industry_category ∈ {"存託憑證", "臺灣存託憑證"}` |
+| TWSE Innovation Board (創新版股票 / 創新板股票) | relaxed-disclosure startup tier, opened 2021-07-20 | `industry_category ∈ {"創新版股票", "創新板股票"}` |
+| TPEx 興櫃 (emerging) | pre-listing board, quote-driven rather than order-driven | `type.isin(["twse", "tpex"])` drops `emerging` |
 
-Two deliberate *inclusions* also match fnguide behaviour:
+Two *inclusions* are deliberate, and both could be read the other way:
 
 - **F-/-KY foreign-domiciled primary listings** (e.g. 9802 鈺齊-KY,
-  9136 凱羿-KY) are **kept**, mirroring fnguide's inclusion of
-  foreign-domiciled primaries on KOSPI/KOSDAQ (e.g. 차이나하오란).
-  These are primary listings, not depositary receipts.
-- **Delisted-during-window tickers** are kept (all 164 eligible
-  delistings, see `### Survivorship bias` below), mirroring
-  fnguide's "all codes / 상폐 포함" filter which leaves 90.5% of
-  genuine KOSPI/KOSDAQ common-stock delistings in the panel. The
-  `currently_listed/` batch, by contrast, uses a currently-listed filter and
-  retains 0% of delistings — that batch is *not* the Korean
-  reference for this alignment.
+  9136 凱羿-KY) are **kept**. The company is incorporated offshore, but the
+  shares are a primary listing that price here — not a receipt over a
+  listing somewhere else, which is what the TDR row above removes.
+- **Delisted-during-window tickers** are kept — all 164 eligible
+  delistings, see `### Survivorship bias` below.
 
-Things **not** filtered at universe-build time on either side, by
-design: liquidity floors, IPO seasoning, 警示股 / 全額交割 / 관리종목
-flags. Apply those at analysis time per study, not at the universe
-level, to keep the Taiwan/Korea comparison symmetric.
+Things **not** filtered at universe-build time, by design: liquidity floors,
+IPO seasoning, 警示股 / 全額交割 flags. Those are study-specific screens, and
+applying one here would bake a single study's choices into the universe every
+other study reads.
 
 ### Survivorship bias
 
@@ -302,17 +292,17 @@ day (~20,800 rows in a full 2005-2026 series).
 
 Investor types (`name` values):
 
-| value | meaning | analogue in Korean paper |
-|---|---|---|
-| `Foreign_Investor`     | Qualified Foreign Institutional Investors           | foreign flow |
-| `Investment_Trust`     | Domestic securities investment trusts (funds)       | institutional flow |
-| `Dealer_self`          | Broker-dealer proprietary (own account)             | dealer |
-| `Dealer_Hedging`       | Broker-dealer hedging positions                     | dealer (hedging) |
-| `Foreign_Dealer_Self`  | Foreign broker-dealer proprietary (often 0)         | — |
+| value | meaning |
+|---|---|
+| `Foreign_Investor`     | Qualified Foreign Institutional Investors     |
+| `Investment_Trust`     | Domestic securities investment trusts (funds) |
+| `Dealer_self`          | Broker-dealer proprietary (own account)       |
+| `Dealer_Hedging`       | Broker-dealer hedging positions               |
+| `Foreign_Dealer_Self`  | Foreign broker-dealer proprietary (often 0)   |
 
 **Individual retail flow is not directly reported**; derive as
-`Trading_Volume − Σ(buy+sell)/2` per stock-day, matching the approach
-used by most Taiwan/Korea studies.
+`Trading_Volume − Σ(buy+sell)/2` per stock-day, which is the only route to it
+when 三大法人 are the sole categories the exchange publishes.
 
 **Net flow** = `buy − sell` (shares). To convert to TWD, multiply by
 VWAP or `close` from the ohlcv file.
@@ -1410,31 +1400,23 @@ ohlcv_all = pd.concat(
     unaffected. Screen with `open.between(min, max)` before using it; caveat 6's
     individually corrupt rows are a separate and much smaller set.
 
-## Cross-market notes (Korea ↔ Taiwan)
+## Two regime facts about the window
 
-When using this dataset to validate Korean-market findings, four
-structural differences matter more than the usual market-level controls:
+Both are easy to miss when pooling across the whole of it.
 
-1. **Investor-flow category asymmetry.** Korean data typically splits flow
-   into `{individual, institution-total, foreign, private-fund, other-corp}`
-   (5-way). Taiwan's 三大法人 regime is 3-way:
-   `{Foreign_Investor, Investment_Trust, Dealer_*}`. To run the same
-   regression on both, coarsen Korea to `{foreign, all-institutions, individual}`
-   — finer splits don't map.
-2. **Price-limit regime change.** TWSE widened limits from ±7% → ±10% on
-   **2015-06-01**, very close to Korea's ±15% → ±30% change the same year.
-   Both events reshape volatility and reversal dynamics; a dummy + regime
-   split is required, not a single pooled estimate.
-3. **Short-sale regulation asymmetry.** Korea imposed long short-sale bans
-   (2020-03 to 2023-05 for many segments). Taiwan had no equivalent
-   continuous ban during 2015–2024, so Taiwan short-interest series is
-   unbroken while the Korean series has large missing windows. Align
-   sample windows or interact short-factor with `is_banned` dummies.
-4. **Consensus depth gap.** Taiwan analyst coverage thins out fast below
-   mid-caps (Korean sell-side coverage is relatively deeper). Any
-   consensus-based factor will have systematically more missing values on
-   the Taiwan side in small-cap universes — report coverage explicitly
-   rather than silently dropping stocks.
+**The daily price limit widened on 2015-06-01**, from ±7 % to ±10 %.
+Volatility and reversal dynamics are not comparable across that date; a
+regime dummy or a split sample is required, not one pooled estimate.
+
+**The short-sale series has no regime gap in it.** Taiwan ran no market-wide
+short-sale suspension over these years, and the data says so rather than the
+statute: across the 168 in-window months, on 2,076 names, not one month has
+zero short-sale volume and not one has zero short balance. March 2020 — when
+several markets suspended shorting outright — carries **1.66×** the 2019
+monthly mean, not a hole. The consequence for a caller is the useful part: a
+missing stretch in `margin_short/` is a download that failed, never a rule
+that changed, so it should be refetched rather than modelled around.
+`test_assertions.py` asserts both counts.
 
 ## Data coverage & endpoint mapping
 

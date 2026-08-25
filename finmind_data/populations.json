@@ -135,6 +135,10 @@
     "bound": "exact",
     "n": 203655
   },
+  "test_taiwan_short_sale_series_has_no_regime_gap": {
+    "bound": "monotone",
+    "n": 5028482
+  },
   "test_taiwan_single_cut_is_registered_unscored": {
     "bound": "exact",
     "n": 9

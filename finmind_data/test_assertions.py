@@ -2948,6 +2948,45 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
             len(on_frame))
 
 
+def test_taiwan_short_sale_series_has_no_regime_gap():
+    """README "Two regime facts": a hole in margin_short is a failed download.
+
+    Several markets suspended short selling in March 2020 and Taiwan did not,
+    which is what lets a caller read a missing stretch here as a fetch to retry
+    rather than a rule to model around. That reading is only safe while the
+    tape has no gap in it, so the gap is counted rather than argued from the
+    statute. March 2020 is held to being *busier* than normal on top of that: a
+    suspension the monthly totals survived at some reduced level would clear a
+    bare zero-count while being exactly the regime the README says is absent.
+    """
+    import pyarrow.parquet as pq
+
+    frames = []
+    for f in sorted(glob.glob(str(REPO / "finmind_data/margin_short/*.parquet"))):
+        if not pq.ParquetFile(f).metadata.num_rows:
+            continue
+        frames.append(_tree(f, columns=["date", "ShortSaleSell",
+                                        "ShortSaleTodayBalance"]))
+    d = pd.concat(frames)
+    m = d.groupby(pd.to_datetime(d["date"]).dt.to_period("M")).agg(
+        sell=("ShortSaleSell", "sum"), bal=("ShortSaleTodayBalance", "sum"))
+    dead = int((m["sell"] == 0).sum())
+    flat = int((m["bal"] == 0).sum())
+    assert len(m) == 168 and len(frames) == 2076 and not dead and not flat, (
+        f"README claims 'across the 168 in-window months, on 2,076 names, not "
+        f"one month has zero short-sale volume and not one has zero short "
+        f"balance'; {len(m):,} months on {len(frames):,} names, {dead} with no "
+        f"volume and {flat} with no balance")
+    ratio = m.loc["2020-03", "sell"] / m.loc["2019", "sell"].mean()
+    assert math.isclose(ratio, 1.66, abs_tol=0.02), (
+        f"README claims March 2020 carries '1.66x' the 2019 monthly mean of "
+        f"short-sale volume; it carries {ratio:.2f}x")
+    return (f"{len(m)} in-window months on {len(frames):,} names, none with "
+            f"zero short-sale volume or zero balance; 2020-03 at "
+            f"{ratio:.2f}x the 2019 mean"), len(d)
+
+
+
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
     test_taiwan_ohlcv_one_per_universe,
@@ -2968,6 +3007,7 @@ CHECKS = [
     test_taiwan_adj_source_partitions_the_panel,
     test_taiwan_adj_covered_survives_concat,
     test_taiwan_open_outside_session_range,
+    test_taiwan_short_sale_series_has_no_regime_gap,
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_mops_covers_every_delisted_name,
     test_taiwan_mops_detail_gate_is_registration_not_filing,

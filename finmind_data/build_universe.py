@@ -1,10 +1,9 @@
 """Filter Taiwan stock universe to common equities on TWSE + TPEx.
 
 Merges in delistings from `delisted_universe.parquet` that FinMind's live
-`taiwan_stock_info` endpoint no longer returns. This is required for symmetry
-with fnguide's "all codes" filter on the Korean side — without these names,
-the Taiwan panel is survivorship-biased against delistings while fnguide is
-not.
+`taiwan_stock_info` endpoint no longer returns. Without these names the
+universe is what the endpoint still lists, which is the survivors — see
+README "Survivorship bias".
 
 The re-add used to be gated at `date < 2015-01-01`, on the premise that the
 live endpoint keeps every name that delisted from 2015 on. It does not, and
@@ -44,8 +43,8 @@ raw = dl.taiwan_stock_info()
 # its rows carries one: these mark what an instrument is, and within the 2005-
 # 2024 window none of them is a status a name held for only part of the span.
 # 創新版股票 / 創新板股票 = TWSE Innovation Board (relaxed-disclosure tier for
-# startups, opened 2021-07-20); structurally closer to KONEX than to ordinary
-# KOSDAQ, so excluded to match the fnguide root-level universe. Six names have
+# startups, opened 2021-07-20); a separate tier with its own disclosure
+# obligations rather than a main-board listing, so excluded. Six names have
 # since graduated to the ordinary board and are excluded here too — the
 # earliest retired Innovation Board classification is stamped 2024-11-25, so
 # each was on the relaxed tier for all but the last five weeks of the window.
@@ -64,8 +63,8 @@ listed_ids = set(raw.loc[raw["type"].isin(["twse", "tpex"]), "stock_id"])
 # Excludes: ETFs (00xxx, 5-6 digits), warrants (6-digit alphanumeric),
 # preferred stocks (xxxxA/B). 4-digit 9xxx codes in this set are primary-
 # listed Taiwan commons (e.g. 9921 巨大, 9904 寶成) including F-/-KY
-# foreign-domiciled primaries — kept, matching how fnguide keeps
-# foreign-domiciled primary listings on KOSPI/KOSDAQ. True TDRs carry
+# foreign-domiciled primaries — kept, because these price here rather than
+# tracking a listing somewhere else. True TDRs carry
 # industry_category "存託憑證"/"臺灣存託憑證" and are dropped by `excluded_ids`.
 keep = (raw["stock_id"].isin(listed_ids)
         & ~raw["stock_id"].isin(excluded_ids)
@@ -82,8 +81,8 @@ assert not (set(info["stock_id"]) & excluded_ids), (
 )
 
 # Merge in in-window 4-digit common-stock delistings that the live
-# taiwan_stock_info endpoint has dropped. These are needed to mirror fnguide
-# root-level "all codes" coverage.
+# taiwan_stock_info endpoint has dropped. Without them the universe is the
+# set of names that survived to the pull date.
 #
 # What has to be absent is the *company*, not the code. Testing the code
 # against `info` re-admitted the four TDRs 9101/9102/9104/9151 for years: the
