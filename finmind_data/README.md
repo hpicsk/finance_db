@@ -1364,6 +1364,26 @@ ohlcv_all = pd.concat(
     number with provenance is **41 of 42 against the sheet as drawn**, followed
     by a corrected sheet that no longer disagrees — not a rule that scores
     perfectly. The other 41 were agreed before anyone went looking.
+
+    **What 42 leaves out, and the part of it that closes without labels.** The
+    42 are 42 of 164; 116 names carry no hand label, and the statute misreading
+    corrected on 2026-08-25 moved two of them, so the score read 42/42 before
+    the rule changed and 42/42 after. Coverage is not even across the rule's own
+    machinery either. The window vote decides 129 names and 39 of those are
+    labelled; the anchor override decides 17, outranks the window wherever it
+    fires, and 3 are. The strongest move is the least witnessed one, and since
+    labelling is the scarce input the gap is registered here rather than closed:
+    the names worth reading first are the 14 anchor decisions nobody has, not
+    the next 14 in ticker order.
+
+    One part of it needs no labels at all. Where an anchor decides against the
+    window it sits in, one of the two readings is wrong whether or not anyone
+    has read the name. None does as the frame stands; with 53-17 read as
+    distress exactly two did, and they were 5305 and 8497 — the pair the label
+    score could not see. `test_taiwan_anchor_overrides_agree_with_their_own_window`
+    asserts the empty set and that counterfactual together, so the empty half
+    stays evidence rather than the shape of a check that passes by looking at
+    nothing.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2011-03-31, 2011-06-30, …
    — the quarter that closed, not the day the filing became public — and carry

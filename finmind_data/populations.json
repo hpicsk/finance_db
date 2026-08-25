@@ -23,6 +23,10 @@
     "bound": "exact",
     "n": 164
   },
+  "test_taiwan_anchor_overrides_agree_with_their_own_window": {
+    "bound": "monotone",
+    "n": 17
+  },
   "test_taiwan_booked_tender_offers_opened_on_the_delisting_date": {
     "bound": "monotone",
     "n": 15

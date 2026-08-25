@@ -3058,6 +3058,87 @@ def test_taiwan_mops_reason_scored_against_the_hand_labels():
 
 
 
+def test_taiwan_anchor_overrides_agree_with_their_own_window():
+    """README caveat 8: the decision path the hand-label score is blind to.
+
+    `read_one` lets a naming anchor outrank the window vote, on the ground that
+    the filing about this exit outranks anything counted around it. That is the
+    rule's strongest move and its least witnessed one: 14 of the 17 names it
+    decides carry no hand label, against 39 of the 129 the window decides. So
+    the score above is computed over a set that mostly excludes the path most
+    able to be wrong, and labels are the scarce input, so it cannot be fixed by
+    spending them here.
+
+    What needs no labels is the rule's own second opinion. Where an anchor
+    decides *against* the window it sits in, one of the two readings is wrong
+    and a reader is owed the name whether or not anyone has labelled it. A
+    silent window abstains rather than dissents — that is the case the anchor
+    exists to decide — so only a window carrying markers the other way counts.
+
+    Empty is the shape of a check that verifies nothing, so the detector is
+    exercised rather than trusted. Restoring 五十三條之十七 to the distress
+    pattern, where it sat until it was read against the statute, makes this
+    return 5305 and 8497: the two names the label score could not reach,
+    because neither carries a label. Both halves are asserted, so an empty
+    result stays evidence.
+    """
+    sys.path.insert(0, str(REPO))
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    from finmind_data import mops_reason as M
+
+    def contradicted(frame):
+        """Anchor-decided names whose own window votes the other way."""
+        out = []
+        for t in frame[frame["basis"] == "anchor"].itertuples():
+            w = ("merger" if t.n_merger_subjects > t.n_distress_subjects else
+                 "distress" if t.n_distress_subjects > t.n_merger_subjects else
+                 "silent")
+            if w not in (t.reason, "silent"):
+                out.append(t.stock_id)
+        return sorted(out)
+
+    r = pd.read_parquet(path)
+    lab = set(pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                          dtype={"stock_id": str})["stock_id"])
+    anchors = r[r["basis"] == "anchor"]
+    unwitnessed = sorted(set(anchors["stock_id"]) - lab)
+
+    split = contradicted(r)
+    assert split == [], (
+        f"README caveat 8 says every anchor override agrees with the window it "
+        f"sits in; {split} now decide against their own window, so one of the "
+        f"two readings is wrong. Read the filings for these before the frame is "
+        f"quoted again — {sorted(set(split) - lab)} carry no hand label, so "
+        f"nothing else in this file is looking at them"
+    )
+
+    # The detector is the claim here, so it is run against the defect it was
+    # written from rather than trusted for having returned nothing.
+    mer, dis = M.MERGER, M.DISTRESS
+    M.MERGER = mer.replace(r"五十三條之十七|53條之17|", "")
+    M.DISTRESS = dis + r"|五十三條之十七|53條之17"
+    try:
+        premove = contradicted(M.build())
+    finally:
+        M.MERGER, M.DISTRESS = mer, dis
+    assert premove == ["5305", "8497"], (
+        f"with 53-17 read as distress, the window contradiction is what names "
+        f"5305 and 8497; it now names {premove}, so an empty result above is no "
+        f"longer evidence that the anchors agree"
+    )
+    assert not (set(premove) & lab), (
+        f"this check earns its place by reaching names the labels cannot, and "
+        f"{sorted(set(premove) & lab)} are labelled now — the demonstration "
+        f"needs a defect the label score still could not see"
+    )
+
+    return (f"{len(anchors)} anchor overrides all agree with their own window, "
+            f"{len(unwitnessed)} of them carrying no hand label; the same test "
+            f"names 5305 and 8497 under the statute misreading", len(anchors))
+
+
 def test_taiwan_filing_dates_cover_the_statement_trees():
     """README caveat 9: every company with a statement tree is dated.
 
@@ -3574,6 +3655,7 @@ CHECKS = [
     test_taiwan_mops_overturns_only_failures_the_tape_missed,
     test_taiwan_exchange_provision_markers_match_what_they_govern,
     test_taiwan_mops_reason_scored_against_the_hand_labels,
+    test_taiwan_anchor_overrides_agree_with_their_own_window,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
     test_taiwan_filing_deadline_q2_boundary_is_fy2013,
