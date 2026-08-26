@@ -3139,6 +3139,98 @@ def test_taiwan_anchor_overrides_agree_with_their_own_window():
             f"names 5305 and 8497 under the statute misreading", len(anchors))
 
 
+
+def test_taiwan_silent_names_keep_their_unknown():
+    """README caveat 8: why the 18 silent names are not a pattern gap to close.
+
+    Silence here is never missing data — every one of the 18 carries between 18
+    and 191 filings in its window, so the rule read them and matched nothing.
+    That invites filling the gap with the vocabulary those filings do use, and
+    the two words a reader reaches for first are measured here instead, because
+    both fail in ways their own hit rate hides.
+
+    繼續經營 is a real auditor's finding and a weak delisting marker: it sits in
+    13 of the 164 windows, and among the names already decided it splits 8
+    distress to 3 merger. A company can be doubted as a going concern and then
+    be bought. Adopting it decides two names on 73 % precision, which is the
+    likelier of two guesses the module docstring declines to make.
+
+    保留意見 is worse, and its counterfactual is the reason this check exists
+    rather than a sentence. Adopting it naively moves three names and one of
+    them, 3536, lands on its own hand label — so the sheet certifies it. The
+    match is on 無保留意見, an *un*qualified opinion, which is the auditor
+    saying the accounts are clean. Requiring the negation to be absent drops
+    3536 back out, which is the proof the agreement was luck: the label was
+    right about the company and had no way to be wrong about the rule. A marker
+    scored only where it fires cannot show this, and neither can the hand-label
+    score above.
+    """
+    sys.path.insert(0, str(REPO))
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    from finmind_data import mops_reason as M
+
+    r = pd.read_parquet(path)
+    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                      dtype={"stock_id": str}).set_index("stock_id")["label"]
+    silent = r[r["basis"] == "silent"]
+    span = (int(silent["n_subjects_in_window"].min()),
+            int(silent["n_subjects_in_window"].max()))
+    assert span == (18, 191), (
+        f"README caveat 8 says the silent names carry 18 to 191 filings each, "
+        f"so their silence is the rule matching nothing rather than there being "
+        f"nothing to match; the span is {span} now, and a low end at zero would "
+        f"make this a coverage hole instead"
+    )
+
+    def moves(add, where="DISTRESS"):
+        """Names whose reason changes when a candidate marker is adopted."""
+        base = M.build().set_index("stock_id")["reason"]
+        saved = getattr(M, where)
+        setattr(M, where, saved + "|" + add)
+        try:
+            alt = M.build().set_index("stock_id")["reason"]
+        finally:
+            setattr(M, where, saved)
+        alt = alt.reindex(base.index)
+        return sorted(base.index[base != alt])
+
+    # A going-concern paragraph is evidence about the company, not about the
+    # exit: the names carrying it are already decided both ways.
+    carriers = {t.stock_id: t.reason for t in r.itertuples()
+                if M._subjects(t.stock_id, pd.Timestamp(t.delist_date))
+                     ["subject"].fillna("").str.contains("繼續經營", regex=True).any()}
+    decided = pd.Series([v for v in carriers.values() if v != "unknown"])
+    split = (int((decided == "distress").sum()), int((decided == "merger").sum()))
+    assert (len(carriers), split) == (13, (8, 3)), (
+        f"README caveat 8 keeps 繼續經營 out on 13 windows splitting 8 distress "
+        f"to 3 merger; it is {len(carriers)} windows at {split} now, and a split "
+        f"this rule could act on would change that paragraph rather than pass here"
+    )
+
+    # The trap: the naive form matches 無保留意見, and the label rewards it.
+    naive, negated = moves(r"保留意見"), moves(r"(?<!無)保留意見")
+    assert naive == ["3536", "4408", "6131"], (
+        f"caveat 8 names 3536, 4408 and 6131 as what the naive 保留意見 moves; "
+        f"it moves {naive} now"
+    )
+    assert "3536" not in negated and lab.get("3536") == "distress", (
+        f"the argument is that 3536 agreed with its label on a match inside "
+        f"無保留意見: excluding the negation has to drop it, and it stays in "
+        f"{negated} with label {lab.get('3536')!r}"
+    )
+    assert not (set(negated) & set(lab.index)), (
+        f"neither name the negated form still moves carries a hand label, which "
+        f"is why the sheet could not have caught this; {sorted(set(negated) & set(lab.index))} "
+        f"do now, so the counterfactual needs restating"
+    )
+
+    return (f"{len(silent)} silent names carry {span[0]}-{span[1]} filings each; "
+            f"繼續經營 splits {split[0]}/{split[1]} across decided names and "
+            f"保留意見 wins its one labelled name by matching 無保留意見",
+            len(silent))
+
 def test_taiwan_filing_dates_cover_the_statement_trees():
     """README caveat 9: every company with a statement tree is dated.
 
@@ -3656,6 +3748,7 @@ CHECKS = [
     test_taiwan_exchange_provision_markers_match_what_they_govern,
     test_taiwan_mops_reason_scored_against_the_hand_labels,
     test_taiwan_anchor_overrides_agree_with_their_own_window,
+    test_taiwan_silent_names_keep_their_unknown,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
     test_taiwan_filing_deadline_q2_boundary_is_fy2013,

@@ -1384,6 +1384,34 @@ ohlcv_all = pd.concat(
     asserts the empty set and that counterfactual together, so the empty half
     stays evidence rather than the shape of a check that passes by looking at
     nothing.
+
+    **The 18 silent names are not a pattern gap.** Every one carries filings —
+    18 to 191 in its window — so the rule read them and matched nothing. Two
+    words those filings do use invite closing the gap, and both fail on
+    measurement. 繼續經營, the auditor's going-concern paragraph, sits in 13 of
+    the 164 windows and splits 8 distress to 3 merger among the names already
+    decided: a company can be doubted as a going concern and then be bought, so
+    adopting it would decide two names on 73 % precision, which is the likelier
+    of two guesses this rule declines to make. 保留意見 fails in a way its own
+    hit rate hides. Adopted as a reader would write it, it moves three names and
+    one of them — 3536 誠創 — lands on its own hand label, so the sheet
+    certifies it. The match is on 無保留意見, an *un*qualified opinion, which is
+    the auditor saying the accounts are clean; requiring the negation to be
+    absent drops 3536 back out. The label was right about the company and had no
+    way to be wrong about the rule, which is the blind spot the paragraph above
+    describes arriving from the other direction.
+    `test_taiwan_silent_names_keep_their_unknown` holds both measurements.
+
+    **1469 理隆纖維 is silent for a different reason, and it is a gap in the
+    taxonomy rather than in the rule.** Its board approved 申請有價證券終止上市及
+    撤銷公開發行 148 days before the exit, its shareholders 58 days out, and the
+    exchange ratified it at 21 — while the company was declaring dividends and
+    holding investor conferences. That is a voluntary delisting by a solvent
+    company, and `unknown` is right for it on grounds the other 17 do not share:
+    the filings said plainly what happened, and the merger/distress pair has no
+    slot to put it in. So a study joining on `reason == "unknown"` is mixing
+    "the filings did not say" with "an exit this frame does not model", and the
+    two have nothing in common in the return they imply.
 9. **Fundamentals are dated by fiscal period end, not by announcement.**
    `fin_is/`, `fin_bs/` and `fin_cf/` key on `date` = 2011-03-31, 2011-06-30, …
    — the quarter that closed, not the day the filing became public — and carry
