@@ -1307,7 +1307,8 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     close, and the question is how wrong that is. The answer is not one number,
     it is two, and the split is the finding because it decides which lookups are
     worth doing: a cash consideration lands the last close within 1.5 % every
-    time, and a share swap misses it by anything from −13.9 % to +24.8 %.
+    time across twelve deals, and a share swap misses it by anything from
+    −13.9 % to +24.8 % across eleven.
 
     The check used to assert a bias — every deal one way — and that claim was
     true of the deals it could see. It could see two swaps, because the other
@@ -1369,9 +1370,9 @@ def test_taiwan_substitute_error_splits_by_deal_form():
         f"README caveat 8 puts the swap residuals from −13.9 % to +24.8 % on "
         f"{len(swap)} deals; they now run {swap.min():+.1%} to {swap.max():+.1%}"
     )
-    assert math.isclose(swap.median(), 0.079, abs_tol=0.02), (
-        f"README caveat 8 puts the median swap residual near +8 %, down from "
-        f"the +11.2 % two deals showed; it is now {swap.median():+.1%}"
+    assert math.isclose(swap.median(), 0.099, abs_tol=0.02), (
+        f"README caveat 8 puts the median swap residual near +10 %; it is now "
+        f"{swap.median():+.1%}"
     )
     # The split is the finding, not either level: it is what decides that a swap
     # is worth a filing and a cash deal is not. Pinned on the typical swap
@@ -1407,10 +1408,10 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     # the cut is drawn above a handful rather than above zero.
     acq = e[(e["kind"] == "swap") & (e["overlap"] > 100)]
     thin = e[(e["kind"] == "swap") & (e["overlap"] <= 100)]
-    assert len(acq) == 6 and acq["overlap"].min() > 1000 and \
+    assert len(acq) == 7 and acq["overlap"].min() > 1000 and \
         thin["overlap"].max() <= 1, (
         f"README caveat 8 says the staleness account became testable because "
-        f"reading the ratios off the filings put six third-party acquisitions "
+        f"reading the ratios off the filings put seven third-party acquisitions "
         f"into the sample, each with an acquirer that had traded for years "
         f"before the target left, against holding companies that had traded "
         f"for none. {len(acq)} now clear 100 sessions (thinnest "
@@ -1426,8 +1427,8 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     sign = f.set_index("stock_id")["sign"]
     in_band = int((e.loc[e["kind"] == "swap", "stock_id"].map(sign)
                    == "ambiguous").sum())
-    assert in_band == 6, (
-        f"README caveat 8 says six of the ten swaps are band names, so the "
+    assert in_band == 7, (
+        f"README caveat 8 says seven of the eleven swaps are band names, so the "
         f"spread is measured mostly on names the cuts do not decide rather "
         f"than on classifier-confirmed payouts; {in_band} are now undecided"
     )
@@ -1483,13 +1484,13 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     # `substituted` were a name apart from what the code returns, and survived
     # because they were only ever printed in this check's message. Asserted now.
     basis = t["basis"].value_counts().to_dict()
-    assert basis == {"substituted": 95, "failed": 41, "undecided": 9,
-                     "consideration": 19}, (
-        f"README caveat 8 says a study meets 41 failed, 19 consideration, 95 "
-        f"substituted and 9 undecided; it now meets {basis}. Recording a "
-        f"consideration moves a name from substituted to consideration and "
-        f"nothing else moves at all — the eight swap ratios read off the "
-        f"acquirers' filings moved exactly eight"
+    assert basis == {"substituted": 93, "failed": 41, "undecided": 7,
+                     "consideration": 23}, (
+        f"README caveat 8 says a study meets 41 failed, 23 consideration, 93 "
+        f"substituted and 7 undecided; it now meets {basis}. Two movements "
+        f"produce those, and only two: recording a consideration takes a name "
+        f"from substituted to consideration, and reading a held-out band name's "
+        f"filing takes it from undecided to substituted"
     )
     paid = e.set_index("stock_id")["paid"]
     booked = t[t["basis"] == "consideration"].set_index("stock_id")["terminal"]
@@ -1505,9 +1506,18 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     # would still pass if the nine were a different nine.
     labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
                          dtype={"stock_id": str})
+    # Both label files, because settlement reads both. The band file's `label`
+    # fills in as a held-out name's filing gets read for some other reason, and
+    # a check that read only the drawn sample would pass while `terminal_value`
+    # booked those names off a column no assertion had opened.
+    band_file = pd.read_csv(Path(__file__).with_name("delisting_band.csv"),
+                            dtype={"stock_id": str})
+    hand = pd.concat([labels[["stock_id", "label"]],
+                      band_file[["stock_id", "label"]]], ignore_index=True)
     labels = labels[labels["label"].fillna("") != ""]
+    hand = hand[hand["label"].fillna("") != ""]
     expected = {"distress": "failed", "merger": "substituted"}
-    off_label = t.merge(labels[["stock_id", "label"]], on="stock_id")
+    off_label = t.merge(hand, on="stock_id")
     wrong = off_label[off_label["basis"].replace("consideration", "substituted")
                       != off_label["label"].map(expected)]
     assert not len(wrong), (
@@ -1516,17 +1526,31 @@ def test_taiwan_substitute_error_splits_by_deal_form():
         f"own label instead"
     )
     band = int((f["sign"] == "ambiguous").sum())
-    assert (band, len(undecided)) == (37, 9), (
+    assert (band, len(undecided)) == (37, 7), (
         f"README caveat 8 says the labels empty 28 of the 37 band names and "
-        f"leave 9 without a terminal value; the cuts now leave {band} open and "
-        f"{len(undecided)} survive the labels. An emptied label file lands here"
+        f"two more have since been read, leaving 7 without a terminal value; "
+        f"the cuts now leave {band} open and {len(undecided)} survive the "
+        f"labels. An emptied label file lands here"
     )
-    assert set(undecided["stock_id"]) == set(
-        band_holdout(f, labels)["stock_id"]), (
-        "README caveat 8 says the nine names left without a terminal value "
-        "are the nine the single cut is registered against; they have come "
-        "apart, so the band a study is told to resolve is no longer the band "
-        "`delisting_band.csv` froze"
+    # The frozen nine do not change — the registration is what fixes them, and
+    # `band_holdout` is passed the drawn sample alone so that filling a band
+    # label cannot shrink the set the rules were registered against. What
+    # changes is how many still owe a value, and the two are related by
+    # subtraction rather than by a count either side could drift in.
+    frozen = set(band_holdout(f, labels)["stock_id"])
+    read = set(band_file.loc[band_file["label"].fillna("") != "", "stock_id"])
+    assert len(frozen) == 9 and read <= frozen, (
+        f"README caveat 8 says the single cut is registered against nine band "
+        f"names and that their labels arrive from filings read for other "
+        f"reasons; the holdout is now {len(frozen)} and {sorted(read - frozen)} "
+        f"carry a band label without being in it"
+    )
+    assert set(undecided["stock_id"]) == frozen - read, (
+        f"README caveat 8 says the names left without a terminal value are the "
+        f"registered band less the ones whose filings have been read; "
+        f"{sorted(set(undecided['stock_id']) ^ (frozen - read))} are on one "
+        f"side and not the other, so the band a study is told to resolve is no "
+        f"longer the band `delisting_band.csv` froze"
     )
     counts = t["basis"].value_counts().to_dict()
     return (f"last close off by {cash.median():+.1%} on {len(cash)} cash deals, "
@@ -3939,7 +3963,7 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
     because the column the offeror files — 被收購公司於收購後是否終止上市 — does not
     carry it, being marked 是 on two of the three and 不適用 on the third.
     """
-    from finmind_data.delisting_sign import features
+    from finmind_data.delisting_sign import considerations, features
 
     path = REPO / "finmind_data/tender_offers.parquet"
     if not path.exists():
@@ -4050,6 +4074,49 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
         f"whose own filings are served — 6422 by 國巨 2327, 4725 by 台泥 1101 "
         f"and 5820 by 富邦金 2881; {int(listed.sum())} now carry a 上市/上櫃 "
         f"offeror, so the count of deals the route could still price has moved"
+    )
+    # Those three have since been priced, and the point of asserting it here is
+    # that the reason the eight were excluded was one of *kind* — the tender
+    # price belongs to the holders who tendered — and a reason of kind is only
+    # worth what it predicts. It predicted that the second step need not equal
+    # the first, and on the three the route reaches, twice it does and once it
+    # does not: 5820's NT$13 was cut to 12.41 for the 109 dividend and to 11.71
+    # for the 110 one, so booking the tender would have been 11.0 % high on the
+    # residual the README calls the largest of the eight.
+    paid = considerations(features()).set_index("stock_id")["paid"]
+    second = {t: float(paid[t]) for t in ("6422", "4725", "5820")
+              if t in paid.index}
+    assert len(second) == 3, (
+        f"README caveat 8 says the three reachable two-step residuals are "
+        f"booked from the buyer's own filing of the second step; "
+        f"{sorted({'6422', '4725', '5820'} - set(second))} carry no "
+        f"consideration, so the route's own output has gone missing"
+    )
+    off_tender = {t: second[t] / float(linked.set_index("target_id")
+                                       .loc[t, "per_share"]) - 1
+                  for t in second}
+    assert all(abs(v) < 1e-9 for k, v in off_tender.items() if k != "5820"), (
+        f"README caveat 8 says 6422 and 4725 restate the tender price exactly "
+        f"— 「與公開收購對價一致」 and 「每股現金新台幣18元予信昌化公司其餘股東」 — "
+        f"which is what makes 5820 a difference in the deal rather than in the "
+        f"reading; they now sit at {off_tender}"
+    )
+    assert math.isclose(off_tender["5820"], -0.0992, abs_tol=5e-4), (
+        f"README caveat 8 says 5820's merger consideration was adjusted twice "
+        f"for dividends and settled 9.9 % below its NT$13 tender; it is now "
+        f"{off_tender['5820']:+.2%}, so either the filing was reread or the "
+        f"one case that pays for the exclusion has moved"
+    )
+    # The half that decides the policy: against the same three exits, the last
+    # close is the better substitute, and it is better *because* the tender is
+    # exact only when nothing intervened between the two steps.
+    worst_close = max(abs(second[t] / last[t] - 1) for t in second)
+    assert worst_close < abs(off_tender["5820"]), (
+        f"README caveat 8 declines the tender price as a substitute on the "
+        f"ground that it is the wrong holder's; on the three exits where both "
+        f"can be scored the last close is off by at most {worst_close:.2%} and "
+        f"the tender by {abs(off_tender['5820']):.2%}. That ordering has "
+        f"reversed, so the decline now costs accuracy rather than buying it"
     )
     return (f"{len(d)} tender offers from ROC105/11, {len(on_frame)} on the "
             f"frame; 3 booked because they opened on the delisting date, "

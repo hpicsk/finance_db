@@ -30,6 +30,15 @@ it appears in the *target's* own subject lines, which are already local in
 transposed code cannot survive that: the labels record 永崴投控 for two 2018
 exits as 3172, which is 炎洲流通, and the holdco is 3712.
 
+**Three of the deals are not swaps.** The route is defined by whose filing is
+served, not by how the deal paid, so it also reaches the second step of a
+two-step going-private — a tender, then a 合併 or 股份轉換 that squeezes out
+whoever did not tender. Those buyers are large listed companies and their
+filings state the squeeze-out price directly, which is the number
+``delisting_consideration.csv`` needs and the offer table does not carry. Two of
+the three restate the tender price and one does not, so the price has to be read
+rather than carried across.
+
 **Which announcements cost a request.** A large acquirer files on the order of
 150 announcements a year, and the ratio sits in a handful, so details are
 fetched only for subjects that name the target or the ratio. The filter is
@@ -84,6 +93,21 @@ DEALS = {
     "3299": ("5317", "凱美電機"),
     "5255": ("2456", "奇力新電子"),
     "4944": ("6488", "環球晶圓"),
+    # 3561 shares 3514's acquirer and its filing: one 3576 announcement sets both
+    # ratios, and the sentence for 昇陽 was read while transcribing 昱晶's. It is
+    # cached under its own id anyway, because the citation check resolves a row's
+    # quote against the cache named for that row's target and a shared body read
+    # under a sibling's name is a source no rule can find.
+    "3561": ("3576", "新日光能源科技"),
+    # The three two-step residuals, added once `terminal_value` became the
+    # settlement interface: each was tendered first and ended by a second step
+    # the buyer filed, so the tender price is what the holders who tendered
+    # received and the ratio here is what the rest were squeezed out at
+    # (README caveat 8). They differ from the entries above only in having a
+    # tender in front of them; the lookup is the same one.
+    "6422": ("2327", "國巨"),
+    "4725": ("1101", "台灣水泥"),
+    "5820": ("2881", "富邦金融控股"),
 }
 
 # A subject worth a detail request: it names the target, or it names the ratio

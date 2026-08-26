@@ -20,3 +20,7 @@ stock_id,stock_name,delist_date,kind,successor,per_share,source
 5491,連展科技股份有限公司,2017-12-29,swap,3710,1.0,股份轉換 into a new holdco; 1:1 in delisting_labels.csv and direction-free either way
 3514,昱晶,2018-10-01,swap,3576,1.39,"三方合併; ratio set in 3576 filing 107/01/29 and restated at the share-count filing 107/08/03 「每一股昱晶能源普通股換發1.39股本公司增資發行新股」, alongside 昇陽光電 at 1.17"
 4944,兆遠,2023-11-01,swap,6488,0.02,"股份轉換; 6488 filing 112/05/02 「兆遠公司普通股每1股換發本公司新發行普通股0.02股」; 112/09/08 moved the share count, not the ratio"
+6422,君耀-KY,2018-09-28,cash,,73.0,"現金合併 after a tender; 2327 filing 107/07/09 「合併對價為每股現金新台幣73元，與公開收購對價一致」 — the squeeze-out terms are stated equal to the tender, not assumed equal"
+4725,信昌化,2021-01-18,cash,,18.0,cash 股份轉換 after a tender; 1101 filing 109/09/16 「本次股份轉換案，本公司擬支付每股現金新台幣18元予信昌化公司其餘股東」 — 其餘股東 is exactly the holders who did not tender
+5820,日盛金,2022-11-11,cash,,11.71,現金吸收合併 after a tender at 13; 2881 filing 110/09/16 cut it to 12.41 for the 109 dividend and 111/05/05 「調整權息至每股換發現金新台幣11.71元」 for the 110 one — the second step is 9.9 % below the tender
+3561,昇陽光電,2018-10-01,swap,3576,1.17,"三方合併; ratio set in 3576 filing 107/01/29 and restated at the share-count filing 107/08/03 「每一股昇陽光電普通股換發1.17股本公司增資發行新股」, alongside 昱晶 at 1.39"

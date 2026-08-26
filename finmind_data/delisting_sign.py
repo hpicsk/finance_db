@@ -51,6 +51,16 @@ this is committed first. Registered after that work begins, it would be
 registered against labels already seen, and there is no third batch to fall
 back on.
 
+That mechanism has since fired twice. 3561 and 6298 were both targets of
+three-way transactions whose *other* targets were being looked up for a ratio,
+so their filings named their reason without either name being sought: the
+labels are in ``delisting_band.csv``, each beside the sentence it came from.
+The registration is unaffected — the nine were frozen with the calls already
+committed, and a label arriving afterwards is what a held-out set is *for*.
+What it changes is the settlement, where a name whose filing has been read no
+longer books NaN, and ``band_holdout`` is deliberately not shown these two, so
+that filling a label cannot shrink the set the rules were registered against.
+
 Labels are two-valued by construction, and the question they answer is whether a
 transaction paid holders — cash, or shares in a surviving company — or the
 listing simply ended. A compulsory delisting for non-filing is a failure by that
@@ -476,24 +486,38 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
     A swap is worth the successor's price, so it is priced on the panel at the
     delisting date rather than taken from the filing.
 
-    Nineteen of the 35 payout labels are recorded here, nine of them cash. Four
-    were read during labelling; three are the going-private tender offers in
+    Twenty-three deals are recorded here, twelve of them cash; nineteen carry
+    one of the 35 payout labels and four do not, because a consideration is a
+    fact about a transaction and does not wait on a label. Four were read during
+    labelling; three are the going-private tender offers in
     ``tender_offers.parquet``, where the exchange's own filing summary states a
     per-share price and the offer opened on the day the shares stopped trading,
     so no later transaction can have been the exit; four more were transcribed
     from ``delisting_labels.csv``, whose ``source`` already carried a per-share
-    cash price read at labelling.
+    cash price read at labelling; and three are second steps, below.
 
     The swap side is where the direction had to be bought, and ``swap_ratios.py``
     is what bought it: the target deregistered on the way out and MOPS seals its
     說明, but the buyer is still 公開發行 and files the same ratio in a sentence
     that fixes which side is which — 「每3.1560股雷凌科技普通股股票換發1股本公司
-    增資普通股股票」. Six of the ten in-frame swaps are read there. One more, 5854,
+    增資普通股股票」. Seven of the eleven in-frame swaps are read there. One more, 5854,
     is read from its own filing, because a bank converting into a holding company
     keeps its registration and is among the few MOPS still serves; and 5491 is a
     1:1, which reads the same in both directions and needs no filing to settle.
     Every ``source`` here quotes the sentence it came from, so the convention is
     auditable per row rather than assumed per file.
+
+    Three rows are the *second* step of a two-step deal, and they are the
+    reason the same route was pointed at a buyer who paid cash. A tender is paid
+    to whoever tendered; the rest are squeezed out at the second step's terms,
+    and those terms are in the buyer's own filing rather than in the offer
+    table. 2327 states 6422's as 「合併對價為每股現金新台幣73元，與公開收購對價一致」
+    and 1101 states 4725's as 「每股現金新台幣18元予信昌化公司其餘股東」 — 其餘股東 is
+    the holders who did not tender, named as such. 2881 states 5820's
+    differently: NT$13 at the tender, cut to 12.41 for the 109 dividend and to
+    11.71 for the 110 one, so the exit is 9.9 % below the offer. Two restate the
+    tender and one does not, which is why none of the three was taken from the
+    offer table.
 
     Seven in-frame swaps are still out, and the reason is the same gate one
     company over. Five had a buyer that was itself later bought — 2448, 3698,
@@ -566,22 +590,22 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
     and the third-party acquisitions that carry an odd ratio were the ones
     excluded for want of a direction.
 
-    Reading those directions off the filings put six such acquisitions into the
-    sample and the account is now testable on the deals it was always about.
-    ``overlap`` runs to thousands of sessions on those six, the gap spreads
+    Reading those directions off the filings put seven such acquisitions into
+    the sample and the account is now testable on the deals it was always about.
+    ``overlap`` runs to thousands of sessions on those seven, the gap spreads
     over 7 to 16 days instead of 13 and 14, and the rank correlation of gap
-    against residual across the ten swaps is +0.85 — the sign staleness
-    predicts. Read it as a measurement and not as a mechanism: it is ten deals,
-    the reading was adopted after the sample was assembled rather than before,
-    and the same correlation on the nine cash deals is −0.70, which is the sign
-    staleness forbids. What can be said is that the two forms order against the
+    against residual across the eleven swaps is +0.86 — the sign staleness
+    predicts. Read it as a measurement and not as a mechanism: it is eleven
+    deals, the reading was adopted after the sample was assembled rather than
+    before, and the same correlation on the twelve cash deals is −0.84, which is
+    the sign staleness forbids. What can be said is that the two forms order against the
     gap in opposite directions, and that pooling them reports the deal form back
     under another name — the pooled figure read 0.80 at n=4, 0.51 with the
     tender offers, 0.10 with the label transcriptions, and moves again now,
     because it was never one relationship.
 
-    What the wider sample did settle is the direction, by refuting it. Ten swaps
-    do not fall one way: 4944 兆遠 was paid 0.02 of a 環球晶 share, worth NT$9.99
+    What the wider sample did settle is the direction, by refuting it. Eleven
+    swaps do not fall one way: 4944 兆遠 was paid 0.02 of a 環球晶 share, worth NT$9.99
     against a last close of NT$11.60, and it is −13.9 % rather than short of the
     mark. The name ran from 9.62 to 12.75 in its final five sessions on a float
     that was about to disappear, and pricing the swap on the last trade date
@@ -597,6 +621,28 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
         residual=lambda d: d["paid"] / d["last_close"] - 1)[
         ["stock_id", "stock_name", "kind", "gap", "overlap", "last_close",
          "paid", "residual"]]
+
+
+def _hand_labels() -> pd.DataFrame:
+    """Every hand-read label the package holds, from both files that carry one.
+
+    ``delisting_labels.csv`` is the drawn sample and ``delisting_band.csv`` the
+    nine held out from it, whose ``label`` fills in as a filing gets read for
+    some other reason — two are in already, transcribed off the acquirer filings
+    of the three-way mergers those names belonged to. Settlement reads both,
+    because a read filing is a read filing whichever file it landed in, and
+    booking NaN for a name whose sign the package has already established
+    refuses an answer it owns.
+
+    ``accuracy`` reads only the first, and gets that for free by filtering on
+    ``purpose``, which the band file does not carry. The asymmetry is the point:
+    booking a label is not scoring a rule against it, and the band's labels are
+    held out from the rate, not from the settlement.
+    """
+    cols = ["stock_id", "label"]
+    return pd.concat(
+        [pd.read_csv(path, dtype={"stock_id": str})[cols]
+         for path in (_LABEL_FILE, _BAND_FILE)], ignore_index=True)
 
 
 def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None,
@@ -641,7 +687,8 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None,
         NaN, and the only NaN. The sign is what the band does not know, and a
         substitute there would be a guess at the direction, not at the size —
         the two other bases are guesses at a size at worst. A caller that hits
-        one resolves it or drops it, and there are nine of them.
+        one resolves it or drops it, and there are seven of them — the nine
+        held-out band names less the two whose filings have since been read.
 
     The distinction that matters is the last two: both are missing something,
     they are missing different things, and the work that closes them is
@@ -654,7 +701,7 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None,
             f"failed_haircut={failed_haircut} is outside 0..1; it is the "
             f"fraction of the last close a failure does not return")
     if labels is None:
-        labels = pd.read_csv(_LABEL_FILE, dtype={"stock_id": str})
+        labels = _hand_labels()
     known = labels[labels["label"].fillna("") != ""][["stock_id", "label"]]
 
     t = f[["stock_id", "stock_name", "delist_date", "sign",

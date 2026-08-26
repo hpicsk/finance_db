@@ -343,7 +343,7 @@ present.
 ├── mops_listing/<stock_id>.parquet    重大訊息 主旨, delisting ROC year and the two before
 ├── mops_detail/<stock_id>.parquet     同, with 符合條款 / 事實發生日 / 說明 where served
 ├── mops_acquirer_listing/<tgt>.parquet 主旨 of the *acquirer* that bought this target
-├── mops_acquirer_detail/<tgt>.parquet 同, bodies of the deal filings — where a swap ratio is read
+├── mops_acquirer_detail/<tgt>.parquet 同, bodies of the deal filings — where a ratio or a squeeze-out price is read
 ├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
 ├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
 ├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
@@ -1149,6 +1149,19 @@ green result means every check in the suite actually read something.
     Until then the cuts leave the band undecided at 37 names, ~24 of them
     payouts.
 
+    **Two of the 9 now carry a label, and they arrived the way this paragraph
+    said they would.** 3561 昇陽光電 and 6298 崴強 were each one target of a
+    three-way transaction whose *other* targets were being looked up for a
+    ratio, so the filings named their reason — both 合併 — without either name
+    being sought; the sentences are in `delisting_band.csv` beside them. Nothing
+    about the registration moves: the calls were committed while all 9 were
+    blank, and a label arriving afterwards is what a held-out set is for. The
+    gate stays unreadable for the arithmetic reason above and not for this one.
+    What does move is the settlement — a name whose filing has been read no
+    longer books NaN — so `terminal_value` reads both label files while
+    `band_holdout` is shown only the drawn sample, and filling a band label
+    therefore cannot shrink the set the rules were registered against.
+
     The one candidate feature that could have decided the 9 was priced and
     declined, and the pricing was done on the 28 so that it could not be done
     on the 9. `TaiwanStockDispositionSecuritiesPeriod` — 處置有價證券, the only
@@ -1174,13 +1187,13 @@ green result means every check in the suite actually read something.
     as lowering the bar and costs the 9 labels either way.
 
     The payout's **size** is a separate gap, and smaller than it looked. A name
-    classified as one books its last traded close, and against the 19 deals
+    classified as one books its last traded close, and against the 23 deals
     whose consideration is now recorded, that substitute is wrong by two very
     different amounts depending on how the deal paid. Cash lands it within
-    **1.5 %** every time — a median **+0.75 %** across nine deals, +0.47 % to
+    **1.5 %** every time — a median **+0.68 %** across twelve deals, +0.09 % to
     +1.34 % — so those names never need a filing pulled at all. A share swap
-    misses it by anything from **−13.9 % to +24.8 %**, median **+7.9 %** across
-    ten. The split is the usable part and it decides which lookups are worth
+    misses it by anything from **−13.9 % to +24.8 %**, median **+9.9 %** across
+    eleven. The split is the usable part and it decides which lookups are worth
     doing. Two of the original six delisted before the window starts and left
     the frame with it; they stay in `delisting_consideration.csv` as the record
     of what was read.
@@ -1203,9 +1216,9 @@ green result means every check in the suite actually read something.
     a target that deregistered on the way out is served subject lines and
     nothing else, while the buyer is still 公開發行 and files the same
     transaction in a sentence that fixes which side is which — 「調整為每3.1560股
-    雷凌科技普通股股票換發1股本公司增資普通股股票」. Six of the ten in-frame swaps
+    雷凌科技普通股股票換發1股本公司增資普通股股票」. Seven of the eleven in-frame swaps
     are read there, and 5854 合庫 from its own filing, since a bank converting
-    into a holding company keeps its registration. Each of those seven rows
+    into a holding company keeps its registration. Each of those eight rows
     quotes the sentence in 「」, and the quote is asserted back against the
     cached body of a filing dated as the row says — a `per_share` whose citation
     stops resolving is a number with a source that no longer exists, which is
@@ -1231,7 +1244,7 @@ green result means every check in the suite actually read something.
     is odd and is a coin-flip where it is near 1, which is `0.93:1` and `1.07:1`,
     two of the seven still out. It is safe exactly where it is not needed.
 
-    **What ten swaps overturned is the direction.** 4944 兆遠 was paid 0.02 of a
+    **What eleven swaps overturned is the direction.** 4944 兆遠 was paid 0.02 of a
     環球晶 6488 share on 2023-11-01, worth NT$9.99 against a last close of
     NT$11.60 — **−13.9 %**, the substitute above what was paid rather than below
     it. It is not an artefact of the settlement gap: priced on 兆遠's own last
@@ -1257,8 +1270,8 @@ green result means every check in the suite actually read something.
     and the offer was a premium while the drawdown was 0.56. On the 16 stated
     forms now in the band, 12 exchanges against a base rate of 17 of 26 is what
     chance gives **0.234** of the time (Fisher exact, two-sided). What survives
-    is the narrower point the comparison was good for: six of the ten swaps
-    measured are band names, so the spread is measured mostly on names the cuts
+    is the narrower point the comparison was good for: seven of the eleven
+    swaps measured are band names, so the spread is measured mostly on names the cuts
     do not decide rather than on classifier-confirmed payouts.
 
     The obvious next move is to let the gap between the last trade and the formal
@@ -1309,12 +1322,13 @@ green result means every check in the suite actually read something.
     the print a haircut scales is months stale and nobody could have sold at it.
     Their median last close is NT$2.57 against NT$31.30 among the substituted,
     which is how much less the choice moves than its range suggests.
-    **`consideration`** is what was actually paid, for the 19 recorded, a swap
+    **`consideration`** is what was actually paid, for the 23 recorded, a swap
     priced on the panel at the delisting date.
     **`substituted`** is the last close standing in for a consideration nobody
     has looked up, carrying the bias above, and one filing closes each. It is
-    the count that falls when a consideration is recorded, and the only one:
-    nothing else moves.
+    the count that falls when a consideration is recorded — and the count that
+    *rises* when a held-out band name's filing is read, since that name now has
+    a sign but still no consideration. Those are the only two movements.
     **`undecided`** is NaN and is the only NaN — the sign is what the band does
     not know, and a number there would be a guess at the direction rather than
     at the size. That distinction is what the column is for: the last two are
@@ -1325,12 +1339,13 @@ green result means every check in the suite actually read something.
 
     A hand-read filing outranks a price shape wherever one exists, so the
     labels settle the sign and the cuts fill the rest. That empties 28 of the 37
-    band names, leaving exactly the **9** the single cut is registered against,
-    and it overturns one verdict outside the band — 1613 books zero rather than
+    band names, leaving the **9** the single cut is registered against — of
+    which **2** have since had their filings read, so **7** still book NaN —
+    and it overturns one verdict outside the band: 1613 books zero rather than
     its last close. The 98.7 % above is unchanged by this and should be: it is a
     fact about the cuts, and booking the value a label already settled does not
-    make the cuts better. The counts a study meets are **41 `failed`, 19
-    `consideration`, 95 `substituted`, 9 `undecided`**, and they are asserted
+    make the cuts better. The counts a study meets are **41 `failed`, 23
+    `consideration`, 93 `substituted`, 7 `undecided`**, and they are asserted
     rather than quoted: the previous pair of them was a name apart from what the
     code returned, and survived because the four numbers were only ever printed
     in a check's message and never compared to anything.
@@ -1461,7 +1476,7 @@ green result means every check in the suite actually read something.
     second. That reason is one of kind, so it holds whatever the spread turns
     out to be, which matters because the spread has since been measured against
     the wrong yardstick: the eight sit at a median |error| of **3.2 %**, between
-    the cash deals' 0.75 % and the swaps' 7.9 %, not outside the range being
+    the cash deals' 0.68 % and the swaps' 9.9 %, not outside the range being
     measured as this paragraph used to say.
 
     Where they *do* differ from the swaps is in shape, and that is the finding.
@@ -1475,17 +1490,37 @@ green result means every check in the suite actually read something.
     substitute with a narrow one belonging to a different holder is the trade
     that was declined.
 
-    **The exclusion is five names, not eight.** The second step is a 合併 or
-    股份轉換 that the *buyer* files, and three of the eight were bought by a
-    company whose filings are still served — 6422 by 國巨 2327, 4725 by 台泥 1101,
-    and 5820 日盛金 by 富邦金 2881, which is the largest residual of the eight.
-    Those three are the same defined lookup `swap_ratios.py` already performs,
-    and they are not done here only because they change no gate: none of the
-    eight is labelled, none is held out, and the tape and the filings both call
-    all eight payouts. The other five were bought by
-    unlisted or foreign vehicles — a Cayman company, a Japanese one, three
-    private holdcos — which file nothing on 公開資訊觀測站 and are the standing
-    part of the gap.
+    **The exclusion is five names, not eight, and the three have since been
+    read.** The second step is a 合併 or 股份轉換 that the *buyer* files, and
+    three of the eight were bought by a company whose filings are still served —
+    6422 by 國巨 2327, 4725 by 台泥 1101, and 5820 日盛金 by 富邦金 2881, the
+    largest residual of the eight. Those three are the same defined lookup
+    `swap_ratios.py` performs for a ratio, pointed at a buyer who paid cash, and
+    they are now in `delisting_consideration.csv`:
+
+    | target | tender | second step | last close |
+    |---|---|---|---|
+    | 6422 君耀-KY | NT$73 | NT$73 「與公開收購對價一致」 | 72.70 |
+    | 4725 信昌化 | NT$18 | NT$18 「予信昌化公司其餘股東」 | 17.90 |
+    | 5820 日盛金 | NT$13 | **NT$11.71** after two dividend adjustments | 11.70 |
+
+    **That is the reason of kind, measured.** Two of the three second steps
+    restate the tender exactly — and 4725's filing names the recipients as
+    其餘股東, the holders who did not tender, so the equality is stated rather
+    than inferred. The third does not: 2881 cut NT$13 to 12.41 for 日盛金's 109
+    dividend and to 11.71 for its 110 one, and the exit is **9.9 % below the
+    offer**. So booking the tender price would have been exact twice and 11.0 %
+    high once, against a last close that is within **0.6 % all three times** —
+    the substitute the paragraph above declined to replace beats the one it
+    declined to adopt, on the only three deals where both can be scored. One
+    case is one case; what it establishes is that the distinction was real and
+    not bookkeeping, which is what a reason of kind is asked for.
+
+    The other five were bought by unlisted or foreign vehicles — a Cayman
+    company, a Japanese one, three private holdcos — which file nothing on
+    公開資訊觀測站 and are the standing part of the gap. Their tender prices stay
+    out for the reason above, now with a measured rate behind it rather than an
+    argument alone.
 
     Where the two sources meet they agree. 4965's hand label already read
     「PChome bought in minorities at NT$44/share」 and the exchange's table says

@@ -185,7 +185,7 @@
   },
   "test_taiwan_substitute_error_splits_by_deal_form": {
     "bound": "monotone",
-    "n": 19
+    "n": 23
   },
   "test_taiwan_survivorship_hole_is_rebuilt": {
     "bound": "exact",
@@ -193,7 +193,7 @@
   },
   "test_taiwan_swap_ratio_quotes_the_filing_it_names": {
     "bound": "monotone",
-    "n": 7
+    "n": 11
   },
   "test_taiwan_tree_readers_import_the_window": {
     "bound": "monotone",
