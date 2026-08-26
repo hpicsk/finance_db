@@ -3231,6 +3231,104 @@ def test_taiwan_silent_names_keep_their_unknown():
             f"保留意見 wins its one labelled name by matching 無保留意見",
             len(silent))
 
+
+def test_taiwan_reason_frame_is_frozen():
+    """README Provenance: the composition downstream work is built against.
+
+    The frame's shape is what a model inherits, and a population count does not
+    hold it: the counts move against each other inside a constant 164. Which
+    part of the shape was actually unwatched was measured rather than assumed,
+    by moving three names and running the other checks.
+
+    `reason` turned out to be guarded from the side. Flipping three merger names
+    to distress trips `test_taiwan_mops_overturns_only_failures_the_tape_missed`
+    whether or not they carry hand labels, because a reason that now contradicts
+    its price shape is a new overturn — so that margin was never the gap.
+
+    `basis` is. Re-basing three names from window to anchor with `reason`
+    untouched leaves every other check green, because nothing else reads the
+    column. It is also the cell that matters most: `basis` is what says how much
+    of the frame rests on the anchor path, which the hand labels barely witness
+    (caveat 8), so it can grow without a single assertion noticing that the
+    least-checked rule is deciding more of the data.
+
+    The label denominators are pinned here for a different reason. The obvious
+    join, 68 labels against 164 names, scores the rule at 42/68 and is wrong
+    three ways at once: 20 of the labels are pre-window `prior` rows that were
+    never in the frame, and 6 of the 48 that are in it name a company the rule
+    declines to decide, which is an abstention and not a miss. The published
+    42/42 is over the 42 the rule commits on. Asserting the identity means the
+    two files cannot drift apart silently — a label added without a frame name
+    behind it, or a frame name that loses its label, breaks the arithmetic
+    rather than quietly re-basing a percentage nobody recomputes.
+    """
+    path = REPO / "finmind_data/mops_reason.parquet"
+    if not path.exists():
+        raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
+    r = pd.read_parquet(path)
+
+    span = (r["delist_date"].min().date().isoformat(),
+            r["delist_date"].max().date().isoformat())
+    assert span == ("2011-05-02", "2024-11-29"), (
+        f"README Provenance freezes this frame over 2011-05-02..2024-11-29; it "
+        f"now spans {span[0]}..{span[1]}, so the frame is not the one the "
+        f"baseline was recorded for"
+    )
+
+    # The joint, not the two margins: the README reads the cells off it — that
+    # silence and `unknown` are the same 18 names, that the anchor decides 15
+    # mergers against 2 distress — and a pair of marginal counts is satisfied by
+    # arrangements where neither holds.
+    cells = {f"{a}/{b}": int(n) for (a, b), n
+             in r.groupby(["reason", "basis"]).size().items()}
+    assert cells == {"distress/anchor": 2, "distress/window": 32,
+                     "merger/anchor": 15, "merger/window": 97,
+                     "unknown/silent": 18}, (
+        f"README Provenance freezes this frame at 112 merger / 34 distress / 18 "
+        f"unknown, decided 129 window / 17 anchor / 18 silent; the joint is now "
+        f"{cells}. A downstream split conditioned on `reason` is conditioned on "
+        f"a different population, and a moved anchor cell changes how much of "
+        f"the frame rests on the path the hand labels barely witness"
+    )
+    reason = r["reason"].value_counts().to_dict()
+    basis = r["basis"].value_counts().to_dict()
+
+    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+                      dtype={"stock_id": str})
+    got = r.set_index("stock_id")["reason"].reindex(lab["stock_id"])
+    # `pre_window` here is frame membership, not the sheet's own `purpose`
+    # column — that carries a value spelled `prior` which tags 27 rows for a
+    # different reason and does not partition the frame.
+    pre_window_n = int(got.isna().sum())
+    declined = int((got == "unknown").sum())
+    scored = len(lab) - pre_window_n - declined
+    assert (len(lab), scored, declined, pre_window_n) == (68, 42, 6, 20), (
+        f"README Provenance freezes the label sheet as 68 = 42 scored + 6 the "
+        f"rule declines + 20 pre-window; it is now {len(lab)} = {scored} + "
+        f"{declined} + {pre_window_n}. The published 42/42 has a denominator of "
+        f"42, not {len(lab)} — re-derive it before quoting the score again"
+    )
+    # Why those 20 are absent, asserted as an identity rather than assumed: the
+    # frame opens on its first delisting, and they predate it. A label naming an
+    # in-window company the frame does not carry is a hole in the frame, not a
+    # stale label, and only the two-way form tells them apart.
+    absent = set(lab["stock_id"]) - set(r["stock_id"])
+    pre_window = set(lab.loc[pd.to_datetime(lab["delist_date"], format="ISO8601")
+                             < r["delist_date"].min(), "stock_id"])
+    assert absent == pre_window, (
+        f"every label with no frame name should be one that predates the frame; "
+        f"{sorted(absent - pre_window)} delisted in-window and are missing from "
+        f"it, and {sorted(pre_window - absent)} predate it and are in it"
+    )
+
+    return (f"frame frozen at {len(r)} names {span[0]}..{span[1]}: "
+            f"{reason['merger']} merger / {reason['distress']} distress / "
+            f"{reason['unknown']} unknown, decided {basis['window']} window / "
+            f"{basis['anchor']} anchor / {basis['silent']} silent; labels "
+            f"{len(lab)} = {scored} scored + {declined} declined + "
+            f"{pre_window_n} pre-window",
+            len(r))
+
 def test_taiwan_filing_dates_cover_the_statement_trees():
     """README caveat 9: every company with a statement tree is dated.
 
@@ -3749,6 +3847,7 @@ CHECKS = [
     test_taiwan_mops_reason_scored_against_the_hand_labels,
     test_taiwan_anchor_overrides_agree_with_their_own_window,
     test_taiwan_silent_names_keep_their_unknown,
+    test_taiwan_reason_frame_is_frozen,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
     test_taiwan_filing_deadline_q2_boundary_is_fy2013,

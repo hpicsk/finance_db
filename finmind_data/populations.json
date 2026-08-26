@@ -147,6 +147,10 @@
     "bound": "monotone",
     "n": 2158
   },
+  "test_taiwan_reason_frame_is_frozen": {
+    "bound": "exact",
+    "n": 164
+  },
   "test_taiwan_rebuild_matches_vendor": {
     "bound": "exact",
     "n": 203655

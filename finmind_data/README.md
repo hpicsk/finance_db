@@ -785,6 +785,41 @@ ohlcv_all = pd.concat(
   sponsor tier. 2,154 requests at `--sleep 0.7` under the 6000/hr
   quota, ~40 min, 0 failures. Log: `nohup.price_adj.out`.
 
+### Frozen baseline
+
+The delisting-reason frame is frozen here, and downstream work is built against
+this state rather than against whatever `mops_reason.py` returns next. What
+`test_taiwan_reason_frame_is_frozen` pins:
+
+- **164 names, 2011-05-02 to 2024-11-29** — 112 merger, 34 distress, 18 unknown.
+- **Decided 129 by window vote, 17 by anchor, 18 silent.** The 18 silent are
+  exactly the 18 unknown; the anchor path decides 15 mergers and 2 distress.
+- **68 hand labels = 42 scored + 6 the rule declines + 20 pre-window.** The
+  published score is **42/42**, over the names the rule commits on.
+
+The last line is the one worth reading twice, because the obvious join gets it
+wrong. Scoring all 68 labels against the frame returns 42/68: 20 of them
+delisted before the frame opens and never had a frame name to match, and 6 more
+name a company the rule returns `unknown` for, which is an abstention rather
+than a miss. Both denominators are asserted, so the sheet and the frame cannot
+drift apart without failing.
+
+Which half of that needed pinning was measured, not assumed. Moving three names
+from merger to distress already fails a check — a reason that contradicts its
+price shape is a new overturn — so the `reason` margin was covered from the
+side. Re-basing three names from window vote to anchor, leaving `reason` alone,
+failed **nothing** before this check existed: no other assertion reads `basis`.
+That is the column worth guarding, because it is what says how much of the frame
+rests on the anchor path, and caveat 8 is about how little witnesses that path.
+
+**Reproducing the suite from a clone.** `capital_reduction.parquet`,
+`unpriced_actions.parquet` and `exright_reference.parquet` are read by the
+checks and not committed — each is regenerable (`consolidate_capred.py`,
+`detect_unpriced_actions.py`, `download_exright.py`) and `.gitignore` records
+which. A clone missing them does not quietly pass: an absent artifact raises
+`Skipped`, and the runner exits non-zero unless `--allow-skips` is given, so the
+green result reported here means 53 checks that actually read something.
+
 ## Known gaps / caveats
 
 1. **Individual retail flow** is not directly reported. Derive from total
