@@ -71,6 +71,10 @@
     "bound": "monotone",
     "n": 43779
   },
+  "test_taiwan_listing_spans_reconcile_with_the_tape": {
+    "bound": "exact",
+    "n": 5816392
+  },
   "test_taiwan_month_rev_date_is_the_following_month": {
     "bound": "monotone",
     "n": 281009
@@ -134,6 +138,10 @@
   "test_taiwan_par_value_changes_are_priced": {
     "bound": "exact",
     "n": 12
+  },
+  "test_taiwan_pit_universe_is_dated_and_keeps_its_delistings": {
+    "bound": "exact",
+    "n": 164
   },
   "test_taiwan_post_delisting_sessions_are_marked": {
     "bound": "monotone",

@@ -204,6 +204,106 @@ company filings answer for a company that still reports rather than for a
 code that once listed. A fundamentals study on this panel is therefore still
 survivorship-biased where a price study is not; caveat 10 measures it.
 
+### A universe is a name list until it is dated
+
+Everything above is about *membership*: the 164 in-window delistings are all
+here, so no name is missing. It says nothing about *when*, and
+`universe.parquet` carries the same 2,158 names on every session of the window
+— which is not a universe a backtest can rebalance against. Screening the name
+list at a 2013-06-28 rebalance puts **585** names in that session's universe
+that were not listed that day:
+
+| names | why they are not in that day's universe |
+|---:|---|
+| **416** | had not listed yet — they IPO after 2013-06-28 |
+| **84** | were on 興櫃 for the whole window and never listed inside it |
+| **42** | had already delisted when the window opened, in 2007-2011 |
+| **21** | listed after the window closed, in 2025-2026 |
+| **19** | had already delisted by that date |
+| **3** | were listed but not quoted that day — a halt, or a 興櫃 phase before promotion |
+
+The 416, the 19 and most of the 3 are ordinary timing — the name list has no
+dates in it, so it cannot express them, and dating it is the whole fix. The
+other 147 are defects in the list itself, and they persist at *every* rebalance
+date:
+
+- **42 + 21 names are outside the window in both directions.**
+  `taiwan_stock_info` still serves 力霸 (2007) and 歌林 (2008) on a retired
+  classification row, and `build_universe.py` keeps any code carrying a
+  twse/tpex row; the same pull carries 2025-2026 IPOs. None of them trades on a
+  single in-window session.
+- **120 codes have a 興櫃 phase inside the window** — 84 of them for all of it.
+  The emerging board is not a listing, and the registry records only what a code
+  is *now*, so a name promoted to TPEx in 2025 reads as TPEx for all of
+  2011-2024. It is 71,789 code-sessions, 1.22 % of the panel.
+
+`pit_universe.py` dates the universe against the tape — what actually traded,
+not what a registry still lists — and corrects it in the two places the tape
+alone is wrong:
+
+```python
+from finmind_data.pit_universe import universe_at, sessions
+universe_at("2016-06-30")     # 1,702 codes; 1,458 on the first session, 1,845 on the last
+sessions()                    # the 3,414 the exchange held, to snap a rebalance date onto
+```
+
+A date the market was shut **raises** rather than returning an empty index. A
+rebalance calendar written in month-ends lands on one several times a year, and
+a universe of zero names reads to a backtest as a month with nothing worth
+holding rather than as a question it should not have asked.
+
+**興櫃 sessions are removed** — 71,789 code-sessions across the 120 names above.
+A code is excluded on every session up to the day its `emerging` classification
+was retired, which is the only point-in-time market fact the registry carries: a
+retired row keeps the date it was retired on, a live row carries the query date,
+so a name still on 興櫃 today is excluded throughout. That boundary is a vendor
+pull like any other and `listing_spans.parquet` stamps the date it was taken.
+
+**The suspension before a delisting is added back** — 5,392 sessions across 137
+of the 164. For every one of the 164 the tape's last session is exactly
+`delisting_sign.last_trade`, which is not the delisting: 台一 stopped trading
+229 days before its listing ended. In those sessions the company is still
+listed, the position is still open, and the terminal value is still owed, so a
+span runs to the session before the delisting date rather than to the last
+quote. Presence alone would drop each name at the moment the delisting-return
+question starts — caveat 8 is what is still unanswered inside that window, and
+this is what keeps the name in the universe long enough to ask it.
+
+**An interior gap is not bridged, and that is a limit rather than a decision.**
+580 codes have at least one session between their first and last quote that the
+tape does not carry, and the span table splits on every one. The distribution is
+bimodal and the two halves want opposite treatment: a median longest gap of 7
+sessions is a trading halt, where the name is still listed and dropping it is
+wrong, while 45 codes have a gap of 60 sessions or more — 8227 is absent for
+nine years — which is not a halt, and no registry in this package explains it.
+Bridging serves the first case and fabricates a listing in the second. No
+threshold separating them is available that is not simply chosen, so neither is
+applied: a halted name leaves the universe for the length of its halt, and a
+strategy that must hold through halts should read the gaps off the span table
+rather than have the module guess which kind each one is.
+
+`test_taiwan_pit_universe_is_dated_and_keeps_its_delistings` pins the property
+the whole construction exists for: every one of the 164 is in the universe on
+its own last trading session, stays in it through the suspension to the session
+before its listing ends, and is gone on the day it ends. It reads only committed
+artifacts, so a clone can check that without rebuilding the tape — which costs
+an hour of API quota and a token.
+`test_taiwan_listing_spans_reconcile_with_the_tape` needs `tape/`, reconciles
+all 5.8 M code-sessions against it, and pins both corrections by count and by
+which names they may touch.
+
+**The two are not interchangeable, and the split is measured rather than
+tidy.** Breaking the artifact six ways: dropping a suspension bridge, holding a
+delisted name one session past its exit, deleting one outright, and losing a
+session from the calendar all fail the first check, three of them naming the
+company. Re-admitting a 興櫃 name across the whole window fails it too — but only
+because the size pins sit on the first and last session and a full-window span
+moves both. **Admit the same name for the middle of the window only and the
+first check passes**; nothing in it reads a market classification. The
+reconciliation catches it and nothing else does. So a clone without `tape/` can
+verify that no delisted name is missing, and cannot verify that no 興櫃 name is
+present.
+
 ## Directory layout
 
 ```
@@ -211,6 +311,8 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── README.md                          (this file)
 ├── universe.parquet                   2,158 common stocks (id, name, type, industry)
 ├── delisted_universe.parquet          723 historical delistings — `TaiwanStockDelisting` output
+├── listing_spans.parquet              when each name was listed, as maximal session runs (2011-2024)
+├── trading_sessions.parquet           the 3,414 sessions the exchange held in the window
 ├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
 ├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2005-2024)
@@ -246,6 +348,7 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 ├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2024)
 ├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2011-2024)
 ├── build_universe.py                  universe construction script (incl. delisted merge)
+├── pit_universe.py                    dates that universe → listing_spans.parquet, `universe_at(date)`
 ├── refresh_delisting.py               re-pulls the market-wide TaiwanStockDelisting table
 ├── window.py                          COVERAGE_START / COVERAGE_END, declared once
 ├── download.py                        resumable downloader (--datasets to filter, --extend to move --end)

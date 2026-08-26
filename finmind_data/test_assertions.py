@@ -594,6 +594,217 @@ def test_taiwan_universe_holds_every_common_the_tape_shows():
             f"(answerable universe {len(u) - len(never)})"), int(common.sum())
 
 
+def test_taiwan_pit_universe_is_dated_and_keeps_its_delistings():
+    """README "A universe is a name list until it is dated": `universe_at`.
+
+    `universe.parquet` carries the same 2,158 names on every session, so a
+    backtest that screens it at a 2013 rebalance holds 585 names that were dead,
+    unlisted, or on 興櫃 that day. `listing_spans.parquet` dates it, and this is
+    the property the dating exists for: every name that delisted inside the
+    window is in the universe on its own last trading session, stays in it
+    through the suspension to the session before its listing ends, and is gone
+    the day it ends.
+
+    It reads only committed artifacts, so a clone can run it without rebuilding
+    the 78 MB tape — which costs an hour of API quota and a token, and would put
+    the survivorship property out of reach of anyone who just cloned the repo.
+
+    Which failures it actually catches was measured by breaking the artifact six
+    ways rather than argued from what it reads. Dropping 台一's suspension
+    bridge, holding 福盈 one session past its exit, deleting 必翔 outright and
+    losing a session from the calendar all fail here, the first three naming the
+    company. So does re-admitting a 興櫃 name across the full window — but only
+    because the two size pins sit on the first and last session and it moves
+    both.
+
+    **Admit the same 興櫃 name for the middle of the window only and this check
+    passes.** Nothing here reads a market classification; the edge pins are what
+    caught the first case, and a span that touches neither edge moves nothing
+    this check looks at. `test_taiwan_listing_spans_reconcile_with_the_tape` is
+    the only thing that sees it, and it needs `tape/`. So the split is not
+    tidiness: a clone can verify that the delistings are all here and cannot
+    verify that the 興櫃 names are not.
+    """
+    from finmind_data.pit_universe import universe_at, sessions
+
+    spans = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
+    cal = sessions()
+    u, _, uid, _ = _tw_ids()
+    assert len(cal) == 3_414 and (cal[0], cal[-1]) == ("2011-01-25", "2024-12-31"), (
+        f"README pins 3,414 sessions over 2011-01-25..2024-12-31; the calendar "
+        f"holds {len(cal)} over {cal[0]}..{cal[-1]}")
+
+    # Structure: one code's spans never touch or overlap, every endpoint is a
+    # session, and no code is outside the name list the package screens.
+    assert not (set(spans["stock_id"]) - uid), (
+        f"{len(set(spans['stock_id']) - uid)} codes have a listing span and are "
+        f"not in universe.parquet, so the dated universe admits names the "
+        f"undated one screens out")
+    at = {d: i for i, d in enumerate(cal)}
+    assert set(spans["start"]) <= set(cal) and set(spans["end"]) <= set(cal), (
+        "a span begins or ends on a day the market was shut")
+    touching = 0
+    for _, g in spans.groupby("stock_id"):
+        prev = None
+        for a, b in zip(g["start"], g["end"]):
+            if at[a] > at[b] or (prev is not None and at[a] <= at[prev] + 1):
+                touching += 1
+            prev = b
+    assert not touching, (
+        f"{touching} spans overlap, run backwards, or abut the previous one — "
+        f"the runs are not maximal, so a gap in the table is not a gap in the "
+        f"listing")
+
+    # The claim the artifact exists for: a name list is the same on every
+    # session and the universe is not.
+    first, last = len(universe_at(cal[0])), len(universe_at(cal[-1]))
+    assert (first, last, len(u)) == (1_458, 1_845, 2_158), (
+        f"README pins the dated universe at 1,458 names on the first session "
+        f"and 1,845 on the last against a 2,158-name list; it is now "
+        f"{first} / {last} / {len(u)}")
+
+    # …and the reason it exists: every name that delisted inside the window is
+    # in it on its last trading session, stays in it through the suspension, and
+    # is gone the day the listing ends.
+    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    absent_last_trade, absent_at_exit, present_after = [], [], []
+    for r in frame.itertuples():
+        lt = r.last_trade.strftime("%Y-%m-%d")
+        exit_ = r.delist_date.strftime("%Y-%m-%d")
+        if r.stock_id not in universe_at(lt):
+            absent_last_trade.append(r.stock_id)
+        before = [d for d in cal if d < exit_]
+        if r.stock_id not in universe_at(before[-1]):
+            absent_at_exit.append(r.stock_id)
+        after = [d for d in cal if d >= exit_]
+        if after and r.stock_id in universe_at(after[0]):
+            present_after.append(r.stock_id)
+    assert not absent_last_trade, (
+        f"{len(absent_last_trade)} of the {len(frame)} in-window delistings are "
+        f"absent from the universe on their own last trading session "
+        f"({absent_last_trade[:5]}) — a backtest rebalancing that day cannot "
+        f"hold a name it held the day before, which is survivorship bias")
+    assert not absent_at_exit, (
+        f"{len(absent_at_exit)} delistings leave the universe before their "
+        f"listing ends ({absent_at_exit[:5]}); the suspension is where the "
+        f"delisting return is decided and the position is still open in it")
+    assert not present_after, (
+        f"{len(present_after)} delistings are still in the universe on or after "
+        f"the day their listing ended ({present_after[:5]}), so a backtest "
+        f"holds a company that no longer trades")
+
+    # A day the market was shut has no universe, and must say so rather than
+    # answer zero: a rebalance calendar written in month-ends lands on one.
+    shut = "2016-01-01"
+    try:
+        universe_at(shut)
+        raise AssertionError(
+            f"universe_at({shut}) returned a universe for a day the exchange "
+            f"was closed; a backtest reads the empty answer as 'nothing to "
+            f"hold' and skips the rebalance without failing")
+    except ValueError:
+        pass
+    return (f"{len(spans)} spans over {spans['stock_id'].nunique()} codes: "
+            f"{first} names listed on {cal[0]}, {last} on {cal[-1]}, against a "
+            f"{len(u)}-name list; all {len(frame)} delistings held to their "
+            f"last session"), len(frame)
+
+
+def test_taiwan_listing_spans_reconcile_with_the_tape():
+    """README "A universe is a name list until it is dated": the two corrections.
+
+    The tape is what the market executed, and the spans are that record with two
+    corrections applied — 興櫃 sessions removed because the emerging board is not
+    a listing, the suspension before a delisting added back because the company
+    is still listed in it. This reconciles every one of the 5.8 M code-sessions
+    against the tape and pins both corrections by count, so a correction that
+    grows or shrinks fails rather than drifts.
+
+    The 興櫃 side is the reason this check exists rather than being folded into
+    the clone-safe one. Its boundary comes from the registry, which is a live
+    pull and the one input here that is not fixed; the artifact stamps the date
+    it was taken. Re-admitting a 興櫃 name for the middle of the window is caught
+    here and by nothing else in the suite — the other check's population pins sit
+    on the first and last session and a mid-window span moves neither — so
+    without `tape/` the emerging-board correction is unverified rather than
+    verified cheaply.
+
+    Both counts also carry a membership claim beside the number, because the
+    counts alone would be satisfied by the corrections landing on the wrong
+    names: the bridge may only touch codes that delisted in-window, and the 興櫃
+    removal may touch none of them.
+    """
+    import numpy as np
+
+    tape_dir = REPO / "finmind_data/tape"
+    if not tape_dir.exists():
+        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+    spans = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
+    cal = list(pd.read_parquet(REPO / "finmind_data/trading_sessions.parquet")["date"])
+    at = {d: i for i, d in enumerate(cal)}
+    _, _, uid, _ = _tw_ids()
+    frame = set(pd.read_parquet(
+        REPO / "finmind_data/delisting_sign.parquet")["stock_id"])
+
+    stray = sorted((set(spans["start"]) | set(spans["end"])) - set(cal))
+    assert not stray, (
+        f"a span begins or ends on a day the {len(cal)}-session calendar does "
+        f"not hold ({stray[:5]}), so the two artifacts were not built from the "
+        f"same tape and neither can be indexed by the other")
+    codes = sorted(uid)
+    slot = {c: i for i, c in enumerate(codes)}
+    width = len(cal)
+    tape = clip(pd.concat(
+        [pd.read_parquet(q, columns=["date", "stock_id"])
+         for q in sorted(tape_dir.glob("*.parquet"))], ignore_index=True))
+    tape = tape[tape["stock_id"].isin(uid)]
+    # Freshness, and the reason it is an assertion rather than a comment: the
+    # calendar is the tape's own session list, so a session in one and not the
+    # other means the tape has been re-swept and the spans are stale. Left
+    # unguarded it is not even a wrong answer — `map` returns NaN for the
+    # unknown session, the index arithmetic goes float, and the two set
+    # differences below are computed over garbage that still counts.
+    swept = set(tape["date"])
+    assert swept == set(cal), (
+        f"the tape holds {len(swept)} in-window sessions and "
+        f"trading_sessions.parquet holds {len(cal)}; the tape has moved since "
+        f"the spans were built, so rebuild both with "
+        f"`python -m finmind_data.pit_universe`")
+    quoted = np.unique(tape["stock_id"].map(slot).to_numpy() * width
+                       + tape["date"].map(at).to_numpy())
+    listed = np.unique(np.concatenate([
+        np.arange(at[a], at[b] + 1) + slot[c] * width
+        for c, a, b in zip(spans["stock_id"], spans["start"], spans["end"])]))
+
+    added = np.setdiff1d(listed, quoted)
+    removed = np.setdiff1d(quoted, listed)
+    add_codes = {codes[i] for i in np.unique(added // width)}
+    drop_codes = {codes[i] for i in np.unique(removed // width)}
+    assert (len(added), len(add_codes)) == (5_392, 137), (
+        f"README puts the suspension bridge at 5,392 sessions across 137 of "
+        f"the delisted names; the spans add {len(added)} across "
+        f"{len(add_codes)}")
+    assert not (add_codes - frame), (
+        f"the bridge added sessions to {len(add_codes - frame)} codes that did "
+        f"not delist in-window ({sorted(add_codes - frame)[:5]}) — it is only "
+        f"licensed to cover the suspension before a recorded delisting, and "
+        f"anywhere else it is inventing a listing the tape denies")
+    assert (len(removed), len(drop_codes)) == (71_789, 120), (
+        f"README puts the 興櫃 removal at 71,789 sessions across 120 codes; the "
+        f"spans drop {len(removed)} across {len(drop_codes)}. A registry pull "
+        f"that moved a promotion date moves this, and it is the one input here "
+        f"that is not fixed — the artifact stamps its pull as "
+        f"{spans['registry_pull'].iat[0]}")
+    assert not (drop_codes & frame), (
+        f"{len(drop_codes & frame)} of the in-window delistings lost sessions "
+        f"to the 興櫃 removal ({sorted(drop_codes & frame)[:5]}); the removal "
+        f"would then be deleting exactly the names the universe exists to keep")
+    return (f"{len(listed):,} code-sessions reconciled against the tape: "
+            f"+{len(added):,} bridged suspensions in {len(add_codes)} delisted "
+            f"names, −{len(removed):,} 興櫃 sessions in {len(drop_codes)} codes",
+            int(len(listed)))
+
+
 # ---- Taiwan: the coverage flag has to survive a panel build -----------------
 def test_taiwan_adj_covered_survives_concat():
     """README, "The adjusted panel is survivorship-biased": `adj_covered`.
@@ -3823,6 +4034,8 @@ CHECKS = [
     test_taiwan_price_adj_one_per_universe,
     test_taiwan_overlay_covers_the_window,
     test_taiwan_universe_holds_every_common_the_tape_shows,
+    test_taiwan_pit_universe_is_dated_and_keeps_its_delistings,
+    test_taiwan_listing_spans_reconcile_with_the_tape,
     test_taiwan_adjusted_survivorship_hole,
     test_taiwan_adjusted_coverage_decomposition,
     test_taiwan_vendor_event_audit_is_current,
