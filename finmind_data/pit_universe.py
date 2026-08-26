@@ -42,22 +42,25 @@ before the delisting date. It is 5,392 sessions across 137 of the
 164 — the other 27 last traded on the session before their exit and have
 nothing to bridge.
 
-**What is not corrected: an interior gap.** 580 codes have at least one session
+**An interior gap is left to the caller.** 580 codes have at least one session
 between their first and last quote where the tape does not carry them, and the
 span table splits on every one of them rather than bridging. The distribution is
 bimodal and the two halves want opposite treatment — a median of 7 sessions is a
-trading halt, where the name is still listed, and 45 codes have a gap of 60
-sessions or more, up to 8227's nine years, which is not a halt and is not
-explained by any registry in this package. Bridging serves the first and
-fabricates the second. No threshold separating them is available that is not
-chosen, so neither is applied: a halted name leaves the universe for the length
-of its halt, and a caller that must hold through halts should read the gaps off
-the span table rather than have this module guess which kind each one is.
+trading halt, where the name is still listed and a position in it is still open,
+and 45 codes have a gap of 60 sessions or more, up to 8227's nine years, which is
+not a halt and is not explained by any registry in this package. Bridging serves
+the first and fabricates the second, and no threshold separating them is
+available that is not chosen. So the artifact holds the split runs and
+``universe_at(date, bridge_gaps_upto=n)`` closes gaps of at most ``n`` sessions
+at query time. The number is the caller's: a backtest that cannot sell into a
+halt holds through it and says so in the call, and this module does not decide
+for it by picking a default other than the artifact's own.
 
     python -m finmind_data.pit_universe    # rebuild the spans and the calendar
 
     from finmind_data.pit_universe import universe_at, sessions
-    universe_at("2016-06-30")                  # 1,702 codes
+    universe_at("2016-06-30")                       # 1,702 codes
+    universe_at("2016-06-30", bridge_gaps_upto=20)  # holding through short halts
 """
 from __future__ import annotations
 
@@ -106,14 +109,54 @@ def sessions() -> tuple[str, ...]:
     return tuple(pd.read_parquet(CALENDAR)["date"])
 
 
-def universe_at(date: str | pd.Timestamp) -> pd.Index:
+@lru_cache(maxsize=None)
+def _bridged(gap: int) -> pd.DataFrame:
+    """The spans with interior gaps of at most `gap` sessions closed up.
+
+    A gap is the count of sessions the tape does not carry the name between two
+    of its runs, so `gap=0` is the artifact as built and returns it unchanged.
+    """
+    spans = _spans()
+    if gap == 0:
+        return spans
+    at = {d: i for i, d in enumerate(sessions())}
+    rows = []
+    for code, g in spans.groupby("stock_id", sort=False):
+        run = None
+        for a, b in zip(g["start"], g["end"]):
+            if run is None:
+                run = [a, b]
+            elif at[a] - at[run[1]] - 1 <= gap:
+                run[1] = b
+            else:
+                rows.append((code, *run))
+                run = [a, b]
+        rows.append((code, *run))
+    return pd.DataFrame(rows, columns=["stock_id", "start", "end"])
+
+
+def universe_at(date: str | pd.Timestamp, *, bridge_gaps_upto: int = 0) -> pd.Index:
     """The codes listed on `date`, delisted-since names included.
 
     Raises rather than returning an empty index for a date the market was
     closed: a backtest that rebalances on a holiday would otherwise read a
     universe of zero names as a universe with nothing in it, and hold nothing
     that month without failing.
+
+    `bridge_gaps_upto` is the halt rule, and the module docstring says why the
+    number has to come from here rather than from a default. A name whose tape
+    goes quiet for at most this many sessions stays in the universe across the
+    silence; one that goes quiet for longer leaves it and comes back. At 0 —
+    the artifact's own semantics — a halted name is out for the length of its
+    halt, which prices the position at whatever the caller does with a name
+    that leaves the universe. Raising it far enough to bridge a multi-year
+    absence puts a name in the universe on sessions no registry in this package
+    says it was listed on.
     """
+    if bridge_gaps_upto < 0:
+        raise ValueError(
+            f"bridge_gaps_upto={bridge_gaps_upto} is negative; it is a count of "
+            f"sessions to close up, and 0 is the artifact as built")
     d = pd.Timestamp(date)
     if not (COVERAGE_START <= d <= COVERAGE_END):
         raise ValueError(
@@ -124,7 +167,7 @@ def universe_at(date: str | pd.Timestamp) -> pd.Index:
         raise ValueError(
             f"{key} is inside the window but is not a trading session, so no "
             f"universe is defined for it — snap to one with `sessions()`")
-    s = _spans()
+    s = _bridged(bridge_gaps_upto)
     hit = s[(s["start"] <= key) & (key <= s["end"])]
     return pd.Index(sorted(hit["stock_id"]), name="stock_id")
 

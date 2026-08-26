@@ -269,18 +269,29 @@ quote. Presence alone would drop each name at the moment the delisting-return
 question starts — caveat 8 is what is still unanswered inside that window, and
 this is what keeps the name in the universe long enough to ask it.
 
-**An interior gap is not bridged, and that is a limit rather than a decision.**
-580 codes have at least one session between their first and last quote that the
-tape does not carry, and the span table splits on every one. The distribution is
-bimodal and the two halves want opposite treatment: a median longest gap of 7
-sessions is a trading halt, where the name is still listed and dropping it is
-wrong, while 45 codes have a gap of 60 sessions or more — 8227 is absent for
-nine years — which is not a halt, and no registry in this package explains it.
-Bridging serves the first case and fabricates a listing in the second. No
-threshold separating them is available that is not simply chosen, so neither is
-applied: a halted name leaves the universe for the length of its halt, and a
-strategy that must hold through halts should read the gaps off the span table
-rather than have the module guess which kind each one is.
+**An interior gap is the caller's rule, because no threshold here is the
+package's to pick.** 580 codes have at least one session between their first and
+last quote that the tape does not carry, over 1,225 gaps in all, and the span
+table splits on every one. The distribution is bimodal and the two halves want
+opposite treatment: the median gap is 7 sessions, which is a trading halt where
+the name is still listed and dropping it is wrong, while 45 codes have a gap of
+60 sessions or more — 8227 is absent for nine years — which is not a halt, and
+no registry in this package explains it. Bridging serves the first case and
+fabricates a listing in the second, and no threshold separating them is
+available that is not simply chosen.
+
+So the artifact keeps every run split and `universe_at(date,
+bridge_gaps_upto=n)` closes gaps of at most `n` sessions at query time. The
+number belongs to the strategy: one that cannot sell into a halt holds through
+it and says so in the call, one that marks to the last print does not. The
+default is 0, which is the artifact's own semantics rather than an answer about
+halts, and raising it takes the 3,236 spans to 2,761 at 5 sessions, 2,074 at 20
+and 2,011 at the whole window — one span per code, and a listing asserted on
+sessions nothing here witnesses. On 2016-06-30 the universe runs 1,702 names at
+0, 1,704 at 20 and 1,711 bridged throughout. No setting can resurrect a delisted
+name: bridging merges runs inside a code and never extends the last one, which
+`test_taiwan_universe_bridges_a_halt_only_when_asked` checks at the widest
+setting rather than argues from the loop.
 
 `test_taiwan_pit_universe_is_dated_and_keeps_its_delistings` pins the property
 the whole construction exists for: every one of the 164 is in the universe on
@@ -920,8 +931,8 @@ rests on the anchor path, and caveat 8 is about how little witnesses that path.
 checks and not committed — each is regenerable (`consolidate_capred.py`,
 `detect_unpriced_actions.py`, `download_exright.py`) and `.gitignore` records
 which. A clone missing them does not quietly pass: an absent artifact raises
-`Skipped`, and the runner exits non-zero unless `--allow-skips` is given, so the
-green result reported here means 53 checks that actually read something.
+`Skipped`, and the runner exits non-zero unless `--allow-skips` is given, so a
+green result means every check in the suite actually read something.
 
 ## Known gaps / caveats
 
@@ -1289,8 +1300,17 @@ green result reported here means 53 checks that actually read something.
     the four it was undoing.
 
     So `terminal_value()` books on four bases, cut so each names a different
-    piece of work. **`failed`** is zero. **`consideration`** is what was actually
-    paid, for the 19 recorded, a swap priced on the panel at the delisting date.
+    piece of work. **`failed`** is `last_close * (1 - failed_haircut)`, which is
+    zero by default and nothing else without saying so — zero because it is the
+    only value in the four that needs no source, and a haircut because a study
+    modelling a liquidation should be able to state one without editing this
+    file. The last close is not an alternative to it: these 41 names are frozen a
+    median of 120 sessions before the exit and 20 of them for more than 180, so
+    the print a haircut scales is months stale and nobody could have sold at it.
+    Their median last close is NT$2.57 against NT$31.30 among the substituted,
+    which is how much less the choice moves than its range suggests.
+    **`consideration`** is what was actually paid, for the 19 recorded, a swap
+    priced on the panel at the delisting date.
     **`substituted`** is the last close standing in for a consideration nobody
     has looked up, carrying the bias above, and one filing closes each. It is
     the count that falls when a consideration is recorded, and the only one:

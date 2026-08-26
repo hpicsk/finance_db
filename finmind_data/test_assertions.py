@@ -805,6 +805,105 @@ def test_taiwan_listing_spans_reconcile_with_the_tape():
             int(len(listed)))
 
 
+def test_taiwan_universe_bridges_a_halt_only_when_asked():
+    """README "A universe is a name list until it is dated": the halt rule.
+
+    The span table splits on every session the tape goes quiet, and 580 of the
+    2,011 codes have at least one such gap. Whether a position survives one is
+    the caller's rule, not the artifact's: a backtest that cannot sell into a
+    halt holds through it, and one that marks to the last print does not. So
+    `bridge_gaps_upto` closes gaps of at most n sessions at query time and has
+    no default other than the artifact's own.
+
+    What this pins is that the knob is real in both directions — that 0 is the
+    committed spans untouched, that raising it monotonically merges runs, and
+    that the two halves of the bimodal distribution really do move at different
+    settings, which is the reason no single number is right. The 1,225 gaps run
+    from a median of 7 sessions to 8227's 2,241, and a bridge wide enough to
+    close the second is putting a name in the universe on sessions no registry
+    in this package says it was listed on.
+
+    It also pins the property bridging must not break. Merging runs within a
+    code cannot move that code's last session, so no amount of bridging may put
+    a delisted name back in the universe after its exit — the invariant the
+    dated universe exists for, checked at the widest setting rather than
+    argued from the loop.
+    """
+    from finmind_data.pit_universe import _bridged, sessions, universe_at
+
+    cal = sessions()
+    at = {d: i for i, d in enumerate(cal)}
+    spans = _bridged(0)
+    committed = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
+    assert spans[["stock_id", "start", "end"]].equals(
+            committed[["stock_id", "start", "end"]]), (
+        "bridge_gaps_upto=0 does not return the committed spans, so the default "
+        "is a transformation rather than the artifact")
+
+    gaps, wide = [], set()
+    for code, g in spans.groupby("stock_id"):
+        s, e = list(g["start"]), list(g["end"])
+        for i in range(len(g) - 1):
+            n = at[s[i + 1]] - at[e[i]] - 1
+            gaps.append(n)
+            if n >= 60:
+                wide.add(code)
+    split = int((spans.groupby("stock_id").size() > 1).sum())
+    assert (split, len(gaps), len(wide)) == (580, 1_225, 45), (
+        f"README puts 580 codes with an interior gap, 1,225 gaps in all and 45 "
+        f"codes gapped 60 sessions or more; the spans give {split} / "
+        f"{len(gaps)} / {len(wide)}")
+    assert int(pd.Series(gaps).median()) == 7 and max(gaps) == 2_241, (
+        f"README calls the gap distribution bimodal on a median of 7 sessions "
+        f"against 8227's nine-year absence; it is now a median of "
+        f"{pd.Series(gaps).median()} and a maximum of {max(gaps)}")
+
+    # Monotone in n, and the two halves move at different settings — which is
+    # what makes a single default wrong rather than merely unchosen.
+    sizes = [len(_bridged(n)) for n in (0, 5, 20, 60, len(cal) - 1)]
+    assert sizes == [3_236, 2_761, 2_074, 2_066, 2_011], (
+        f"README pins the span count at 3,236 / 2,761 / 2,074 / 2,066 / 2,011 "
+        f"for gaps of 0, 5, 20, 60 and the whole window; it is now {sizes}")
+    assert sizes[-1] == spans["stock_id"].nunique(), (
+        f"bridging every gap leaves {sizes[-1]} spans over "
+        f"{spans['stock_id'].nunique()} codes, so some code still has a hole "
+        f"the widest possible bridge did not close")
+
+    # The universe on one session, at the settings a caller would reach for.
+    day = "2016-06-30"
+    held = [len(universe_at(day, bridge_gaps_upto=n)) for n in (0, 20, len(cal) - 1)]
+    assert held == [1_702, 1_704, 1_711], (
+        f"README pins {day} at 1,702 names undated by any halt rule, 1,704 "
+        f"holding through 20 sessions and 1,711 holding through anything; it is "
+        f"now {held}")
+
+    # No bridge may resurrect a delisted name: the invariant the dating exists
+    # for, checked where it is most likely to break.
+    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    widest = universe_at
+    raised = []
+    for r in frame.itertuples():
+        after = [d for d in cal if d >= r.delist_date.strftime("%Y-%m-%d")]
+        if after and r.stock_id in widest(after[0], bridge_gaps_upto=len(cal) - 1):
+            raised.append(r.stock_id)
+    assert not raised, (
+        f"{len(raised)} delisted names are back in the universe after their "
+        f"exit once gaps are bridged ({raised[:5]}); a bridge merges runs "
+        f"inside a code and must never extend the last one")
+
+    try:
+        universe_at(day, bridge_gaps_upto=-1)
+        raise AssertionError(
+            "a negative bridge was accepted; it is a count of sessions to close "
+            "up and there is nothing for it to mean")
+    except ValueError:
+        pass
+    return (f"{split} of {spans['stock_id'].nunique()} codes carry an interior "
+            f"gap over {len(gaps)} gaps (median {int(pd.Series(gaps).median())} "
+            f"sessions, max {max(gaps)}); bridging takes {day} from "
+            f"{held[0]} names to {held[-1]}"), split
+
+
 # ---- Taiwan: the coverage flag has to survive a panel build -----------------
 def test_taiwan_adj_covered_survives_concat():
     """README, "The adjusted panel is survivorship-biased": `adj_covered`.
@@ -1240,6 +1339,7 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     which of them are out is recorded in `mops_acquirer_refusals.csv` rather
     than described here.
     """
+    import numpy as np
     from finmind_data.delisting_sign import (
         band_holdout, features, substitute_error, terminal_value)
 
@@ -1347,6 +1447,34 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     assert (t.loc[t["basis"] == "failed", "terminal"] == 0).all(), (
         "a failed delisting books zero"
     )
+    # …by default, and the default is the rule rather than the arithmetic. A
+    # backtest that liquidates a failure at some fraction of the last print
+    # passes the fraction it does not recover, and gets the same 41 names on a
+    # different basis — never a different set, which would make the haircut a
+    # reclassification.
+    for h in (0.0, 0.8):
+        cut = terminal_value(f, failed_haircut=h)
+        assert cut["basis"].equals(t["basis"]), (
+            f"failed_haircut={h} moved a name between bases; it scales what a "
+            f"failure returns and decides nothing about which names failed")
+        booked = cut.loc[cut["basis"] == "failed", "terminal"]
+        close = cut.loc[cut["basis"] == "failed", "last_close"]
+        assert np.allclose(booked, close * (1 - h)), (
+            f"failed_haircut={h} books {booked.sum():.2f} against the "
+            f"{(close * (1 - h)).sum():.2f} its own definition gives — the "
+            f"fraction of the last close a failure does not return")
+        assert (cut.loc[cut["basis"] != "failed", "terminal"].fillna(-1)
+                == t.loc[t["basis"] != "failed", "terminal"].fillna(-1)).all(), (
+            f"failed_haircut={h} moved a value outside the failed basis, where "
+            f"a consideration is what was paid and a substitute is the last "
+            f"close; neither is a modelling choice")
+    try:
+        terminal_value(f, failed_haircut=1.5)
+        raise AssertionError(
+            "a haircut above 1.0 was accepted; it is the fraction of the last "
+            "close a failure does not return, so it cannot exceed all of it")
+    except ValueError:
+        pass
     assert (t.loc[t["basis"] == "substituted", "terminal"]
             == t.loc[t["basis"] == "substituted", "last_close"]).all(), (
         "a payout books its last close, which is the substitute being measured"
@@ -4036,6 +4164,7 @@ CHECKS = [
     test_taiwan_universe_holds_every_common_the_tape_shows,
     test_taiwan_pit_universe_is_dated_and_keeps_its_delistings,
     test_taiwan_listing_spans_reconcile_with_the_tape,
+    test_taiwan_universe_bridges_a_halt_only_when_asked,
     test_taiwan_adjusted_survivorship_hole,
     test_taiwan_adjusted_coverage_decomposition,
     test_taiwan_vendor_event_audit_is_current,

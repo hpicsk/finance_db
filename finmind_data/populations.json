@@ -199,6 +199,10 @@
     "bound": "monotone",
     "n": 10
   },
+  "test_taiwan_universe_bridges_a_halt_only_when_asked": {
+    "bound": "exact",
+    "n": 580
+  },
   "test_taiwan_universe_excludes_the_instruments_it_claims_to": {
     "bound": "monotone",
     "n": 2158

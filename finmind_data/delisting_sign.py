@@ -125,9 +125,10 @@ session — a fact about the market rather than about the delisting table, and
 binary, with the tails that really end doing so 12 to 18 years short of it.
 
 Classifying the exit is most of the work but not the number a study books, and
-``terminal_value`` is the rest of it: zero for a failure, the consideration
-itself where one was recorded, the last traded close where one was not, and
-nothing at all for the twelve names whose sign is still open. The substitute is
+``terminal_value`` is the rest of it: zero for a failure unless the caller
+states a haircut short of one, the consideration itself where one was recorded,
+the last traded close where one was not, and nothing at all for the names whose
+sign is still open. The substitute is
 not free — measured against those recorded considerations, the last close
 understates what was paid on every deal, by a rounding on a cash offer and by
 around a tenth on a share swap. ``substitute_error`` measures it and the README
@@ -598,8 +599,8 @@ def substitute_error(f: pd.DataFrame) -> pd.DataFrame:
          "paid", "residual"]]
 
 
-def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
-                   ) -> pd.DataFrame:
+def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None,
+                   *, failed_haircut: float = 1.0) -> pd.DataFrame:
     """What a holder books when the series stops, and on what basis.
 
     A hand-read filing outranks a price shape wherever one exists, so a label
@@ -616,7 +617,17 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
     to do about it.
 
     ``failed``
-        Zero. Needs no source and no action.
+        ``last_close * (1 - failed_haircut)``, so zero by default and nothing
+        else without saying so. Zero is the default because it is the only value
+        that needs no source: a failure that reaches a delisting has no
+        consideration to look up, and the last close is not a price anyone could
+        have sold at — these 41 names are frozen a median of 120 sessions before
+        the exit and 20 of them for more than 180, so the print a haircut scales
+        is months stale and untradeable in both directions. A study that models
+        a liquidation instead — a recovery on the residue, an exit into 興櫃 at
+        some fraction — passes the fraction it does *not* recover here. The
+        median last close in this basis is NT$2.57 against NT$31.30 among the
+        substituted, so the choice moves less than its range suggests.
     ``consideration``
         What was actually paid, priced on the panel where the payment was in
         shares. Exact, and no action.
@@ -638,6 +649,10 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
     band's own question, which is what ``delisting_band.csv`` is registered
     against.
     """
+    if not 0.0 <= failed_haircut <= 1.0:
+        raise ValueError(
+            f"failed_haircut={failed_haircut} is outside 0..1; it is the "
+            f"fraction of the last close a failure does not return")
     if labels is None:
         labels = pd.read_csv(_LABEL_FILE, dtype={"stock_id": str})
     known = labels[labels["label"].fillna("") != ""][["stock_id", "label"]]
@@ -656,7 +671,8 @@ def terminal_value(f: pd.DataFrame, labels: pd.DataFrame | None = None
     t["terminal"] = np.select(
         [t["basis"] == "failed", t["basis"] == "consideration",
          t["basis"] == "substituted"],
-        [0.0, paid, t["last_close"]], default=np.nan)
+        [t["last_close"] * (1 - failed_haircut), paid, t["last_close"]],
+        default=np.nan)
     return t.drop(columns=["label"])
 
 
