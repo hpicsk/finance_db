@@ -44,15 +44,15 @@ both through those rather than reconstructing either: ours from
 `fnguide_data.price_loader.load_price_panel()`. So the panel measured below is
 the panel a consumer gets, not a private copy that can drift from it.
 
-The benchmark export (`fnguide_data/raw/Price data.xlsx`, parsed once by
-`fnguide_data.price_loader`) covers **3,590 tickers over 2005-01-03 –
-2026-08-12**, pulled with DataGuide's "all codes" (전체 / 상폐 포함) filter, so
-delisted names carry prices to their delisting date. **616 / 620 (99.4 %)** of
-genuine common KOSPI/KOSDAQ delistings since 2005 are present; the 4 absentees
-are closed-end funds and a resource trust, not ordinary commons. A benchmark
-that stopped at survivors would grade the easy half of the problem, which is
-what the previous FnGuide cross-check (currently-listed names, price return
-only) did.
+The benchmark export (`fnguide_data/raw/fnguide_price_adjclose_20260813.xlsx`,
+parsed once by `fnguide_data.price_loader`) covers **3,590 tickers over
+2005-01-03 – 2026-08-12**, pulled with DataGuide's "all codes" (전체 / 상폐 포함)
+filter, so delisted names carry prices to their delisting date. **622 / 625
+(99.5 %)** of genuine common KOSPI/KOSDAQ delistings since 2005 are present;
+the 4 absentees are closed-end funds and a resource trust, not ordinary
+commons. A benchmark that stopped at survivors would grade the easy half of
+the problem, which is what the previous FnGuide cross-check (currently-listed
+names, price return only) did.
 
 The overlap is bounded on our side, not FnGuide's: the factors file is built
 from a marcap vintage ending **2026-02-20**, so the comparison runs
@@ -327,8 +327,9 @@ a validation run that reached a handful of names would carry a rate near
   adjusted *price levels* is not covered by any number in this file.
 - **A third of the residue has no diagnosis.** The 1,855 "both move" days are
   measured but not explained; see [What remains](#what-remains).
-- **The benchmark cannot be redistributed.** `Price data.xlsx` is licensed
-  DataGuide output and is gitignored; the reconstruction and every script here
-  are not, which is the point of the exercise.
+- **The benchmark cannot be redistributed.**
+  `fnguide_price_adjclose_20260813.xlsx` is licensed DataGuide output and is
+  gitignored; the reconstruction and every script here are not, which is the
+  point of the exercise.
 - **This document does not yet have its paper.** The construction, the benchmark
   design, and the stuck-oracle finding are the material for one — see `memo`.

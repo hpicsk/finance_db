@@ -11,11 +11,11 @@ it from here rather than re-deriving the sheet map.
 
 Source files (verified by openpyxl scan, FnGuide raw_dir):
 
-  data0204.xlsx :: 보험, 투신, 금융투자
-  data0205.xlsx :: 은행, 기타금융
-  data0206.xlsx :: 연기금등
-  data0207.xlsx :: 사모펀드
-  data0208.xlsx :: 국가
+  fnguide_investor_inst-sell-fin-ins-trust_20260214.xlsx :: 보험, 투신, 금융투자
+  fnguide_investor_bank-otherfin_20260219.xlsx           :: 은행, 기타금융
+  fnguide_investor_pension-corp-retail_20260219.xlsx     :: 연기금등
+  fnguide_investor_foreign-pe_20260219.xlsx              :: 사모펀드
+  fnguide_investor_govt-total_20260219.xlsx              :: 국가
 
 A renamed or missing sheet raises inside ``load_fnguide_sheet`` (fail loud);
 a sub-type that loads but has no nonzero flows in the window is simply absent
@@ -39,15 +39,21 @@ from fnguide_io import (
 )
 
 
+_INST_FILE    = 'fnguide_investor_inst-sell-fin-ins-trust_20260214.xlsx'
+_BANK_FILE    = 'fnguide_investor_bank-otherfin_20260219.xlsx'
+_PENSION_FILE = 'fnguide_investor_pension-corp-retail_20260219.xlsx'
+_FOREIGN_FILE = 'fnguide_investor_foreign-pe_20260219.xlsx'
+_GOVT_FILE    = 'fnguide_investor_govt-total_20260219.xlsx'
+
 SUBINVESTOR_SOURCES: dict[str, tuple[str, str, str]] = {
-    'pension':         ('data0206.xlsx', '매수대금(연기금등)', '매도대금(연기금등)'),
-    'insurance':       ('data0204.xlsx', '매수대금(보험)',     '매도대금(보험)'),
-    'investment_trust':('data0204.xlsx', '매수대금(투신)',     '매도대금(투신)'),
-    'pe_funds':        ('data0207.xlsx', '매수대금(사모펀드)', '매도대금(사모펀드)'),
-    'financial_inv':   ('data0204.xlsx', '매수대금(금융투자)', '매도대금(금융투자)'),
-    'other_financial': ('data0205.xlsx', '매수대금(기타금융)', '매도대금(기타금융)'),
-    'bank':            ('data0205.xlsx', '매수대금(은행)',     '매도대금(은행)'),
-    'government':      ('data0208.xlsx', '매수대금(국가)',     '매도대금(국가)'),
+    'pension':         (_PENSION_FILE, '매수대금(연기금등)', '매도대금(연기금등)'),
+    'insurance':       (_INST_FILE,    '매수대금(보험)',     '매도대금(보험)'),
+    'investment_trust':(_INST_FILE,    '매수대금(투신)',     '매도대금(투신)'),
+    'pe_funds':        (_FOREIGN_FILE, '매수대금(사모펀드)', '매도대금(사모펀드)'),
+    'financial_inv':   (_INST_FILE,    '매수대금(금융투자)', '매도대금(금융투자)'),
+    'other_financial': (_BANK_FILE,    '매수대금(기타금융)', '매도대금(기타금융)'),
+    'bank':            (_BANK_FILE,    '매수대금(은행)',     '매도대금(은행)'),
+    'government':      (_GOVT_FILE,    '매수대금(국가)',     '매도대금(국가)'),
 }
 
 

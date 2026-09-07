@@ -79,3 +79,8 @@ ticker,delisting_date,reason,is_genuine_keyword,is_genuine,rule,evidence
 096300,2023-02-02,해산 사유 발생,Y,N,spc-end-of-life,corp_name=한국월드와이드베트남부동산개발특별자산1호투자회사
 282690,2024-10-08,해산 사유 발생,Y,N,dissolution-post-merger,20240904000321 [기재정정]주요사항보고서(회사합병결정) 20240904
 168490,2025-04-01,해산 사유 발생,Y,N,spc-end-of-life,corp_name=한국투자패러랠유전해외자원개발특별자산투자회사1호(지분증권)
+006390,2025-11-21,해산 사유 발생,Y,N,dissolution-post-merger,20250718000434 [첨부정정]주요사항보고서(회사합병결정) 20250718
+010620,2025-12-15,해산 사유 발생,Y,N,dissolution-post-merger,20250827000428 주요사항보고서(회사합병결정) 20250827
+042670,2026-01-26,해산 사유 발생,Y,N,dissolution-post-merger,20250711000213 [기재정정]주요사항보고서(회사합병결정) 20250711
+138490,2026-04-16,해산 사유 발생,Y,N,dissolution-post-merger,20251125000491 [첨부정정]주요사항보고서(회사합병결정) 20251125
+152550,2026-05-04,해산 사유 발생,Y,N,spc-end-of-life,corp_name=한국투자ANKOR유전해외자원개발특별자산투자회사1호(지분증권)

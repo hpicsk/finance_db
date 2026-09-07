@@ -18,8 +18,9 @@ to make the vintage *readable* without paying to parse 6.5 GB of xlsx:
 streams the sheet XML and stops after the header. Consumers read the CSV:
 
     from fnguide_data.vintages import load, end_date
-    end_date('Price data.xlsx')               # -> Timestamp('2026-08-12')
-    min(end_date(f) for f in ('data0203.xlsx', 'Price data.xlsx'))
+    end_date('fnguide_price_adjclose_20260813.xlsx')   # -> Timestamp('2026-08-12')
+    min(end_date(f) for f in ('fnguide_investor_inst-buy_20260214.xlsx',
+                              'fnguide_price_adjclose_20260813.xlsx'))
 
 ``check()`` compares the manifest against the files on disk and is what
 ``test_assertions.py`` runs, so a re-pull cannot land without the manifest
@@ -89,9 +90,9 @@ def build(raw_dir: Path = RAW_DIR, out_path: Path = MANIFEST_PATH) -> pd.DataFra
     for path in files:
         # openpyxl in read-only mode, not calamine, is the exception in this
         # package: calamine parses a whole sheet before handing back a cell, so
-        # reading 15 header rows out of data0204.xlsx costs ~45 s a sheet and the
-        # scan runs over an hour. openpyxl streams the sheet XML and stops, which
-        # takes the same read to well under a second.
+        # reading 15 header rows out of the 1.4 GB investor export costs ~45 s
+        # a sheet and the scan runs over an hour. openpyxl streams the sheet XML and
+        # stops, which takes the same read to well under a second.
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         size = path.stat().st_size
         try:

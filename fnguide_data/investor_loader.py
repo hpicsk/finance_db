@@ -1,8 +1,9 @@
 """Unified investor flow loader for FnGuide DataGuide xlsx exports.
 
-Reads buy/sell amounts directly from ``raw/data0203/0204/0206/0207.xlsx``
-and returns a long ``(date, ticker, investor_type, buy/sell/net)`` panel
-for any date range. All values are KRW (원).
+Reads buy/sell amounts directly from the ``raw/fnguide_investor_*`` exports
+carrying 기관 / 개인 / 외국인 and returns a long
+``(date, ticker, investor_type, buy/sell/net)`` panel for any date range.
+All values are KRW (원).
 
 Foreign definition
 ------------------
@@ -31,28 +32,36 @@ from fnguide_io import (
 )
 
 
+# The trailing date on each export is the pull it came from — the exports are
+# not one snapshot, and vintages.csv is where the dates are read from. A re-pull
+# arrives under its own date and these constants move to it.
+_INST_BUY_FILE  = 'fnguide_investor_inst-buy_20260214.xlsx'
+_INST_SELL_FILE = 'fnguide_investor_inst-sell-fin-ins-trust_20260214.xlsx'
+_RETAIL_FILE    = 'fnguide_investor_pension-corp-retail_20260219.xlsx'
+_FOREIGN_FILE   = 'fnguide_investor_foreign-pe_20260219.xlsx'
+
 # (file, sheet) sources per investor type and side. Multiple sources are summed.
 _BASE_SOURCES: dict[str, dict[str, list[tuple[str, str]]]] = {
     '기관': {
-        'buy':  [('data0203.xlsx', '매수대금(기관)')],
-        'sell': [('data0204.xlsx', '매도대금(기관계)')],
+        'buy':  [(_INST_BUY_FILE,  '매수대금(기관)')],
+        'sell': [(_INST_SELL_FILE, '매도대금(기관계)')],
     },
     '개인': {
-        'buy':  [('data0206.xlsx', '매수대금(개인)')],
-        'sell': [('data0206.xlsx', '매도대금(개인)')],
+        'buy':  [(_RETAIL_FILE, '매수대금(개인)')],
+        'sell': [(_RETAIL_FILE, '매도대금(개인)')],
     },
 }
 
 _FOREIGN_SOURCES: dict[str, dict[str, list[tuple[str, str]]]] = {
     '등록외국인': {
-        'buy':  [('data0207.xlsx', '매수대금(등록외국인)')],
-        'sell': [('data0207.xlsx', '매도대금(등록외국인)')],
+        'buy':  [(_FOREIGN_FILE, '매수대금(등록외국인)')],
+        'sell': [(_FOREIGN_FILE, '매도대금(등록외국인)')],
     },
     '외국인계': {
-        'buy':  [('data0207.xlsx', '매수대금(등록외국인)'),
-                 ('data0207.xlsx', '매수대금(기타외국인)')],
-        'sell': [('data0207.xlsx', '매도대금(등록외국인)'),
-                 ('data0207.xlsx', '매도대금(기타외국인)')],
+        'buy':  [(_FOREIGN_FILE, '매수대금(등록외국인)'),
+                 (_FOREIGN_FILE, '매수대금(기타외국인)')],
+        'sell': [(_FOREIGN_FILE, '매도대금(등록외국인)'),
+                 (_FOREIGN_FILE, '매도대금(기타외국인)')],
     },
 }
 

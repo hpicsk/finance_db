@@ -55,7 +55,7 @@ fi
 #    outside source can. See kr_marcap/CONSTRUCTION.md.
 #    Note the two sides carry independent vintages: the comparison window is
 #    their intersection, so re-pulling *either* side changes what was graded.
-# python -m fnguide_data.price_loader                          # Price data.xlsx → parquet (~1m)
+# python -m fnguide_data.price_loader                          # adjusted-price export → parquet (~1m)
 # python -m kr_marcap.validate_against_fnguide                 # outside gate (~5m)
 
 # ── 5b. Re-pulled any DataGuide export? Re-stamp the vintage manifest ─────

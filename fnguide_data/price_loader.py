@@ -1,8 +1,8 @@
 """FnGuide adjusted-price loader — 수정주가 export → tidy parquet.
 
-``raw/Price data.xlsx`` is a 220 MB four-sheet DataGuide export carrying both
-adjusted-price conventions FnGuide publishes, KOSPI and KOSDAQ split into
-separate sheets:
+``raw/fnguide_price_adjclose_20260813.xlsx`` is a 220 MB four-sheet DataGuide
+export carrying both adjusted-price conventions FnGuide publishes, KOSPI and
+KOSDAQ split into separate sheets:
 
 | Sheet | Item code | Column written |
 |---|---|---|
@@ -14,9 +14,9 @@ not a typo here.)
 
 Both conventions cover the same 4,052 tickers over 2005-01-03 – 2026-08-12, and
 the export was pulled with the "all codes" (전체 / 상폐 포함) filter, so delisted
-names carry prices through their delisting date. This is the benchmark
-``kr_marcap`` reconstructs from open sources; see
-[`kr_marcap/CONSTRUCTION.md`](../kr_marcap/CONSTRUCTION.md).
+names carry prices through their delisting date. It is the vendor's own
+series, and the reference any independently built adjusted Korean close is
+measured against rather than mixed with.
 
 The xlsx is read with python-calamine (~4 s a sheet); melting the four wide
 sheets to long still costs ~50 s and ~4.4 GB of peak RSS, so it is done once
@@ -26,7 +26,7 @@ here and every consumer reads the parquet:
 
 A code is not a company. KRX reissues a 6-digit code once its first occupant is
 delisted, and FnGuide keys a series by code, so both occupants arrive in one
-column separated by a NaN gap — 58 codes in this export. ``segment`` numbers
+column separated by a NaN gap — 59 codes in this export. ``segment`` numbers
 each code's listing spells so the handover cannot be differenced across; see
 ``_mark_segments``. **Difference within ``['ticker', 'segment']``, never within
 ``ticker`` alone**, or one bar of the result compares two different companies.
@@ -39,7 +39,7 @@ one it was on during a given session — so these carry ``market == 'BOTH'`` and
 their duplicate rows are collapsed. That the two copies agree is checked, not
 assumed: a (date, ticker) served by both sheets at *different* prices would be a
 contradiction in the vendor export and raises. Point-in-time market membership
-is not available from this file; take it from ``kr_marcap.universe``.
+is not available from this file at all.
 """
 from __future__ import annotations
 
@@ -49,7 +49,12 @@ import numpy as np
 import pandas as pd
 import python_calamine
 
-RAW_PATH = Path(__file__).resolve().parent / 'raw' / 'Price data.xlsx'
+# The trailing date is the vendor's own build stamp for this export, not the
+# file's mtime; vintages.csv carries it per sheet. A re-pull arrives under its
+# own date and this constant moves to it, so a stale pull cannot be read by
+# accident.
+RAW_PATH = (Path(__file__).resolve().parent / 'raw'
+            / 'fnguide_price_adjclose_20260813.xlsx')
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 PRICE_PATH = CACHE_DIR / 'fnguide_price.parquet'
 # KRX reissues a 6-digit code once its first occupant is gone, and FnGuide keys
@@ -74,9 +79,9 @@ SHEETS = {
 # These indices are into ``CalamineWorkbook.to_python()``, which trims a leading
 # blank row. That is safe here only because this module reads one file and the
 # Korean-locale exports open on a non-blank ``Refresh`` row. The English-locale
-# ``data0*`` exports do start blank, so the same indices would land one row off
-# on those — see README.md, "Common File Structure". The item-code assertion
-# below is what would catch it.
+# ``fnguide_investor_*`` exports do start blank, so the same indices would land
+# one row off on those — see README.md, "Common File Structure". The item-code
+# assertion below is what would catch it.
 _CODE_ROW = 9
 _ITEM_ROW = 12
 _FIRST_DATA_ROW = 15
@@ -137,7 +142,7 @@ def _mark_segments(panel: pd.DataFrame, calendar_path: Path = CALENDAR_PATH) -> 
     threshold: a delisting with no gap means the code kept trading (a holdco
     conversion or market transfer, ``is_genuine == 'N'``), and a gap with no
     delisting is a trading halt, where the resumption return is real and belongs
-    to the same company. On the 2026-08-13 export the rule fires on 58 codes and
+    to the same company. On the 2026-08-13 export the rule fires on 59 codes and
     no ``is_genuine == 'N'`` row falls inside a gap at all, so the genuineness
     filter never has to arbitrate.
 
@@ -185,7 +190,7 @@ def _mark_segments(panel: pd.DataFrame, calendar_path: Path = CALENDAR_PATH) -> 
 
 
 def build_price_cache(raw_path: Path = RAW_PATH, out_path: Path = PRICE_PATH) -> pd.DataFrame:
-    """Parse ``Price data.xlsx`` into ``cache/fnguide_price.parquet`` and return it.
+    """Parse the adjusted-price export into ``cache/fnguide_price.parquet``.
 
     Output columns: ``date, ticker, market, adj_close_pr, adj_close_tr,
     segment`` — one row per (session, ticker) the vendor served a price for,
@@ -194,7 +199,10 @@ def build_price_cache(raw_path: Path = RAW_PATH, out_path: Path = PRICE_PATH) ->
     """
     if not raw_path.exists():
         raise FileNotFoundError(
-            f"{raw_path} not found — unzip 'Price data.zip' into fnguide_data/raw/"
+            f"{raw_path} not found — re-pull 수정주가 / "
+            f"수정주가(현금배당포함) from DataGuide with term_start=20050101 "
+            f"(README §9); a re-pull lands under its own date and RAW_PATH "
+            f"moves with it"
         )
 
     wb = python_calamine.CalamineWorkbook.from_path(raw_path)

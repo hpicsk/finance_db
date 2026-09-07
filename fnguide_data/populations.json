@@ -1,15 +1,19 @@
 {
   "test_fnguide_price_delisted_coverage": {
     "bound": "monotone",
-    "n": 620
+    "n": 625
   },
   "test_fnguide_price_impossible_returns_are_all_inspected": {
     "bound": "monotone",
-    "n": 10798641
+    "n": 10798640
   },
   "test_fnguide_price_segments_break_reissued_codes": {
     "bound": "monotone",
     "n": 10802289
+  },
+  "test_fnguide_sheets_documented_as_populated_carry_data": {
+    "bound": "monotone",
+    "n": 498323
   },
   "test_fnguide_vintage_manifest_matches_disk": {
     "bound": "monotone",

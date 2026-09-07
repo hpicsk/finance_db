@@ -7,7 +7,7 @@
 > "currently_listed" rows in the tables below) describe a state of the
 > directory that no longer exists. The §3–§8 comparisons against
 > `qf_next/investor_data/` remain valid — they're against the root
-> `data0203`–`data0208` files which are still here.
+> `fnguide_investor_*` files which are still here.
 
 ## 1. Dataset Overview
 
@@ -37,7 +37,7 @@
 
 **investor xlsx stocks are a perfect subset of fnguide stocks.** The 3 extra fnguide stocks are from a slightly later download date.
 
-**Survivorship bias — superseded by `DELISTED_COVERAGE.md` (verified 2026-05-28).** An earlier draft of this section concluded the root `data0203`–`data0208` files "exclude the vast majority of stocks delisted over 2000--2026" by comparing the ~3,902-ticker universe against the *full* delisting calendar. That denominator was wrong: it counted ~385 preferred / KONEX / REIT / SPAC / specialty-fund delistings that FnGuide intentionally omits and that return/liquidity studies exclude anyway. Measured against the research target — **KOSPI/KOSDAQ common stock** — these files are **effectively survivorship-bias-free**: 99.8 % of live commons and **91.0 % of genuine common delistings (98.2 % since 2021)** have a column, because this batch was pulled with the "all codes" (상폐 포함) filter. The contrary impression came from the now-removed `raw/currently_listed/` sub-batch (0 % delisted coverage). See `DELISTED_COVERAGE.md` for the per-year breakdown, the ~60 older-delisting purge that is the residual gap, and the ticker-reassignment caveat for annual financials. The `investor_data/` CSV (2,906 stocks) is a common-stock subset and shares this (effectively bias-free) coverage.
+**Survivorship bias — superseded by `DELISTED_COVERAGE.md` (re-measured 2026-08-23).** An earlier draft of this section concluded the root `fnguide_investor_*` files "exclude the vast majority of stocks delisted over 2000--2026" by comparing the ~3,902-ticker universe against the *full* delisting calendar. That denominator was wrong: it counted ~385 preferred / KONEX / REIT / SPAC / specialty-fund delistings that FnGuide intentionally omits and that return/liquidity studies exclude anyway. Measured against the research target — **KOSPI/KOSDAQ common stock** — these files are **effectively survivorship-bias-free**: 99.8 % of live commons and **91.2 % of genuine common delistings (99.2 % since 2021)** have a column, because this batch was pulled with the "all codes" (상폐 포함) filter. The contrary impression came from the now-removed `raw/currently_listed/` sub-batch (0 % delisted coverage). See `DELISTED_COVERAGE.md` for the per-year breakdown, the 55-name older-delisting purge that is the residual gap, and the ticker-reassignment caveat for annual financials. The `investor_data/` CSV (2,906 stocks) is a common-stock subset and shares this (effectively bias-free) coverage.
 
 **Note:** `KOSPI 주가.xlsx` has a separate, smaller stock universe of ~2,311 stocks (KOSPI only, no KOSDAQ). This is expected since KOSDAQ stocks are not included in this price data file.
 
@@ -50,11 +50,11 @@ Dates: 2020-01-02, 2021-06-15, 2022-03-10, 2023-09-05, 2024-06-20, 2025-06-30
 
 | Comparison | fnguide source | investor source | Unit match | Result |
 |---|---|---|---|---|
-| **기관 매수대금** | data0203 `매수대금(기관)` | data1229 `매수대금(기관계)` | 원 = 원 | **30/30 exact match (diff=0)** |
-| **기관 매도대금** | data0204 `매도대금(기관계)` | data1229 `매도대금(기관계)` | 원 = 원 | **30/30 exact match (diff=0)** |
-| **기타법인 매수대금** | data0206 `매수대금(기타법인)` | data1229 `매수대금(기타법인)` | 원 = 원 | **30/30 exact match (diff=0)** |
-| **등록외국인 매수대금** | data0207 `매수대금(등록외국인)` | data1230 `매수대금(등록외국인1)` ×10000 | 원 vs 만원→원 | **30/30 exact match (diff=0)** |
-| **등록외국인 매도대금** | data0207 `매도대금(등록외국인)` | data1230 `매도대금(등록외국인)` ×10000 | 원 vs 만원→원 | **30/30 exact match (diff=0)** |
+| **기관 매수대금** | fnguide_investor_inst-buy_20260214 `매수대금(기관)` | data1229 `매수대금(기관계)` | 원 = 원 | **30/30 exact match (diff=0)** |
+| **기관 매도대금** | fnguide_investor_inst-sell-fin-ins-trust_20260214 `매도대금(기관계)` | data1229 `매도대금(기관계)` | 원 = 원 | **30/30 exact match (diff=0)** |
+| **기타법인 매수대금** | fnguide_investor_pension-corp-retail_20260219 `매수대금(기타법인)` | data1229 `매수대금(기타법인)` | 원 = 원 | **30/30 exact match (diff=0)** |
+| **등록외국인 매수대금** | fnguide_investor_foreign-pe_20260219 `매수대금(등록외국인)` | data1230 `매수대금(등록외국인1)` ×10000 | 원 vs 만원→원 | **30/30 exact match (diff=0)** |
+| **등록외국인 매도대금** | fnguide_investor_foreign-pe_20260219 `매도대금(등록외국인)` | data1230 `매도대금(등록외국인)` ×10000 | 원 vs 만원→원 | **30/30 exact match (diff=0)** |
 
 **All 150 spot checks: 100% match, zero difference.**
 
@@ -62,10 +62,10 @@ Dates: 2020-01-02, 2021-06-15, 2022-03-10, 2023-09-05, 2024-06-20, 2025-06-30
 
 | Aspect | `fnguide_data/` | `investor_data/` |
 |---|---|---|
-| **개인 (Individual)** | Direct data in data0206 | Derived: `전체 - 기관계 - 외국인계 - 기타법인` |
+| **개인 (Individual)** | Direct data in fnguide_investor_pension-corp-retail_20260219 | Derived: `전체 - 기관계 - 외국인계 - 기타법인` |
 | **전체 (Total) 대금** | **Missing from download** (see §4.1) | Amount available (data1230, 만원) |
 | **외국인계 (All Foreigners)** | **Missing from download** (see §4.2) | Available (data1230, 만원) |
-| **전체 (Total) 수량** | Available (data0208, 주) | Not available |
+| **전체 (Total) 수량** | Available (fnguide_investor_govt-total_20260219, 주) | Not available |
 | **외국인 definition** | Separate 등록외국인 + 기타외국인 | Output uses 등록외국인 only (Smart Money) |
 | **Unit consistency** | All files in 원 | Mixed: data1229=원, data1230=만원 |
 | **Header format** | Rows 1-14 metadata, data from row 15 | Same structure (row 9=codes, row 10=names, row 15+=data) |
@@ -73,7 +73,7 @@ Dates: 2020-01-02, 2021-06-15, 2022-03-10, 2023-09-05, 2024-06-20, 2025-06-30
 
 ### 4.1 Missing 전체 거래대금 in `fnguide_data/`
 
-`data0208.xlsx` contains 6 sheets:
+`fnguide_investor_govt-total_20260219.xlsx` contains 6 sheets:
 
 | Sheet | Item Code | Status |
 |---|---|---|
@@ -131,13 +131,13 @@ All individual investor types have both 수량 (volume) and 대금 (amount):
 
 | File | Investor Types | 수량 | 대금 |
 |---|---|---|---|
-| data0203 | 기관 매수 | ✓ | ✓ |
-| data0204 | 기관 매도, 금융투자, 보험, 투신 | ✓ | ✓ |
-| data0205 | 은행, 기타금융 | ✓ | ✓ |
-| data0206 | 연기금, 기타법인, 개인 | ✓ | ✓ |
-| data0207 | 등록외국인, 기타외국인, 사모펀드 | ✓ | ✓ |
-| data0208 | 국가 | ✓ | ✓ |
-| data0208 | **전체** | ✓ | **✗** (computable) |
+| fnguide_investor_inst-buy_20260214 | 기관 매수 | ✓ | ✓ |
+| fnguide_investor_inst-sell-fin-ins-trust_20260214 | 기관 매도, 금융투자, 보험, 투신 | ✓ | ✓ |
+| fnguide_investor_bank-otherfin_20260219 | 은행, 기타금융 | ✓ | ✓ |
+| fnguide_investor_pension-corp-retail_20260219 | 연기금, 기타법인, 개인 | ✓ | ✓ |
+| fnguide_investor_foreign-pe_20260219 | 등록외국인, 기타외국인, 사모펀드 | ✓ | ✓ |
+| fnguide_investor_govt-total_20260219 | 국가 | ✓ | ✓ |
+| fnguide_investor_govt-total_20260219 | **전체** | ✓ | **✗** (computable) |
 
 ## 5. Aggregate Composition
 
@@ -197,7 +197,7 @@ Before 2003-12-01, all foreign investors were under a single code (`9000`). On t
 | 외국인계 aggregate in fnguide | ✗ missing (computable from parts) |
 | 기타외국인 NULL before 2003-12-01 | ✓ (KRX classification introduced on that date) |
 | 사모펀드 NULL before 2008-06-23 | ✓ (KRX classification introduced on that date) |
-| **Survivorship-bias-free universe** | ✓ **Effectively bias-free for KOSPI/KOSDAQ common** — "all codes" export retains delisted names: 99.8 % of live commons, 91.0 % of common delistings (98.2 % since 2021). Residual gap is a ~60-name older-delisting purge + non-common buckets (preferred/KONEX/REIT/fund) that studies exclude anyway. See `DELISTED_COVERAGE.md` (2026-05-28). |
+| **Survivorship-bias-free universe** | ✓ **Effectively bias-free for KOSPI/KOSDAQ common** — "all codes" export retains delisted names: 99.8 % of live commons, 91.2 % of common delistings (99.2 % since 2021). Residual gap is a 55-name older-delisting purge + non-common buckets (preferred/KONEX/REIT/fund) that studies exclude anyway. See `DELISTED_COVERAGE.md` (2026-08-23). |
 
 ## 9. `currently_listed/` Internal Overlap with Root-Level Files
 
@@ -209,7 +209,7 @@ These two files were **byte-for-byte identical** (MD5: `25e2e24e58a86dd4d10b98ff
 
 ### 9.2 Daily vs Monthly Market Cap
 
-| Aspect | `data2_0203.xlsx` 시가총액 sheet | `currently_listed/2_시가총액.xlsx` |
+| Aspect | `fnguide_financials_annual_20260219.xlsx` 시가총액 sheet | `currently_listed/2_시가총액.xlsx` |
 |---|---|---|
 | **Item code** | S410001250 | S410001250 (same) |
 | **Unit** | 백만원 | 백만원 (same) |
@@ -217,15 +217,15 @@ These two files were **byte-for-byte identical** (MD5: `25e2e24e58a86dd4d10b98ff
 | **Stock coverage** | ~3,902 (KOSPI+KOSDAQ combined) | ~2,311 KOSPI + ~1,815 KOSDAQ (separate sheets) |
 | **Date range** | 1999-01 ~ 2026-01 (+ 2026-02-02 current-snapshot row) | 1998-12-28 ~ 2026-03-20 |
 
-The daily market cap in `currently_listed/` supersedes the monthly version for any analysis requiring daily granularity. The monthly data2_0203 version remains useful for its combined KOSPI+KOSDAQ column layout.
+The daily market cap in `currently_listed/` supersedes the monthly version for any analysis requiring daily granularity. The monthly fnguide_financials_annual_20260219 version remains useful for its combined KOSPI+KOSDAQ column layout.
 
 ### 9.3 Operating Profit: IFRS(C) vs IFRS(M)
 
-| Aspect | `data2_0203.xlsx` 영업이익 sheet | `currently_listed/6_영업이익.xlsx` |
+| Aspect | `fnguide_financials_annual_20260219.xlsx` 영업이익 sheet | `currently_listed/6_영업이익.xlsx` |
 |---|---|---|
 | **Kind** | NFS-IFRS(**C**) = consolidated (연결) | NFS-IFRS(**M**) = main entity (별도) |
 | **Item code** | 6000906001 | M000906001 |
-| **Unit** | (원-based, from data2_0203 context) | 천원 (thousands KRW) |
+| **Unit** | (원-based, from fnguide_financials_annual_20260219 context) | 천원 (thousands KRW) |
 | **Stock coverage** | ~3,902 (KOSPI+KOSDAQ combined) | ~2,311 KOSPI + ~1,815 KOSDAQ (separate sheets) |
 
 These are **different accounting bases**, not duplicates. Consolidated (C) includes subsidiary financials; main entity (M) reports the parent company only. Values will differ for any company with subsidiaries. Both are valid and serve different analytical purposes.
@@ -240,7 +240,7 @@ These are **different accounting bases**, not duplicates. Consolidated (C) inclu
 - 14 granular investor categories (can build custom aggregations)
 - 개인 data available directly (no derivation needed)
 - Consistent units (all 원) for investor trading files
-- Annual financials: both consolidated IFRS(C) (data2_0203) and main entity IFRS(M) (currently_listed/5-7)
+- Annual financials: both consolidated IFRS(C) (fnguide_financials_annual_20260219) and main entity IFRS(M) (currently_listed/5-7)
 - Daily KOSPI+KOSDAQ adjusted OHLC prices from 1998 (~2,311 + ~1,815 stocks)
 - Daily market cap, listed shares, floating stock ratio (currently_listed/2-4)
 - Short selling & securities lending data (currently_listed/8-10)
@@ -263,4 +263,4 @@ These are **different accounting bases**, not duplicates. Consolidated (C) inclu
 
 The two missing aggregates in `fnguide_data/` (전체 대금 and 외국인계) were download omissions. Both can be computed from their component parts using the formulas in §5, verified against the 2020-2025 `investor_data` values. All non-zero diffs were exact multiples of 10,000원 — purely 만원 rounding artifacts from the `investor_data` reference, not errors in the computation. The fnguide component sums (all in 원) are in fact the more precise values.
 
-The `currently_listed/` subdirectory (12 files, ~1.67 GB, downloaded 2026-03-23) extends `fnguide_data/` with daily market statistics (market cap, listed shares, floating stock ratio), KOSDAQ price data, market-level trading volume/amount, main-entity (별도) financial statements, and short selling/securities lending data. One file (`0_KOSPI 주가.xlsx`) is an identical copy of the root-level `KOSPI 주가.xlsx`. The daily market cap supersedes the monthly version in `data2_0203` for daily analysis. The financial statements use a different accounting basis (IFRS main entity vs consolidated) and are complementary, not duplicates.
+The `currently_listed/` subdirectory (12 files, ~1.67 GB, downloaded 2026-03-23) extends `fnguide_data/` with daily market statistics (market cap, listed shares, floating stock ratio), KOSDAQ price data, market-level trading volume/amount, main-entity (별도) financial statements, and short selling/securities lending data. One file (`0_KOSPI 주가.xlsx`) is an identical copy of the root-level `KOSPI 주가.xlsx`. The daily market cap supersedes the monthly version in `fnguide_financials_annual_20260219` for daily analysis. The financial statements use a different accounting basis (IFRS main entity vs consolidated) and are complementary, not duplicates.

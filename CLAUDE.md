@@ -56,7 +56,7 @@ and `len(ticker) == 6` (drops warrants / rights / ETNs / ETFs / funds).
   2005+, delisted included. Difference returns within
   `['ticker', 'segment']` — a 6-digit code reissued after its first
   occupant delisted carries both companies in one series, and `segment`
-  is where the handover is marked (58 codes).
+  is where the handover is marked (59 codes).
 - `kr_marcap.adjusted_loader.load_adjusted_panel()` (whole panel) and
   `kr_marcap.adjust.load_adjusted(ticker)` (one ticker, with OHLCV) build
   the same two conventions from openly available sources. That
@@ -67,9 +67,10 @@ and `len(ticker) == 6` (drops warrants / rights / ETNs / ETFs / funds).
   `kr_marcap/CONSTRUCTION.md` for how close it gets (99.977 % / 99.969 %
   of daily returns).
 - FnGuide's only adjusted **open/high/low** is
-  `fnguide_data/raw/0_{KOSPI,KOSDAQ} 주가(상폐제외).xlsx`, pulled under the
-  "delisted excluded" filter — zero delisted coverage by construction, so
-  it is not a research price source. See `fnguide_data/README.md` §10.
+  `fnguide_data/raw/fnguide_price_ohlc_{kospi,kosdaq}_exdelisted_20260323.xlsx`,
+  pulled under the "delisted excluded" filter — zero delisted coverage by
+  construction, so it is not a research price source. See
+  `fnguide_data/README.md` §10.
 - **Vendor exports are not one snapshot.** Every sheet in
   `fnguide_data/raw/` was pulled in its own DataGuide session (2026-02-14
   through 2026-08-13) and carries its own end date and its own ticker

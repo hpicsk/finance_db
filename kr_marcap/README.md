@@ -28,19 +28,19 @@ share counts FnGuide's price export does not carry.
 It does **not** replace `fnguide_data/` for short selling, securities lending,
 floating ratio, investor flow, or financials — marcap doesn't carry those.
 
-marcap is itself effectively survivorship-bias-free (delisted tickers
-remain in `marcap-{year}.parquet` past their delisting date). The pairing
-with fnguide is tight: after filtering marcap to common stock via
-`classify.py`, **99.8 %** of live commons and **98 %** of post-2021
-common-stock delistings have a column in `fnguide_data/raw/data0203`
-(**99.1 %** under `strict=True`; the single remaining post-2021 miss
-is an ordinary fnguide hole, not a trust). The 4 live exceptions are
+marcap is itself effectively survivorship-bias-free (delisted tickers remain
+in `marcap-{year}.parquet` past their delisting date). The pairing with
+fnguide is tight: after filtering marcap to common stock via `classify.py`,
+**99.8 %** of live commons and **99.2 %** of post-2021 common-stock delistings
+have a column in `fnguide_data/raw/fnguide_investor_inst-buy_20260214` (118 /
+119; the single miss is an ordinary fnguide hole, not a trust, and
+`strict=True` no longer moves the figure). The 4 live exceptions are
 infrastructure / real-estate / resource trusts (`088980` 맥쿼리한국인프라투융자회사,
-`415640` KB발해인프라, `094800` 맵스미래에셋맵스리얼티1, `152550` 한국ANKOR유전) —
-call `universe(date, 'common', strict=True)` to drop them and get a set
-that matches fnguide's master table exactly. The `STRICT_COMMON_EXCLUDE`
-list has been audited for completeness across the full 619-delisting
-history; no further trust-like tickers hide in the fnguide gaps. See
+`415640` KB발해인프라, `094800` 맵스미래에셋맵스리얼티1, `152550` 한국ANKOR유전) — call
+`universe(date, 'common', strict=True)` to drop them and get a set that
+matches fnguide's master table exactly. The `STRICT_COMMON_EXCLUDE` list has
+been audited for completeness across the full 625-delisting history; no
+further trust-like tickers hide in the fnguide gaps. See
 [`fnguide_data/DELISTED_COVERAGE.md`](../fnguide_data/DELISTED_COVERAGE.md).
 
 ## ⚠️ Use post-2015 data for Korean stocks

@@ -23,7 +23,7 @@ fnguide_data/currently_listed/*.xlsx
 fnguide_data/raw/*.xlsx
 
 # FnGuide adjusted-price panel (수정주가 + 수정주가(현금배당포함)), regenerable from
-# raw/Price data.xlsx via fnguide_data/price_loader.py
+# raw/fnguide_price_adjclose_20260813.xlsx via fnguide_data/price_loader.py
 fnguide_data/cache/
 
 # The repo root is a container: no data files belong at this level. Backstop in

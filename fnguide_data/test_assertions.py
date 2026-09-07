@@ -16,6 +16,7 @@ each check last read; re-seed it with `--write-populations` after a refresh.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,38 @@ WIN_END = pd.Timestamp("2024-12-31")
 POPULATIONS = Path(__file__).with_name("populations.json")
 
 
+# Which delisted names are ordinary commons. The coverage claim below is about
+# common stock, so the calendar has to be filtered before it can be counted, and
+# the calendar carries only (ticker, name, market) — no security-type column.
+# The rules are KRX's own: a preferred share's code ends in a character other
+# than "0", KONEX is its own market, and SPACs, REITs, ship and mutual funds and
+# ETFs name themselves. First match wins, and the name tests fire only after the
+# code test, so a common whose name merely ends in 우 is not caught.
+_ETF_BRAND_RE = re.compile(
+    r"^(?:KODEX|TIGER|ARIRANG|PLUS|KINDEX|ACE|KBSTAR|RISE|SOL|HANARO|KoAct"
+    r"|KIWOOM|TREX|KOSEF|TIME|ITF|1Q|HK|FOCUS|WON|마이티|에셋플러스|아이엠에셋"
+    r"|더제이|대신|BNK|유진|파워|마이다스|VITA|UNICORN|DAISHIN343|TRUSTON|KCGI)\s",
+    re.IGNORECASE,
+)
+_SPAC_RE = re.compile(r"스팩|SPAC", re.IGNORECASE)
+_REIT_RE = re.compile(r"리츠|REIT", re.IGNORECASE)
+_FUND_RE = re.compile(r"선박투자|MF$")
+
+
+def _is_common(ticker: str, name: str, market: str) -> bool:
+    """True for an ordinary KOSPI / KOSDAQ common stock."""
+    name = str(name).strip()
+    if _ETF_BRAND_RE.match(name) or market == "KONEX":
+        return False
+    if str(ticker).strip()[-1] != "0":
+        return False
+    if _SPAC_RE.search(name) or _REIT_RE.search(name):
+        return False
+    if name.endswith("호") or _FUND_RE.search(name):
+        return False
+    return market in ("KOSPI", "KOSDAQ", "KOSDAQ GLOBAL")
+
+
 class Skipped(Exception):
     """A prerequisite artifact is absent, so this check verified nothing.
 
@@ -43,32 +76,30 @@ class Skipped(Exception):
 
 
 def test_fnguide_price_delisted_coverage():
-    """README.md and kr_marcap/CONSTRUCTION.md both rest on the benchmark being
-    survivorship-bias-free: '616 / 620 (99.4 %)' of genuine common delistings
-    since 2005 carry real prices. A re-pull under DataGuide's 'currently listed'
-    filter would silently drop them all and grade only the easy half of the
-    problem, so the premise is checked, not trusted.
+    """README.md rests on this export being survivorship-bias-free:
+    '622 / 625 (99.5 %)' of genuine common delistings since 2005 carry real
+    prices. A re-pull under DataGuide's 'currently listed' filter would silently
+    drop them all and grade only the easy half of the problem, so the premise is
+    checked, not trusted.
 
-    The figure belongs to `raw/Price data.xlsx` and its own pull date, not to
+    The figure belongs to `raw/fnguide_price_adjclose_20260813.xlsx` and its own
+    pull date, not to
     the directory — the other exports were pulled months earlier against a
     different live universe. See README.md, "Every sheet has its own pull date".
     """
     fp = REPO / "fnguide_data/cache/fnguide_price.parquet"
     if not fp.exists():
         raise Skipped("run fnguide_data.price_loader first")
-    sys.path.insert(0, str(REPO))
-    from kr_marcap.classify import classify_ticker
     have = set(pd.read_parquet(fp, columns=["ticker"])["ticker"].unique())
     cal = pd.read_csv(REPO / "kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
     cal["delisting_date"] = pd.to_datetime(cal["delisting_date"])
     g = cal[(cal["delisting_date"] >= WIN_START) & (cal["is_genuine"] == "Y")].copy()
-    g["kind"] = [classify_ticker(t, n, m)
-                 for t, n, m in zip(g["ticker"], g["name"], g["market"])]
-    gc = g[g["kind"] == "common"]
+    gc = g[[_is_common(t, n, m)
+            for t, n, m in zip(g["ticker"], g["name"], g["market"])]]
     hit = int(gc["ticker"].isin(have).sum())
     assert hit / len(gc) >= 0.99, (
         f"the FnGuide price export is claimed survivorship-bias-free at "
-        f"616/620 (99.4 %) of genuine common delistings since 2005; it now "
+        f"622/625 (99.5 %) of genuine common delistings since 2005; it now "
         f"covers {hit}/{len(gc)} ({hit/len(gc):.1%}) — check the export's "
         f"universe filter was 'all codes' (전체 / 상폐 포함)"
     )
@@ -77,7 +108,7 @@ def test_fnguide_price_delisted_coverage():
 
 def test_fnguide_price_segments_break_reissued_codes():
     """README.md and price_loader.py both claim the panel's `segment` column
-    makes reissued codes safe to difference: '58 codes carry a handover, and
+    makes reissued codes safe to difference: '59 codes carry a handover, and
     every return computed within (ticker, segment) stays inside one company'.
 
     The failure this guards is silent and enormous rather than subtly wrong —
@@ -118,8 +149,8 @@ def test_fnguide_price_segments_break_reissued_codes():
         f"would span two different companies. Rebuild with "
         f"`python -m fnguide_data.price_loader`"
     )
-    assert len(marked) == 58, (
-        f"README.md §9 says '58 codes carry a handover'; the cache now has "
+    assert len(marked) == 59, (
+        f"README.md §9 says '59 codes carry a handover'; the cache now has "
         f"{len(marked)} — re-measure the sentence"
     )
     return (f"{len(marked)} reissued-code handovers, all on a genuine "
@@ -186,11 +217,55 @@ def test_fnguide_vintage_manifest_matches_disk():
             f"{man.term_end.max():%Y-%m-%d}"), len(man)
 
 
+def test_fnguide_sheets_documented_as_populated_carry_data():
+    """README.md §7 documents `fnguide_financials_annual_20260219.xlsx` as eight
+    populated annual sheets
+    plus one 시가총액 sheet that DataGuide returned empty, and the Overview's
+    "NOT available in this dataset" line rests on that emptiness: this package
+    carries no market capitalisation at all, monthly or daily.
+
+    A sheet with a full header block and no values parses successfully and
+    yields an all-NaN frame, so nothing downstream raises on it — an empty pull
+    is discovered by a consumer wondering where its numbers went, which is late.
+    Both directions fail here. An annual sheet that empties on a re-pull is a
+    broken export; 시가총액 filling in is the *good* outcome and still fails,
+    because README.md would then describe a package with no market cap while it
+    has one, and the consumers routed elsewhere for it were routed on that claim.
+    """
+    f = REPO / "fnguide_data/raw/fnguide_financials_annual_20260219.xlsx"
+    if not f.exists():
+        raise Skipped("raw/fnguide_financials_annual_20260219.xlsx not present")
+    populated = ("보통주자본금", "자본잉여금", "이익잉여금", "이연법인세부채",
+                 "자기주식", "자기주식 처분손실", "영업이익", "총자산")
+    cells = {}
+    for sheet in populated + ("시가총액",):
+        block = pd.read_excel(f, sheet_name=sheet, header=None,
+                              engine="calamine").iloc[14:, 1:]
+        cells[sheet] = int(block.notna().sum().sum())
+
+    empty = [s for s in populated if cells[s] == 0]
+    assert not empty, (
+        f"README.md §7 documents {len(populated)} populated annual sheets in "
+        f"fnguide_financials_annual_20260219.xlsx; {empty} came back with no "
+        f"values. A pull that "
+        f"returns an empty grid parses without raising, so nothing else will "
+        f"tell you — re-pull before anything reads them"
+    )
+    assert cells["시가총액"] == 0, (
+        f"README.md §7 records the 시가총액 sheet as empty and the Overview "
+        f"says this package carries no market capitalisation; the sheet now "
+        f"has {cells['시가총액']:,} values. Update both, and revisit every "
+        f"consumer that was sent elsewhere for market cap"
+    )
+    return (f"{len(populated)} annual sheets populated, 시가총액 empty"), sum(cells.values())
+
+
 CHECKS = [
     test_fnguide_price_delisted_coverage,
     test_fnguide_price_segments_break_reissued_codes,
     test_fnguide_price_impossible_returns_are_all_inspected,
     test_fnguide_vintage_manifest_matches_disk,
+    test_fnguide_sheets_documented_as_populated_carry_data,
 ]
 
 
