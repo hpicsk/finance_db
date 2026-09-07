@@ -25,6 +25,16 @@ fi
 # python -m kr_delisted.build_delisting_calendar             # ~30s, no DART
 # python -m kr_delisted.build_is_genuine_overrides           # few min, needs DART key
 
+# ── 1b. dart_bulk — OpenDART 일괄파일 (전 상장사 재무제표) ────────────────
+#    Cadence: after 사업보고서 season (Mar–Apr), and whenever a restatement
+#    matters. Re-running is cheap: unchanged files are skipped by name, and a
+#    newer vintage replaces the old one (the deleted name is appended to
+#    dart_bulk/bulk_vintage_pruned.csv, never dropped).
+#    33 requests for 11 years. The per-company endpoint is ~3,300 and gets the
+#    caller IP banned — see dart_bulk/README.md.
+# python -m dart_bulk.download --years 2015-2025 --reports FY
+# python -m dart_bulk.download --years 2016-2025 --reports FQ,HY,TQ   # 분기 (2016-2024 수집됨)
+
 # ── 2. kr_status — per-source PIT event collectors ────────────────────────
 #    Cadence: see kr_status/README.md. Each writes one parquet to data/,
 #    independent of the others.

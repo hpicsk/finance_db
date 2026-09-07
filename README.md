@@ -17,6 +17,7 @@ refresh runbook, and the ignore policy.
 
 | Package | What it is | Start here |
 |---|---|---|
+| `dart_bulk/` | OpenDART 재무정보 일괄다운로드 archive — every listed company's BS/PL/CF, one zip per (fiscal year, report, statement) | [`README.md`](dart_bulk/README.md) |
 | `fnguide_data/` | FnGuide DataGuide export tree — investor flow, financials, short-selling, and the **adjusted-price benchmark** research reads | [`README.md`](fnguide_data/README.md), [`DELISTED_COVERAGE.md`](fnguide_data/DELISTED_COVERAGE.md) |
 | `kr_delisted/` | Korean delisting calendar (KIND + marcap + DART), 1,386 tickers with a genuine-vs-continuation flag | [`README.md`](kr_delisted/README.md) |
 | `kr_marcap/` | KR OHLCV layer over marcap, plus the open-source reconstruction of FnGuide's 수정주가 and the unified PIT status panel | [`README.md`](kr_marcap/README.md), [`CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md), [`VERIFICATION.md`](kr_marcap/VERIFICATION.md) |
@@ -45,6 +46,9 @@ marcap parquets ─────────────────────�
 KIND scrape ────┤  │
                 │  └─► kr_status/  ─► data/*_events.parquet
 DART API ───────┘                              │
+                                               │
+opendart 일괄파일 ──► dart_bulk/ ──────────────┼──►   dart_bulk.latest_vintages(...)
+  (전 상장사 재무제표)                          │      dart_bulk.open_zip / sheets
                                                ▼
                                     kr_marcap.status.build_panel
                                                │
@@ -75,6 +79,7 @@ seconds after any kr_status run. Dependency-ordered runbook at
 | Raw KR OHLCV / market cap / shares | `kr_marcap.market_loader.load_market_data` over `marcap/data/marcap-YYYY.parquet` |
 | List Korean delisted tickers (with merger vs bankruptcy flag) | `kr_delisted/delisted_loader.py::universe()` |
 | Load one delisted ticker's *raw* (unadjusted) OHLCV | `kr_delisted/delisted_loader.py::load_delisted(ticker)` |
+| Every listed company's financial statements (FY/HY/Q, BS·PL·CF) | `dart_bulk/loader.py::latest_vintages` + `open_zip` / `sheets` — **never** the per-company API for a panel (3,300 calls vs 33) |
 | Investor trading flow (granular, 14 types) | `fnguide_data/raw/fnguide_investor_*.xlsx` (6 files) |
 | Investor trading flow (3-category Smart Money) | `fnguide_data/investor_loader.py::load_investor_flow()` — 기관 / 개인 / 외국인, summed from the `raw/fnguide_investor_*` sheets |
 | Short-selling / lending / free-float | `fnguide_data/raw/fnguide_short-lending-float_20260615.xlsx` |
