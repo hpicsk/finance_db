@@ -85,13 +85,13 @@ def harvest(api_key: str | None = None,
     duration = pd.DateOffset(months=duration_months)
     fetched = pd.Timestamp.now()
 
+    # An unreadable events file is not an empty one, and the difference is
+    # destructive: the write at the end replaces the archive with `rows`, while
+    # the progress file keeps most tickers marked done and so refills almost
+    # none of it. Starting from nothing is what --restart asks for.
     rows: list[dict] = []
     if EVENTS_PATH.exists() and not restart:
-        try:
-            existing = pd.read_parquet(EVENTS_PATH)
-            rows = existing.to_dict("records")
-        except Exception:
-            rows = []
+        rows = pd.read_parquet(EVENTS_PATH).to_dict("records")
 
     n_hits = 0
     for i, row in enumerate(pending, 1):
