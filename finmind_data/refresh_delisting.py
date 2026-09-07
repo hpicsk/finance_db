@@ -18,6 +18,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from .auth import token
+
 HERE = Path(__file__).resolve().parent
 API = "https://api.finmindtrade.com/api/v4/data"
 OUT = HERE / "delisted_universe.parquet"
@@ -29,9 +31,8 @@ _MIN_ROWS = 723
 
 
 def main() -> None:
-    token = (HERE / ".token").read_text().strip()
     r = requests.get(API, params={"dataset": "TaiwanStockDelisting",
-                                  "token": token}, timeout=60)
+                                  "token": token()}, timeout=60)
     r.raise_for_status()
     payload = r.json()
     if payload.get("status") != 200:

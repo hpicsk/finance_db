@@ -49,11 +49,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from .auth import token
 from .window import COVERAGE_START, COVERAGE_END
 
 HERE = Path(__file__).resolve().parent
 API = "https://api.finmindtrade.com/api/v4/data"
-TOKEN = (HERE / ".token").read_text().strip()
 TAPE = HERE / "tape"
 
 TREES = {"ohlcv": "TaiwanStockPrice", "price_adj": "TaiwanStockPriceAdj"}
@@ -116,7 +116,7 @@ def _sessions_missing_from(tree: str) -> pd.DataFrame:
 
 def fetch(dataset: str, date: str) -> pd.DataFrame:
     params = {"dataset": dataset, "start_date": date, "end_date": date,
-              "token": TOKEN}
+              "token": token()}
     for _ in range(6):
         r = requests.get(API, params=params, timeout=180)
         if r.status_code in (402, 429):
@@ -131,6 +131,35 @@ def fetch(dataset: str, date: str) -> pd.DataFrame:
             assert set(df["date"]) == {date}, f"{date}: response spans dates"
         return df
     raise RuntimeError(f"{dataset} {date}: exhausted retries")
+
+
+def _vintage_verdict(sid: str, committed: pd.DataFrame,
+                     snaps: dict[str, pd.DataFrame], dates: list[str]) -> str:
+    """Whether `committed` is at the same factor anchor as today's endpoint.
+
+    Compares every date the file and the snapshots share, which costs no extra
+    request: a stock missing some of the dates almost always holds others.
+
+    ``"same"``       every shared close agrees, so a fetched row can be inserted
+    ``"stale"``      one disagrees, so the file needs re-downloading whole
+    ``"unverified"`` nothing is shared, so the anchor cannot be established
+    """
+    checks = agreed = 0
+    for d in dates:
+        if not len(snaps[d]) or sid not in snaps[d].index:
+            continue
+        mine = committed.loc[committed["date"] == d, "close"]
+        if not len(mine):
+            continue
+        a, b = float(mine.iloc[0]), float(snaps[d].loc[sid, "close"])
+        scale = max(abs(a), abs(b))
+        if scale == 0:
+            continue
+        checks += 1
+        agreed += abs(a - b) / scale <= _VINTAGE_TOL
+    if checks == 0:
+        return "unverified"
+    return "same" if agreed == checks else "stale"
 
 
 def main() -> int:
@@ -184,24 +213,12 @@ def main() -> int:
             n_planned += len(want)
 
             if adjusted:
-                checks = ok = 0
-                for d in dates:
-                    if not len(snaps[d]) or sid not in snaps[d].index:
-                        continue
-                    mine = f.loc[f["date"] == d, "close"]
-                    if not len(mine):
-                        continue
-                    a, b = float(mine.iloc[0]), float(snaps[d].loc[sid, "close"])
-                    scale = max(abs(a), abs(b))
-                    if scale == 0:
-                        continue
-                    checks += 1
-                    ok += abs(a - b) / scale <= _VINTAGE_TOL
-                if checks == 0:
+                verdict = _vintage_verdict(sid, f, snaps, dates)
+                if verdict == "unverified":
                     unverified += len(want)
                     unverified_ids.append(sid)
                     continue
-                if ok != checks:
+                if verdict == "stale":
                     stale += len(want)
                     stale_ids.append(sid)
                     continue

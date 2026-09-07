@@ -23,11 +23,25 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-ROOT = Path("/home/st/research/finance_db/finmind_data")
+ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "download.log"
 API = "https://api.finmindtrade.com/api/v4/data"
 TOKEN_FILE = ROOT / ".token"
-TOKEN = TOKEN_FILE.read_text().strip() if TOKEN_FILE.exists() else ""
+
+
+def token() -> str:
+    """The API token. Raises if `.token` is absent — it is never optional.
+
+    Duplicated from `auth.py` rather than imported: this script runs as
+    `python download.py`, not `python -m`, so it has no package to import a
+    sibling from. The datasets below are sponsor-tier, so a request without the
+    token is refused rather than served a free-tier subset.
+    """
+    if not TOKEN_FILE.exists():
+        raise FileNotFoundError(
+            f"{TOKEN_FILE} is missing — write your FinMind token there "
+            f"(it is gitignored). See finmind_data/README.md.")
+    return TOKEN_FILE.read_text().strip()
 
 DATASETS = {
     # existing (already downloaded for 2,111 stocks)
@@ -79,8 +93,7 @@ def fetch(dataset: str, stock_id: str, start: str, end: str,
         "start_date": start,
         "end_date": end,
     }
-    if TOKEN:
-        params["token"] = TOKEN
+    params["token"] = token()
     backoff = 30.0
     rate_limit_waits = 0
     for attempt in range(max_retries):

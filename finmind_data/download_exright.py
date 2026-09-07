@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path("/home/st/research/finance_db/finmind_data")
+ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "exright_reference.parquet"
 
 URL = ("https://www.twse.com.tw/rwd/zh/exRight/TWT49U"

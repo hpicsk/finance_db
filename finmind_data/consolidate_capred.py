@@ -18,7 +18,7 @@ import pandas as pd
 
 from finmind_data.window import clip
 
-ROOT = Path("/home/st/research/finance_db/finmind_data")
+ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "cap_red"
 OUT = ROOT / "capital_reduction.parquet"
 

@@ -45,12 +45,12 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from .auth import token
 from .window import COVERAGE_START, COVERAGE_END
 
 ROOT = Path(__file__).resolve().parent
 API = "https://api.finmindtrade.com/api/v4/data"
 DATASET = "TaiwanStockSplitPrice"
-TOKEN_FILE = ROOT / ".token"
 OUT = ROOT / "split_reference.parquet"
 
 # The columns adjust.py reads, under the endpoint's own names. `type` is kept
@@ -62,8 +62,7 @@ COLUMNS = ["date", "stock_id", "type", "before_price", "after_price"]
 
 def fetch() -> pd.DataFrame:
     """The whole table. It is market-wide and takes no data_id."""
-    token = TOKEN_FILE.read_text().strip() if TOKEN_FILE.exists() else ""
-    r = requests.get(API, params={"dataset": DATASET, "token": token}, timeout=120)
+    r = requests.get(API, params={"dataset": DATASET, "token": token()}, timeout=120)
     r.raise_for_status()
     payload = r.json()
     rows = payload.get("data")

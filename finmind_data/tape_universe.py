@@ -55,11 +55,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from .auth import token
 from .window import COVERAGE_START, COVERAGE_END
 
 HERE = Path(__file__).resolve().parent
 API = "https://api.finmindtrade.com/api/v4/data"
-TOKEN = (HERE / ".token").read_text().strip()
 TAPE = HERE / "tape"
 OUT = HERE / "tape_universe.parquet"
 
@@ -84,7 +84,7 @@ def fetch_session(date: str) -> pd.DataFrame:
     the union would not show which day it came from.
     """
     params = {"dataset": "TaiwanStockPrice", "start_date": date,
-              "end_date": date, "token": TOKEN}
+              "end_date": date, "token": token()}
     for attempt in range(6):
         try:
             r = requests.get(API, params=params, timeout=180)
@@ -152,7 +152,7 @@ def _registry() -> pd.DataFrame:
     whichever classification the response happened to list first.
     """
     raw = pd.DataFrame(requests.get(
-        API, params={"dataset": "TaiwanStockInfo", "token": TOKEN},
+        API, params={"dataset": "TaiwanStockInfo", "token": token()},
         timeout=180).json()["data"])
     excluded = {"ETF", "ETN", "受益證券", "存託憑證", "臺灣存託憑證",
                 "創新版股票", "創新板股票"}
