@@ -125,6 +125,7 @@ python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEI
 |---|---|
 | `classify.py` | Pure `classify_ticker(code, name, market) → kind`. Returns one of `common / preferred / spac / reit / fund / etf / konex / other`. Run as `__main__` for the smoketest. |
 | `universe.py` | Builds `cache/universe_panel.parquet` (per-ticker membership window + kind). `universe(date, kind)` returns the active set. |
+| `market_loader.py` | `load_market_data(...)` — raw (optionally back-adjusted) `date, ticker, close, volume, market_cap, listed_shares` straight off the marcap parquets, for pipeline code that wants the panel rather than one ticker. |
 | `adjust.py` | Builds `cache/adj_factors.parquet` by compounding the exchange `ChangesRatio` (등락률); the `Stocks`-column ratio is kept only to detect entity-change series breaks. `load_adjusted(ticker)` returns adjusted OHLCV for one name (`total_return=True` adds the dividend-reinvested series; `reliable_only=True` clips pre-2015). |
 | `adjusted_loader.py` | `load_adjusted_panel()` — both adjusted-close conventions for the whole panel (`date, code, raw_close, adj_close, adj_close_tr, sess`), the vectorised counterpart to `load_adjusted(ticker, total_return=True)` and what the FnGuide gate compares. This package's price loader; `fnguide_data.price_loader` is the other project's. |
 | `dividend_events.py` | Builds `cache/dividend_events.parquet` from SEIBro 배당내역 — one row per dividend *event* (배정기준일, 배당구분, 주당배당금), with the 배당락일 derived under KRX T+2. No API key. Consumed by `load_adjusted(..., total_return=True)`. |
@@ -132,9 +133,38 @@ python -m kr_marcap.seibro_probe hole 20041001 20041231   # diagnose a short SEI
 | `validate_dividend_events.py` | Re-runs the five checks behind the total-return claims: ex-date localisation, drop-off robustness, the December artifact, event placement, and the DART reconciliation. Read-only, ~1 min. |
 | `validate_against_fnguide.py` | The outside gate: both conventions against FnGuide's own 수정주가 / 수정주가(현금배당포함) on every shared ticker-day, scored on log returns against a rounding bar and a 10 bp bar, with each disagreeing day labelled by cause. Read-only, ~5 min. See [`CONSTRUCTION.md`](CONSTRUCTION.md). |
 | `seibro_probe.py` | Raw SEIBro endpoint inspection — `raw` (every field of a window, incl. the ones the loader drops), `count` (LIST_CNT vs rows served, per quarter), `hole` (bisect for the first row offset the server refuses). For diagnosing a build, not for building. |
+| `status/` | The PIT-status consumer layer, documented in [its own section](#status--the-point-in-time-tradable-universe) below. `build_panel` unifies the `kr_status` event parquets; `tradable_universe(date)` applies the status exclusions and the price / marcap / ADV liquidity filters on top of `universe(date, 'common')`. |
 
 Why any of these checks establish anything — and the date-demeaning trap that
 produced a confident wrong number — is in [`VERIFICATION.md`](VERIFICATION.md).
+
+## `status/` — the point-in-time tradable universe
+
+`universe(date, 'common')` answers *what was listed*; `status/` answers *what
+was tradable*, which is the narrower question a backtest actually needs. It is
+the consumer side of the `kr_status` collectors — that package writes one
+event parquet per KRX/DART signal, and nothing here collects.
+
+```python
+from kr_marcap.status import tradable_universe, TradableConfig
+tradable_universe('2015-06-15')                        # defaults
+tradable_universe('2015-06-15', price_min_won=500)     # override one filter
+tradable_universe('2015-06-15', config=TradableConfig(exclude_audit_qualified=False))
+```
+
+| Part | What it does |
+|---|---|
+| `status/build_panel.py` | Concatenates every `kr_status/data/*_events.parquet` carrying the `STATUS_COLUMNS` schema into one `status/events.parquet`. A `*_events.parquet` without a `status` column is not a status source and is skipped, so a collector writing some other event table into the same directory does not corrupt the panel. Re-run after any collector. |
+| `status/query.py` | `TradableConfig` + `tradable_universe(date, ...)` + `load_events()`. Applies four status exclusions — admin (관리종목), audit_qualified (감사의견 비적정), insincere (불성실공시), halt (거래정지) — then the price / market-cap / ADV liquidity floors. |
+
+The panel also carries `alert` (투자주의환기), but it is informational: there is
+no `exclude_alert` knob and `tradable_universe` does not filter on it.
+
+Rebuild after any collector run — it is a pure local read and takes seconds:
+
+```bash
+python -m kr_marcap.status.build_panel
+```
 
 ## What "common stock" means here
 
