@@ -199,13 +199,18 @@ def reconstruct_one(events: pd.DataFrame, snaps: pd.DataFrame, index_name: str):
         if t and t not in name_map and pd.notna(n) and n:
             name_map[t] = n
 
-    # 종목별 이벤트 미리 그룹화
+    # group the events by ticker once, rather than filtering per ticker
     e_by_ticker = {t: g.sort_values("date") for t, g in e.groupby("ticker")}
 
     intervals = []
     synthetic = []
 
-    for t in all_tickers:
+    # sorted(), not `all_tickers`: str hashing is randomised per process, so
+    # iterating the set writes index_reconstruction_synthetic.csv in a different
+    # row order on every run. `intervals` is sorted before it is written and
+    # hides this; the synthetic log is not, and a re-run then shows up as a diff
+    # against the committed artifact with nothing actually changed.
+    for t in sorted(all_tickers):
         timeline = _build_ticker_timeline(t, e_by_ticker, snap_dates, snap_state)
         state, in_date, in_source = None, None, None
 
