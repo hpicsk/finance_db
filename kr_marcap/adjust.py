@@ -239,7 +239,6 @@ def build_adjustment_factors(
         & (np.abs(df['ChangesRatio'].to_numpy()) > 1.0) & no_share_change
     )
 
-    one_plus_raw = 1.0 + df['raw_ret'].to_numpy()
     gross_cr = 1.0 + df['ChangesRatio'].to_numpy() / 100.0
 
     # 거래재개 administrative 기준가 reset — detected against the KRX 수정주가 oracle.

@@ -102,9 +102,7 @@ kr_marcap/cache/*
 
 # krx_supplement regenerable bulk output (collect_*.py rebuilds these; the
 # small index_* files and the 27 MB sector_mapping.parquet stay tracked).
-# sector_mapping.csv is a 584 MB redundant twin of sector_mapping.parquet;
 # foreign_ownership_daily is 14.6k daily parquets (613 MB).
-krx_supplement/output/sector_mapping.csv
 krx_supplement/output/foreign_ownership_daily/
 
 # =============================================================================

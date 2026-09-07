@@ -244,11 +244,11 @@ def main(argv=None) -> int:
     print(f"[1/3] POST KIND  fromDate={args.from_date} toDate={args.to_date}", file=sys.stderr)
     html = fetch_delisting_table(sess, args.from_date, args.to_date)
 
-    print(f"[2/3] parse KIND + foreign-ticker lookups", file=sys.stderr)
+    print("[2/3] parse KIND + foreign-ticker lookups", file=sys.stderr)
     rows = parse_rows(html, sess)
 
     if not args.no_proxy:
-        print(f"[3/3] scan marcap for preferred-share proxies", file=sys.stderr)
+        print("[3/3] scan marcap for preferred-share proxies", file=sys.stderr)
         kind_tickers = {r["ticker"] for r in rows}
         proxy_rows = scan_marcap_proxies(kind_tickers, start_date=args.from_date)
         rows.extend(proxy_rows)

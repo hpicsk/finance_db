@@ -26,7 +26,6 @@ the panel, so a re-run collector is never silently ignored.  See
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path

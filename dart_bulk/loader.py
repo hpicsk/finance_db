@@ -18,6 +18,10 @@ import re
 import sys
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:                      # pandas stays out of the import path;
+    import pandas as pd                # only coverage() needs it, at the call.
 
 HERE = Path(__file__).resolve().parent
 BULK_DIR = HERE / "data" / "bulk"

@@ -175,7 +175,6 @@ def main() -> None:
     df.to_parquet(args.output, index=False)
 
     n = len(df)
-    n_conf = df.confirmed.sum()
     # Exclude no-corp-code rows from the rate denominator — we never queried DART for them
     queryable = df[df.note == ""]
     n_q = len(queryable)
@@ -185,7 +184,7 @@ def main() -> None:
     if n_q > 0:
         print(f"DART-substantiated (cause filings in ±14d window):  {n_q_conf} / {n_q}  ({n_q_conf/n_q:.1%})")
     else:
-        print(f"DART-substantiated (cause filings in ±14d window):  0 / 0  (N/A)")
+        print("DART-substantiated (cause filings in ±14d window):  0 / 0  (N/A)")
     print()
     print("By halt duration bucket (queryable only):")
     queryable = queryable.copy()
