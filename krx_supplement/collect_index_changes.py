@@ -1,38 +1,31 @@
-"""
-collect_index_changes.py
-------------------------
-KOSPI 200 / KOSDAQ 150 구성종목 변경이력 (정확한 편입/편출 이벤트) 수집기
-============================================================================
-KRX index.krx.co.kr → 구성종목변경내역 페이지의 backing JSON API를 호출.
+"""KOSPI 200 / KOSDAQ 150 구성종목 변경내역 — the exchange's own event log.
 
-## 왜 이 스크립트?
-    collect_index_members.py 는 월말(또는 일별) 스냅샷을 쌓아 리밸런싱 이벤트를
-    근사한다. 이 스크립트는 KRX가 직접 제공하는 **변경 이벤트 로그**를 가져온다:
+`collect_index_members.py` stacks month-end (or daily) snapshots and infers a
+rebalancing from the difference between two of them. This script asks KRX for
+the change events themselves, which it publishes:
 
-        반영일 (appl_dd) | 편입종목 (transschl) | 제외종목 (excld)
+    반영일 (``appl_dd``) | 편입종목 (``transschl``) | 제외종목 (``excld``)
 
-    한 번의 호출로 전체 기간(KOSPI200: 2000-04-12 ~ 현재, KOSDAQ150: 2015-07~ 현재)
-    데이터를 받아온다. 로그인 불필요.
+One call returns the whole history — KOSPI200 from 2000-04-12, KOSDAQ150 from
+2015-07 — and needs no login, unlike the membership endpoint.
 
-## 데이터 소스
+Source
     https://index.krx.co.kr/contents/MKD/03/0304/03040101/MKD03040101T3.jsp
-    (구성종목 탭 → 구성종목변경내역 라디오 버튼)
+    (the 구성종목 tab, 구성종목변경내역 radio button), whose backing API is
 
-    Backing API:
-      GET  /contents/COM/GenerateOTP.jspx?bld=...&name=form  → OTP code
-      POST /contents/MKD/99/MKD99000001.jspx with code+form  → JSON
+      GET  /contents/COM/GenerateOTP.jspx?bld=...&name=form  -> OTP code
+      POST /contents/MKD/99/MKD99000001.jspx with code+form  -> JSON
 
-## 출력 (output/index_changes.parquet)
-    | date    | index       | action  | isin            | ticker  | name        |
-    | 2025-12-29 | 코스피 200 | ADD     | KR7071970008    | 071970  | HD현대마린엔진 |
-    | 2025-12-29 | 코스피 200 | REMOVE  | KR7042670000    | 042670  | HD현대인프라코어 |
+Output (``output/index_changes.parquet``)
+    | date       | index      | action | isin         | ticker | name           |
+    | 2025-12-29 | 코스피 200 | ADD    | KR7071970008 | 071970 | HD현대마린엔진 |
+    | 2025-12-29 | 코스피 200 | REMOVE | KR7042670000 | 042670 | HD현대인프라코어 |
 
-    한 (반영일) 이벤트가 ADD/REMOVE 양쪽 모두 있으면 2행으로 분해된다.
-    상장폐지 등 단방향 이벤트는 한쪽만 채워진 상태로 들어온다.
+    An event carrying both an entry and an exit becomes two rows. A one-sided
+    event — a delisting, say — arrives with only its own side filled.
 
-## 사용법
-    python collect_index_changes.py                       # KOSPI200 + KOSDAQ150 전체
-    python collect_index_changes.py --start 20200101      # 특정 시작일부터
+    python collect_index_changes.py                  # both indices, whole history
+    python collect_index_changes.py --start 20200101
 """
 
 import argparse
@@ -60,7 +53,7 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
 
-# ind_tp_cd, idx_ind_cd, idx_id, idxCd (URL 표시용)
+# ind_tp_cd, idx_ind_cd, idx_id, idxCd (the last is for the display URL)
 INDEX_TARGETS: Dict[str, Tuple[str, str, str, str]] = {
     "코스피 200": ("1", "028", "K2G01P", "1028"),
     "코스닥 150": ("2", "203", "Q2C01P", "2203"),
@@ -179,7 +172,7 @@ def collect_index_changes(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KOSPI200/KOSDAQ150 구성종목 변경이력 수집기")
+    parser = argparse.ArgumentParser(description="KOSPI200/KOSDAQ150 constituent-change collector")
     parser.add_argument("--start", default="19981228")
     parser.add_argument("--end",   default=DEFAULT_END)
     parser.add_argument("--delay", default=DEFAULT_DELAY, type=float)

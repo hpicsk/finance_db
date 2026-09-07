@@ -1,27 +1,27 @@
-"""
-collect_foreign_ownership.py
-----------------------------
-KRX 외국인보유 비율 (MDCSTAT03701) 일별 스냅샷 수집기 — issue #4 regressor용.
+"""Daily snapshots of KRX foreign ownership (외국인보유 비율, MDCSTAT03701).
 
-KRX의 외국인보유량(개별종목) - 전종목 엔드포인트를 호출해 trdDd 시점에 거래된
-모든 종목의 외국인 보유 정보를 받아온다. KRX edge가 로그인 세션을 요구하므로
-pykrx의 인증 세션 (`pykrx.website.comm.auth`) 을 그대로 재사용한다 — 환경변수
-KRX_ID / KRX_PW 필요.
+Calls KRX's 외국인보유량(개별종목) all-issues endpoint, which returns the
+foreign holding of every issue that traded on ``trdDd``. The endpoint sits
+behind a login, so pykrx's authenticated session
+(``pykrx.website.comm.auth``) is reused as-is — set ``KRX_ID`` and ``KRX_PW``.
 
-## 시장 코드
-    STK = 유가증권 (KOSPI), KSQ = 코스닥 (KOSDAQ), KNX = 코넥스 (KONEX, 2013-07-01~)
+Market codes
+    ``STK`` 유가증권 (KOSPI), ``KSQ`` 코스닥 (KOSDAQ),
+    ``KNX`` 코넥스 (KONEX, from 2013-07-01)
 
-## 출력 (year-partitioned, 재실행 안전)
-    output/foreign_ownership_daily/year=YYYY/{YYYYMMDD}_{MKT}.parquet
+Output, partitioned by year and safe to re-run
+    ``output/foreign_ownership_daily/year=YYYY/{YYYYMMDD}_{MKT}.parquet``
 
-    한 파일 = 한 (날짜, 시장) 의 전종목 스냅샷.  파일이 이미 있으면 스킵하므로
-    중단/재개 가능.  비거래일은 0-row parquet 으로 기록되어 재시도되지 않는다.
+    One file is one (date, market) snapshot of every issue. An existing file is
+    skipped, so an interrupted sweep resumes where it stopped. A non-trading day
+    is written as a zero-row parquet, which is what stops it being retried on
+    every later pass.
 
-## 컬럼
-    ticker, name, shares_outstanding, foreign_held, foreign_pct,
-    foreign_limit_qty, foreign_exhaustion_pct, trade_date, market
+Columns
+    ``ticker``, ``name``, ``shares_outstanding``, ``foreign_held``,
+    ``foreign_pct``, ``foreign_limit_qty``, ``foreign_exhaustion_pct``,
+    ``trade_date``, ``market``
 
-## 사용법
     KRX_ID=… KRX_PW=… python -m krx_supplement.collect_foreign_ownership
     KRX_ID=… KRX_PW=… python -m krx_supplement.collect_foreign_ownership \
         --start 20200101 --end 20200131 --markets STK,KSQ

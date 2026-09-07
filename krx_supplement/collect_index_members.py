@@ -1,35 +1,30 @@
-"""
-collect_index_members.py
-------------------------
-KOSPI200 / KOSDAQ150 일별 구성종목 수집기
-==========================================
-KRX [지수구성종목] API → 특정 날짜의 인덱스 구성종목 리스트 수집.
+"""Index membership on a given date, from KRX's 지수구성종목 endpoint.
 
-## 필수 조건
+Collects the constituent list of KOSPI200 / KOSDAQ150 for each date in a range.
+The endpoint sits behind a free data.krx.co.kr account:
+
     export KRX_ID="your_id"
     export KRX_PW="your_password"
 
-## 제공 컬럼
-    date    : 기준일 (datetime)
-    index   : 인덱스명 (코스피 200 / 코스닥 150)
-    ticker  : 6자리 종목코드
-    name    : 종목약칭
+Columns
+    ``date``    the date the membership is quoted as of (datetime)
+    ``index``   the index name (코스피 200 / 코스닥 150)
+    ``ticker``  6-digit issue code
+    ``name``    short issue name
 
-## 인덱스 코드 (KRX 내부)
-    코스피 200  : group_id='1', ind_idx2='028'
-    코스닥 150  : group_id='2', ind_idx2='203'
-    코스피 100  : group_id='1', ind_idx2='034'
-    코스피 50   : group_id='1', ind_idx2='035'
-    KRX 300     : group_id='4', ind_idx2='106'
+Index codes, which are KRX-internal and not published as a table
+    코스피 200  ``group_id='1'``, ``ind_idx2='028'``
+    코스닥 150  ``group_id='2'``, ``ind_idx2='203'``
+    코스피 100  ``group_id='1'``, ``ind_idx2='034'``
+    코스피 50   ``group_id='1'``, ``ind_idx2='035'``
+    KRX 300     ``group_id='4'``, ``ind_idx2='106'``
 
-## 출시일 참고
-    KOSPI200  : 1994-06-15
-    KOSDAQ150 : 2015-07-07
+Launch dates, before which a query returns nothing rather than failing
+    KOSPI200 1994-06-15, KOSDAQ150 2015-07-07
 
-## 사용법
-    python collect_index_members.py                    # 월말, 2001~현재
-    python collect_index_members.py --freq weekly      # 주별
-    python collect_index_members.py --freq daily       # 일별 (느림)
+    python collect_index_members.py                 # month-end, 2001 to now
+    python collect_index_members.py --freq weekly
+    python collect_index_members.py --freq daily    # slow
 """
 
 import argparse
@@ -47,12 +42,12 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # -----------------------------------------------------------------------
-# 인덱스 정의: { 표시명: (group_id, ind_idx2) }
+# { display name: (group_id, ind_idx2) }
 # -----------------------------------------------------------------------
 INDEX_TARGETS: Dict[str, Tuple[str, str]] = {
     "코스피 200": ("1", "028"),
     "코스닥 150": ("2", "203"),
-    # 필요 시 추가:
+    # add as needed:
     # "코스피 100": ("1", "034"),
     # "코스피 50":  ("1", "035"),
     # "KRX 300":    ("4", "106"),
@@ -63,15 +58,15 @@ def fetch_index_members(
     date: str, index_name: str, group_id: str, ind_idx2: str
 ) -> pd.DataFrame:
     """
-    특정 날짜의 인덱스 구성종목 조회.
-    pykrx 지수구성종목 내부 클래스 사용.
+    One date's constituent list for one index.
+    Uses pykrx's internal 지수구성종목 class.
     """
     from pykrx.website.krx.market.core import 지수구성종목
 
     try:
         df = 지수구성종목().fetch(date, ind_idx2, group_id)
     except Exception as e:
-        logger.warning("지수구성종목 오류 %s %s: %s", index_name, date, e)
+        logger.warning("지수구성종목 failed for %s %s: %s", index_name, date, e)
         return pd.DataFrame()
 
     if df is None or df.empty:
@@ -83,7 +78,7 @@ def fetch_index_members(
     })
 
     if "ticker" not in df.columns:
-        logger.warning("ticker 컬럼 없음: %s %s, cols=%s",
+        logger.warning("no ticker column: %s %s, cols=%s",
                        index_name, date, df.columns.tolist())
         return pd.DataFrame()
 
@@ -109,7 +104,7 @@ def collect_index_members(
         targets = INDEX_TARGETS
 
     dates = trading_dates(start, end, freq)
-    logger.info("대상 날짜: %d개  (%s ~ %s, freq=%s)", len(dates), dates[0], dates[-1], freq)
+    logger.info("dates to collect: %d  (%s..%s, freq=%s)", len(dates), dates[0], dates[-1], freq)
 
     existing = pd.DataFrame()
     done_keys: set = set()
@@ -121,7 +116,7 @@ def collect_index_members(
             else existing["date"].astype(str)
         )
         done_keys = set(zip(_dates, existing["index"]))
-        logger.info("이어서: 완료 %d (date,index) 조합", len(done_keys))
+        logger.info("resuming: %d (date, index) pairs already done", len(done_keys))
 
     frames   = [existing] if not existing.empty else []
     save_every = 30
@@ -140,19 +135,19 @@ def collect_index_members(
             df = fetch_index_members(date, idx_name, group_id, ind_idx2)
 
             if df.empty:
-                logger.debug("  → 빈 결과 (미출시 또는 데이터 없음)")
+                logger.debug("  -> empty (index not launched yet, or no data)")
             else:
-                logger.info("  → %d 종목", len(df))
+                logger.info("  -> %d issues", len(df))
                 frames.append(df)
 
             time.sleep(delay)
 
         if date_count % save_every == 0 and frames:
             pd.concat(frames, ignore_index=True).to_parquet(output_path, index=False)
-            logger.info("  [체크포인트 저장]")
+            logger.info("  [checkpoint written]")
 
     if not frames:
-        logger.error("수집된 데이터 없음")
+        logger.error("nothing collected")
         return pd.DataFrame()
 
     result = pd.concat(frames, ignore_index=True)
@@ -161,12 +156,12 @@ def collect_index_members(
     result = result.sort_values(["index","date","ticker"]).reset_index(drop=True)
 
     save_with_csv(result, output_path)
-    logger.info("저장 완료: %s  (%d 행)", output_path, len(result))
+    logger.info("written: %s  (%d rows)", output_path, len(result))
     return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KOSPI200/KOSDAQ150 구성종목 수집기")
+    parser = argparse.ArgumentParser(description="KOSPI200/KOSDAQ150 constituent collector")
     parser.add_argument("--start",     default="19940615")
     parser.add_argument("--end",       default=DEFAULT_END)
     parser.add_argument("--freq",      default="monthly",

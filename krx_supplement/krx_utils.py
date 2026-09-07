@@ -1,13 +1,12 @@
-"""
-krx_utils.py
-------------
-공통 유틸리티 — 4개 수집/재구성 스크립트가 공유하는 스캐폴딩.
+"""Scaffolding the collectors and the reconstruction script share.
 
-- setup_logging  : 동일한 logging.basicConfig
-- trading_dates  : start/end/freq → YYYYMMDD 문자열 리스트
-- save_with_csv  : parquet + utf-8-sig csv 미러 동시 저장
-- DEFAULT_DELAY  : KRX 요청 간 기본 sleep
-- DEFAULT_END    : --end CLI 기본값 (의미 없는 drift 방지)
+- ``setup_logging``  one ``logging.basicConfig`` for every script
+- ``trading_dates``  start/end/freq -> a list of ``YYYYMMDD`` strings
+- ``save_with_csv``  parquet plus a utf-8-sig csv mirror, written together
+- ``DEFAULT_DELAY``  seconds to sleep between KRX requests
+- ``DEFAULT_END``    the ``--end`` default, pinned so two runs cover the same
+  span; taking today's date instead would make the output drift with the day
+  it was collected on.
 """
 
 import logging

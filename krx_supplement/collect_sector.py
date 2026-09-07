@@ -1,32 +1,27 @@
-"""
-collect_sector.py
------------------
-전 종목 일별 업종 맵핑 수집기
-================================
-KRX [업종분류현황] API → 특정 날짜의 전 종목 업종 스냅샷을 날짜 범위에 걸쳐 수집.
+"""Sector of every issue on a given date, from KRX's 업종분류현황 endpoint.
 
-## 필수 조건
-    환경변수 KRX_ID, KRX_PW 설정 필요 (data.krx.co.kr 무료 계정)
+Takes one all-issues sector snapshot per date across a range. The endpoint
+sits behind a free data.krx.co.kr account:
+
     export KRX_ID="your_id"
     export KRX_PW="your_password"
 
-## 제공 컬럼
-    date        : 조회 기준일 (datetime)
-    ticker      : 6자리 종목코드 (e.g. 005930)
-    name        : 종목약칭
-    market      : KOSPI / KOSDAQ
-    sector_krx  : KRX 거래소 업종명
+Columns
+    ``date``        the date the snapshot is quoted as of (datetime)
+    ``ticker``      6-digit issue code (e.g. 005930)
+    ``name``        short issue name
+    ``market``      KOSPI / KOSDAQ
+    ``sector_krx``  the exchange's own sector name
 
-## 상장폐지 포함 방식
-    날짜별 스냅샷 = 해당 날짜 상장 종목만 반환
-    → 시계열로 쌓으면 폐지 전 날짜까지의 데이터가 자연스럽게 포함됨
+**Delisted issues are covered without asking for them.** Each snapshot returns
+only the issues listed on its own date, so stacking the dates into a series
+carries a delisted name up to the date it left, and no survivorship overlay is
+needed on top.
 
-## 사용법
-    # 권장: 2005~ 영업일별 (현재 output/sector_mapping.parquet 와 동일 설정)
+    # what output/sector_mapping.parquet was built with
     python collect_sector.py --start 20050101 --freq daily
 
-    # 기타 옵션
-    python collect_sector.py                                              # 인자 기본값 (2015~, 월말 스냅샷)
+    python collect_sector.py     # defaults: 2015 onward, month-end snapshots
     python collect_sector.py --start 20000104 --end 20260320 --freq monthly
 """
 
@@ -36,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging, trading_dates
+from krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging, trading_dates
 
 logger = setup_logging()
 
@@ -51,8 +46,8 @@ MARKET_CODES = {
 
 def fetch_sector_snapshot(date: str) -> pd.DataFrame:
     """
-    pykrx 내부 클래스를 사용해 특정 날짜의 전 종목 업종 맵핑 조회.
-    KOSPI + KOSDAQ 합산.
+    One date's sector mapping for every issue, via pykrx's internal class.
+    KOSPI and KOSDAQ are fetched separately and concatenated.
     """
     from pykrx.website.krx.market.core import 업종분류현황
 
@@ -61,7 +56,7 @@ def fetch_sector_snapshot(date: str) -> pd.DataFrame:
         try:
             df = 업종분류현황().fetch(date, mktId)
         except Exception as e:
-            logger.warning("업종분류현황 오류 %s %s: %s", date, market_name, e)
+            logger.warning("업종분류현황 failed for %s %s: %s", date, market_name, e)
             continue
 
         if df is None or df.empty:
@@ -98,7 +93,7 @@ def collect_sector_mapping(
     delay: float = DEFAULT_DELAY,
 ) -> pd.DataFrame:
     dates = trading_dates(start, end, freq)
-    logger.info("대상 날짜: %d개  (%s ~ %s, freq=%s)", len(dates), dates[0], dates[-1], freq)
+    logger.info("dates to collect: %d  (%s..%s, freq=%s)", len(dates), dates[0], dates[-1], freq)
 
     existing = pd.DataFrame()
     if resume and output_path.exists():
@@ -107,7 +102,7 @@ def collect_sector_mapping(
             pd.to_datetime(existing["date"]).dt.strftime("%Y%m%d").unique()
         )
         dates = [d for d in dates if d not in done]
-        logger.info("이어서 수집: %d개 남음 (완료 %d개)", len(dates), len(done))
+        logger.info("resuming: %d dates left (%d already done)", len(dates), len(done))
 
     frames = [existing] if not existing.empty else []
     save_every = 20
@@ -117,33 +112,37 @@ def collect_sector_mapping(
         df = fetch_sector_snapshot(date)
 
         if df.empty:
-            logger.warning("빈 결과: %s — 스킵", date)
+            logger.warning("empty result for %s — skipped", date)
             time.sleep(delay * 2)
             continue
 
         frames.append(df)
-        logger.info("  → %d 종목", len(df))
+        logger.info("  -> %d issues", len(df))
 
         if i % save_every == 0:
             pd.concat(frames, ignore_index=True).to_parquet(output_path, index=False)
-            logger.info("  [체크포인트 저장]")
+            logger.info("  [checkpoint written]")
 
         time.sleep(delay)
 
     if not frames:
-        logger.error("수집된 데이터 없음")
+        logger.error("nothing collected")
         return pd.DataFrame()
 
     result = pd.concat(frames, ignore_index=True)
     result["date"] = pd.to_datetime(result["date"].astype(str), format="%Y%m%d", errors="coerce")
     result = result.sort_values(["date","market","ticker"]).reset_index(drop=True)
-    save_with_csv(result, output_path)
-    logger.info("저장 완료: %s  (%d 행)", output_path, len(result))
+    # parquet only, without the csv mirror `save_with_csv` writes: a
+    # business-daily sweep is ~12 million rows, so the mirror is a 584 MB
+    # duplicate that nothing reads. The index_* collectors keep the mirror
+    # because their output is small and the csv is tracked.
+    result.to_parquet(output_path, index=False)
+    logger.info("written: %s  (%d rows)", output_path, len(result))
     return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KRX 업종 맵핑 수집기")
+    parser = argparse.ArgumentParser(description="KRX sector-mapping collector")
     parser.add_argument("--start",     default="20150101")
     parser.add_argument("--end",       default=DEFAULT_END)
     parser.add_argument("--freq",      default="monthly",

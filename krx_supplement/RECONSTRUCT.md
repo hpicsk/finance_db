@@ -1,115 +1,121 @@
-# 일별 인덱스 멤버십 패널 재구성
+# Reconstructing the daily index membership panel
 
-`reconstruct_index_panel.py` 가 `index_members.parquet` (월말 스냅샷) 과
-`index_changes.parquet` (편입/편출 이벤트 로그) 를 결합해 **일별 영업일 패널**과
-**종목별 편입 구간(intervals)** 을 만든다. 코스피 200, 코스닥 150 모두 지원.
+`reconstruct_index_panel.py` combines `index_members.parquet` (month-end
+snapshots) with `index_changes.parquet` (the entry/exit event log) into a
+**business-daily panel** and a set of **per-ticker membership spells**. Both
+코스피 200 and 코스닥 150 are supported.
 
 ---
 
-## 입력 파일
+## Inputs
 
-| 파일 | 생성 스크립트 | 역할 |
+| File | Written by | Role |
 |---|---|---|
-| `output/index_members.parquet` | `collect_index_members.py` | 월말 스냅샷 (ground truth) |
-| `output/index_changes.parquet` | `collect_index_changes.py` | 정확한 편입/편출 이벤트 (적시성) |
+| `output/index_members.parquet` | `collect_index_members.py` | month-end snapshots (ground truth) |
+| `output/index_changes.parquet` | `collect_index_changes.py` | the exact entry/exit events (timing) |
 
-스냅샷은 *맞는지(정확)*, 이벤트는 *언제(타이밍)* 를 담당한다.
-재구성 로직은 두 데이터의 강점을 결합한다.
-
----
-
-## 왜 단순 결합이 안 되는가
-
-KRX 의 `index_changes` 이벤트 로그는 **불완전**하다. 검증 결과:
-
-- KOSPI 200: 152 개 ISIN 이 ADD 만 있고 REMOVE 가 없음
-- KOSDAQ 150: 동일 패턴 다수
-- 결과적으로 이벤트 로그만 forward-roll 하면 anchor 시점에 12 (KOSPI200) /
-  5 (KOSDAQ150) 종목의 *유령(ghost)* 이 잡힌다 (이미 사라진 종목이 계속 멤버로 남음).
-
-미기록 사례 예시:
-- `008810 LG종금` — 1999-06-11 ADD 후 합병/상폐로 사라짐, REMOVE 미기록
-- `068270 셀트리온` — 2018 코스닥에서 코스피 이전상장, 코스닥 150 에서
-  자동 빠짐, 별도 REMOVE 미기록
-- `035720 카카오` — 2017 코스닥→코스피 이전상장, 동일 이슈
-- `036420 제이콘텐트리` — 분할/합병 과정에서 이름 변경 시 REMOVE 미기록
-
-→ **스냅샷을 ground truth 로 신뢰**하고, 이벤트는 정확한 일자를 위한 보조로만
-사용한다. 스냅샷 diff 로 explained 안 되는 변경은 **합성 이벤트(synthetic)** 를
-스냅샷 일자에 주입한다.
+The snapshots say *who*; the events say *when*. The reconstruction takes each
+from the source that has it.
 
 ---
 
-## 알고리즘 — 종목별 상태기계
+## Why the two cannot simply be concatenated
 
-각 (인덱스, 종목 T) 에 대해 timeline 을 구성한다:
+KRX's `index_changes` log is **incomplete**. Measured:
+
+- KOSPI 200: 152 ISINs have an ADD and no REMOVE
+- KOSDAQ 150: the same pattern, many times
+- Rolling the event log forward on its own therefore leaves *ghosts* at the
+  anchor — 12 names for KOSPI200 and 5 for KOSDAQ150 that are still counted as
+  members long after they left.
+
+Cases the log misses:
+
+- `008810 LG종금` — added 1999-06-11, gone on a merger/delisting, no REMOVE
+- `068270 셀트리온` — moved from KOSDAQ to KOSPI in 2018, dropped from
+  코스닥 150 automatically, no REMOVE recorded
+- `035720 카카오` — the same KOSDAQ-to-KOSPI move in 2017
+- `036420 제이콘텐트리` — renamed through a split/merger, no REMOVE recorded
+
+So the **snapshots are trusted as ground truth** and the events supply only the
+exact dates. A change a snapshot proves happened but no event explains gets a
+**synthetic** event injected at the snapshot's date.
+
+---
+
+## The algorithm — a state machine per ticker
+
+For each (index, ticker T), build a timeline:
 
 ```
 timeline = [(event_date, 'event', 'ADD'|'REMOVE', 'log')]
          + [(snap_date,  'snap',  T_in_snap_bool, None)]
-정렬: (date, event 가 snap 보다 먼저)   # snap 은 post-event 상태
+sorted by (date, events before snapshots)   # a snapshot shows the post-event state
 ```
 
-`state ∈ {None, 'IN', 'OUT'}` 으로 초기 None. timeline 을 순회하며:
+`state` is one of `{None, 'IN', 'OUT'}`, starting at `None`. Walking the
+timeline:
 
-| 입력 | state 전이 | interval / synthetic |
+| Input | Transition | Spell / synthetic |
 |---|---|---|
-| event ADD, state ∈ {None, OUT} | → IN | in_date=event_d, source=log |
-| event ADD, state = IN | (무시: 중복 ADD) | — |
-| event REMOVE, state = IN | → OUT | close interval, out_source=log |
-| event REMOVE, state = None | → OUT | close interval (in_date=NaT, in_source=initial) |
-| event REMOVE, state = OUT | (무시: 중복 REMOVE) | — |
-| snap True, state = None | → IN | in_date=NaT, source=initial |
-| snap True, state = OUT | → IN | in_date=snap_d, source=**synthetic** (ADD 누락) |
-| snap True, state = IN | (consistent) | — |
-| snap False, state = IN | → OUT | close interval, out_source=**synthetic** (REMOVE 누락) |
-| snap False, state ∈ {None, OUT} | (consistent, state→OUT) | — |
+| ADD, state in {None, OUT} | -> IN | in_date=event_d, source=log |
+| ADD, state = IN | ignored (duplicate ADD) | — |
+| REMOVE, state = IN | -> OUT | close the spell, out_source=log |
+| REMOVE, state = None | -> OUT | close the spell (in_date=NaT, in_source=initial) |
+| REMOVE, state = OUT | ignored (duplicate REMOVE) | — |
+| snapshot in, state = None | -> IN | in_date=NaT, source=initial |
+| snapshot in, state = OUT | -> IN | in_date=snap_d, source=**synthetic** (ADD missing) |
+| snapshot in, state = IN | consistent | — |
+| snapshot out, state = IN | -> OUT | close the spell, out_source=**synthetic** (REMOVE missing) |
+| snapshot out, state in {None, OUT} | consistent, state -> OUT | — |
 
-루프 종료 시 `state == IN` 이면 open interval 추가 (`out_date=NaT`).
+A ticker still `IN` when the loop ends gets an open spell (`out_date=NaT`).
 
 ---
 
-## 출력 파일
+## Outputs
 
 ### `output/index_membership_intervals.parquet`
-종목별 편입 구간. 한 종목이 여러 번 들어오고 나갔다면 여러 행.
+One row per membership spell; a ticker that entered and left several times has
+several rows.
 
-| 컬럼 | 타입 | 설명 |
+| Column | Type | Meaning |
 |---|---|---|
 | `index` | str | `코스피 200` / `코스닥 150` |
-| `ticker` | str | 6자리 종목코드 |
-| `name` | str | 종목약칭 (스냅샷 우선, 이벤트 보조) |
-| `in_date` | datetime | 편입 일자 (NaT = 첫 스냅샷 이전부터 편입중) |
+| `ticker` | str | 6-digit issue code |
+| `name` | str | short issue name (snapshot spelling preferred) |
+| `in_date` | datetime | entry date; NaT means already in at the first snapshot |
 | `in_source` | str | `log` / `synthetic` / `initial` |
-| `out_date` | datetime | 편출 일자 (NaT = 현재까지 편입중, exclusive) |
-| `out_source` | str | `log` / `synthetic` / null (NaT 일 때) |
+| `out_date` | datetime | exit date, exclusive; NaT means still a member |
+| `out_source` | str | `log` / `synthetic` / null (when NaT) |
 
-해석: 종목은 `[in_date, out_date)` 구간 동안 인덱스에 포함됨.
-`out_date` 당일은 OUT (KRX 적용일은 새 구성 적용일).
+Read a spell as `[in_date, out_date)`: the ticker is a member from `in_date` up
+to but not including `out_date`, because KRX's effective date is the day the new
+composition applies.
 
 ### `output/index_panel_daily.parquet`
-일별 영업일 long format. interval 을 펼친 결과.
+The spells expanded to one row per business day.
 
-| 컬럼 | 타입 |
+| Column | Type |
 |---|---|
-| `date` | datetime (영업일) |
+| `date` | datetime (business day) |
 | `index` | str |
 | `ticker` | str |
 
-기본 시작일 (CLI `--start-*` 기본값): KOSPI 200 = 1994-06-15 (출시일),
-KOSDAQ 150 = 2015-07-07 (출시일). 단, 실제 패널은 이벤트 로그/스냅샷이
-존재하는 첫 일자부터 시작한다 (KOSPI 200 = 1999-01-04, 아래 §한계 참조).
+The CLI `--start-*` defaults are the index launch dates — 코스피 200
+1994-06-15, 코스닥 150 2015-07-07 — but the panel actually begins at the first
+date the event log or a snapshot covers (KOSPI 200: 1999-01-04; see Limits).
 
 ### `output/index_reconstruction_sanity.csv`
-모든 스냅샷 일자에 대해 (실제 vs 재구성) 교차검증.
-정상 동작 시 `only_actual = only_recon = 0` (모든 스냅샷에서 정확히 일치).
+Every snapshot date, cross-checked actual against reconstructed. Working
+correctly, `only_actual = only_recon = 0` on every snapshot.
 
 ### `output/index_reconstruction_synthetic.csv`
-주입된 합성 이벤트 목록 (감사용).
+The injected synthetic events, for audit.
 
 ---
 
-## 현재 데이터 기준 결과 (2026-04-27 시점)
+## Results on the current data (as of 2026-04-27)
 
 ```
 [코스피 200] 238 snapshots: 2004-01-30 ~ 2026-02-27 (200 anchor members)
@@ -123,7 +129,8 @@ KOSDAQ 150 = 2015-07-07 (출시일). 단, 실제 패널은 이벤트 로그/스�
 [코스닥 150] daily panel: 416,115 rows (2015-07-07 ~ 2026-02-27)
 ```
 
-`in_source` / `out_source` 분포:
+`in_source` / `out_source` distribution:
+
 ```
 in_source                  out_source
   initial    331           log         1,015
@@ -131,56 +138,58 @@ in_source                  out_source
                            NaN (still in) 350
 ```
 
-전체 종목 변경 1,386 건 중 21 건 (~1.5%) 만 합성 이벤트로 imputed.
-나머지 98.5% 는 KRX 이벤트 로그의 정확한 일자.
+Of 1,386 membership changes, 21 (~1.5 %) are imputed as synthetic events; the
+other 98.5 % carry KRX's own exact date.
 
-합성 이벤트 21 건 모두 REMOVE — 상폐/이전상장으로 인한 자동 편출이
-이벤트 로그에 기록되지 않은 사례들 (예: 셀트리온, 카카오, 우리은행 등).
-
----
-
-## 한계
-
-1. **합성 이벤트 일자 정밀도**: 월별 스냅샷 사용 시 실제 변경일은
-   "직전 스냅샷 다음날 ~ 해당 스냅샷일" 사이 어딘가 → 최대 ~22 영업일 오차.
-   더 높은 정밀도가 필요하면 `collect_index_members.py --freq weekly` (또는 `daily`)
-   로 스냅샷 주기를 줄여 재수집 후 재구성.
-
-2. **인덱스 출시일 ~ 첫 스냅샷 사이**:
-   - KOSPI 200: 출시일 1994-06-15 이지만 이벤트 로그가 1999-01-04 부터만
-     존재 → daily panel 은 1994-1998 구간을 포함하지 않고 1999-01-04 부터
-     시작한다. 이벤트 로그로만 구성원을 누적하므로 1999-2004 구간은 멤버 수가
-     점진적으로 증가한다 (1999-01-04 의 1 종목 → 2004 말 200 종목 도달).
-     분석 윈도우인 2005-2024 구간은 매일 완전한 200 종목이다.
-   - KOSDAQ 150: 2015-07-07 ~ 2015-07-30 구간. 같은 이슈로 다소 부정확할 수
-     있음 (출시 직후 ~24 일).
-
-3. **이벤트 로그 시작 이전의 미기록 변경**: 이벤트 로그가 KRX 의 *전체* 변경
-   이력이라고 가정하지만, 1999 년 이전의 KOSPI 200 변경 또는 2010 년 이전의
-   KOSDAQ 150 변경이 있었더라도 우리는 알 수 없다.
-
-4. **스냅샷 자체의 부정확성**: KRX 스냅샷 API 가 returned 한 200/150 종목이
-   *그 날의 실제 인덱스 구성* 이라고 가정. 코퍼릿 액션 (분할/합병/이전상장)
-   집계 시점에 따라 일시적으로 199 또는 201 처럼 비정상 카운트가 나오는 날이
-   있으나 (KOSPI200 mode=200, range 200-202; KOSDAQ150 mode=150, range 149-150),
-   재구성은 그대로 따라간다 (왜곡 없음).
-
-5. **이전상장(코스닥→코스피) 처리**: 이전상장된 종목은 코스닥 150 에서 빠지고
-   코스피 200 에 들어가는 경우가 많음. 두 인덱스 패널을 합쳐 사용 시 같은
-   ticker 가 같은 날 양쪽에 있는 일이 없음 (단방향).
+All 21 synthetic events are REMOVEs — automatic exits on a delisting or a move
+to the other board that the event log never recorded (셀트리온, 카카오,
+우리은행 among them).
 
 ---
 
-## 사용법
+## Limits
+
+1. **Synthetic dates are only as precise as the snapshot spacing.** With
+   month-end snapshots the true change falls somewhere between the day after the
+   previous snapshot and the snapshot itself — up to about 22 business days.
+   For more precision, re-collect with
+   `collect_index_members.py --freq weekly` (or `daily`) and re-run the
+   reconstruction.
+
+2. **Between an index's launch and its first snapshot.**
+   - KOSPI 200 launched 1994-06-15, but the event log starts 1999-01-04, so the
+     daily panel starts there and does not cover 1994–1998. Membership over
+     1999–2004 is accumulated from the event log alone, so the count grows
+     gradually — one name on 1999-01-04, reaching 200 by the end of 2004. The
+     2005–2024 analysis window is a complete 200 every day.
+   - KOSDAQ 150 has the same issue over 2015-07-07..2015-07-30, the ~24 days
+     after launch.
+
+3. **Changes before the event log starts.** The reconstruction treats the log as
+   KRX's *complete* change history. A KOSPI 200 change before 1999, or a
+   KOSDAQ 150 change before 2010, would be invisible to it.
+
+4. **The snapshots themselves are taken as correct.** Whatever the snapshot API
+   returns for a date is treated as that day's true composition. Corporate
+   actions can leave a day counting 199 or 201 depending on when the exchange
+   booked them (KOSPI200 mode 200, range 200–202; KOSDAQ150 mode 150, range
+   149–150); the reconstruction follows the snapshot rather than smoothing it.
+
+5. **Board transfers (KOSDAQ to KOSPI).** A transferring name typically leaves
+   코스닥 150 and joins 코스피 200. Using both panels together, no ticker
+   appears in both on the same day — the move is one-directional.
+
+---
+
+## Usage
 
 ```bash
-# 기본 실행
 python reconstruct_index_panel.py
 
-# 일별 패널은 큰 파일이므로 필요 없으면
+# the daily panel is the large output; skip it when only spells are wanted
 python reconstruct_index_panel.py --no-daily
 
-# 패널 시작일/종료일 커스터마이즈
+# custom panel bounds
 python reconstruct_index_panel.py \
     --start-kospi200 19940615 \
     --start-kosdaq150 20150707 \
@@ -192,7 +201,7 @@ import pandas as pd
 
 iv = pd.read_parquet("output/index_membership_intervals.parquet")
 
-# 특정 일자에 KOSPI 200 멤버
+# members of an index on a given date
 def members_at(iv, idx, d):
     d = pd.Timestamp(d)
     sub = iv[iv["index"] == idx]
@@ -200,13 +209,13 @@ def members_at(iv, idx, d):
     out_d = sub["out_date"].fillna(pd.Timestamp.max)
     return sub.loc[(in_d <= d) & (d < out_d), "ticker"].tolist()
 
-print(len(members_at(iv, "코스피 200", "2020-06-30")))  # ≈ 200
+print(len(members_at(iv, "코스피 200", "2020-06-30")))  # about 200
 
-# 특정 종목의 편입 이력
+# one ticker's membership history
 samsung = iv[(iv["index"] == "코스피 200") & (iv["ticker"] == "005930")]
 print(samsung)
 
-# 합성 이벤트 분리 (정확도가 중요한 분석)
+# drop the imputed dates, where the exact date matters
 exact_in_only = iv[iv["in_source"] == "log"]
 exact_both = iv[(iv["in_source"] == "log") &
                 (iv["out_source"].isin(["log", None]))]
@@ -214,13 +223,14 @@ exact_both = iv[(iv["in_source"] == "log") &
 
 ---
 
-## 기존 스크립트와의 관계
+## Relation to the collectors
 
-`reconstruct_index_panel.py` 는 입력으로 두 스크립트의 출력을 그대로 사용한다.
-**기존 스크립트는 sanity check 와 재실행을 위해 보존**한다:
+`reconstruct_index_panel.py` consumes the two collectors' outputs unchanged, and
+both collectors are kept for re-collection and for the sanity check:
 
-- `collect_index_members.py` — 새 월말 스냅샷 수집 (anchor + reconciliation 입력)
-- `collect_index_changes.py` — 새 이벤트 로그 수집
-- `reconstruct_index_panel.py` — 위 두 출력을 결합
+- `collect_index_members.py` — new month-end snapshots (the anchor, and the
+  input the reconciliation is against)
+- `collect_index_changes.py` — a fresh event log
+- `reconstruct_index_panel.py` — combines the two
 
-스냅샷이나 이벤트 로그를 갱신하면 `reconstruct_index_panel.py` 만 재실행하면 됨.
+After refreshing either input, only `reconstruct_index_panel.py` needs re-running.

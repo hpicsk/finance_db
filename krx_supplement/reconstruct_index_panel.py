@@ -1,87 +1,89 @@
-"""
-reconstruct_index_panel.py
---------------------------
-KOSPI 200 / KOSDAQ 150 일별 구성종목 패널 재구성기 (per-ticker, snapshot-truth)
-================================================================================
-collect_index_members.py 가 만든 *월말 스냅샷* 들 (= ground truth) 과
-collect_index_changes.py 가 만든 *편입/편출 이벤트 로그* (= 정확한 변경일자) 를
-종목별 timeline 으로 결합해 일별(business-day) 구성종목 패널을 만든다.
+"""Daily KOSPI 200 / KOSDAQ 150 membership, per ticker, snapshots as truth.
 
-## 왜 이렇게 결합하는가
-    KRX 의 이벤트 로그는 *불완전* 하다 — 상장폐지/합병으로 자동 편출되는 종목은
-    REMOVE 이벤트가 기록되지 않는 경우가 많다 (예: 008810 LG종금, 1999 ADD 후
-    REMOVE 없이 사라짐 — 2004 첫 스냅샷에는 이미 없음).
+Combines the month-end snapshots `collect_index_members.py` writes with the
+entry/exit event log `collect_index_changes.py` writes, resolving each ticker
+on its own timeline into a business-daily membership panel.
 
-    → snapshot 을 ground truth 로 보고, event log 는 *변경 시점의 정확한 일자
-      를 짚어주는 보조 데이터* 로 활용한다. 이벤트 로그가 누락한 변경은 합성
-      이벤트(synthetic) 를 snapshot 일자에 주입해 정합성을 맞춘다.
+**Why both, rather than the event log alone.** The log is incomplete: a name
+leaving the index because it delisted or merged often has no REMOVE event at
+all — 008810 (LG종금) was added in 1999, never removed, and is simply absent
+from the first snapshot in 2004. So the snapshots are the ground truth and the
+log supplies only the *exact date* a change took effect. Where the log has no
+event for a change a snapshot proves happened, a synthetic event is injected at
+the snapshot date.
 
-## 입력
-    output/index_members.parquet   : 월말 스냅샷 (date, index, ticker, name)
-    output/index_changes.parquet   : 이벤트 로그 (date, index, action, isin, ticker, name)
+Input
+    ``output/index_members.parquet``  month-end snapshots
+                                      (date, index, ticker, name)
+    ``output/index_changes.parquet``  the event log
+                                      (date, index, action, isin, ticker, name)
 
-## 출력
-    output/index_membership_intervals.parquet
-        한 (인덱스, 종목) 의 한 편입 구간 = 한 행
+Output
+    ``output/index_membership_intervals.parquet`` — one row per (index, ticker)
+    spell of membership:
+
         | index | ticker | name | in_date | out_date | in_source | out_source |
-        in_source / out_source ∈ {'log', 'synthetic', 'initial', None}
-        - log       : KRX 이벤트 로그에 기록된 편입/편출 일자 (정확)
-        - synthetic : snapshot diff 로 imputed 된 일자 (스냅샷 일자, 실제 변경
-                      은 직전 스냅샷 다음날 ~ 해당 스냅샷일 사이에서 발생)
-        - initial   : 첫 스냅샷 이전부터 편입돼 있던 종목 (정확한 시작일 미상)
-        - None      : out_date 가 NaT 면 anchor (= 마지막 스냅샷) 시점까지 편입중
 
-    output/index_panel_daily.parquet
-        long-format: 인덱스 출시일 ~ anchor 일자, 영업일별 멤버
-        | date | index | ticker |
+    with ``in_source`` / ``out_source`` in {log, synthetic, initial, None}
 
-    output/index_reconstruction_sanity.csv
-        모든 스냅샷 일자에 대해 (실제 vs 재구성) 차집합 리포트.
-        per-ticker 상태기계가 모든 스냅샷을 ground truth 로 따르므로 only_actual
-        = only_recon = 0 이 정상.
+        ``log``        the date KRX recorded for the entry or exit — exact
+        ``synthetic``  imputed from a snapshot difference, so it carries the
+                       snapshot's date while the change itself fell somewhere
+                       between the previous snapshot and this one
+        ``initial``    already a member at the first snapshot, so the true start
+                       is unknown
+        ``None``       ``out_date`` is NaT: still a member at the anchor, which
+                       is the last snapshot
 
-    output/index_reconstruction_synthetic.csv
-        합성 이벤트 목록 (감사용)
+    ``output/index_panel_daily.parquet`` — long format, one row per business day
+    of membership from the index's launch to the anchor: | date | index | ticker |
 
-## 알고리즘 (종목별 상태기계)
-    각 (인덱스, 종목 T) 에 대해:
-      timeline = events_for_T + (snap_date, T_in_snap_bool) for each snap_date
-      sorted by (date, event_first then snap)   # 같은 날짜에 이벤트가 스냅샷 직전 적용
-      state ∈ {None, 'IN', 'OUT'}, 처음엔 None (=알 수 없음)
+    ``output/index_reconstruction_sanity.csv`` — for every snapshot date, the
+    two set differences between the actual snapshot and the reconstruction.
+    The state machine follows every snapshot as truth, so both columns being
+    zero is the expected result rather than a passing grade.
 
-      for entry in timeline:
-        if event ADD:
-            None/OUT → IN (in_date=event 일자, source=log)
-            IN       → ignore (이미 IN)
-        if event REMOVE:
-            None     → 직전까지 IN (initial 멤버) → close interval (NaT, T_d, log)
-            IN       → close interval (in_date, T_d, log)
-            OUT      → ignore
-        if snap with in_bool=True:
-            None     → IN (in_date=NaT, source=initial)
-            OUT      → IN (in_date=snap_d, source=synthetic, missing ADD)
-            IN       → consistent
-        if snap with in_bool=False:
-            None/OUT → consistent (state=OUT)
-            IN       → close interval (in_date, snap_d, synthetic, missing REMOVE)
+    ``output/index_reconstruction_synthetic.csv`` — the injected events, for audit.
 
-      end-of-loop: state == IN 이면 open interval (out_date=NaT)
+Algorithm, a state machine per (index, ticker)
+    timeline = that ticker's events, plus (snapshot date, in-snapshot?) for
+    every snapshot, sorted by date with events before snapshots on a shared
+    date — a snapshot shows the state *after* that day's events.
 
-    ⇒ snapshot 을 ground truth 로 따르므로 sanity check 가 자동으로 통과한다.
+    state is one of {None, IN, OUT}, starting at None, meaning not yet known.
 
-## 한계
-    - synthetic 이벤트 일자 정밀도 = snapshot 주기 (월말). 실제 변경일은 직전
-      스냅샷 다음날 ~ 해당 스냅샷일 사이. 월별 snapshot 으로 최대 ~22 영업일 오차.
-    - 첫 스냅샷 이전 (KOSPI200: ~ 2004-01-29, KOSDAQ150: ~ 2015-07-30) 의
-      편입/편출 일자는 이벤트 로그에 등장한 것만 정확. 미기록 이벤트는 첫 스냅샷
-      일자로 imputed.
-    - 'initial' 멤버의 시작일은 NaT (인덱스 출시일로 간주하거나 NaT 로 둠).
+        ADD event      None/OUT -> IN      (in_date = event date, source=log)
+                       IN       -> ignored, already in
+        REMOVE event   None     -> it was an initial member: close the spell
+                                   (NaT, event date, log)
+                       IN       -> close the spell (in_date, event date, log)
+                       OUT      -> ignored
+        snapshot, in   None     -> IN      (in_date = NaT, source=initial)
+                       OUT      -> IN      (source=synthetic; the ADD is missing)
+                       IN       -> consistent
+        snapshot, out  None/OUT -> consistent
+                       IN       -> close the spell (source=synthetic; the
+                                   REMOVE is missing)
 
-## 사용법
+    A ticker still IN when the timeline ends gets an open spell, out_date = NaT.
+
+Limits
+    A synthetic date is only as precise as the snapshot spacing: the change
+    happened somewhere between the day after the previous snapshot and the
+    snapshot itself, so month-end snapshots put it within about 22 business
+    days.
+
+    Before the first snapshot (KOSPI200 2004-01-29, KOSDAQ150 2015-07-30) only
+    changes the event log recorded are exact; the rest are imputed to the first
+    snapshot date.
+
+    An ``initial`` member's start date is NaT rather than the index launch date,
+    which is not the same claim.
+
     python reconstruct_index_panel.py
-    python reconstruct_index_panel.py --no-daily         # 일별 패널 생략
-    python reconstruct_index_panel.py --start-kospi200 19940615 \\
-                                     --start-kosdaq150 20150707
+    python reconstruct_index_panel.py --no-daily          # skip the daily panel
+    python reconstruct_index_panel.py --start-kospi200 19940615 \
+                                      --start-kosdaq150 20150707
 """
 
 import argparse
@@ -110,8 +112,10 @@ def load():
 
 
 def _build_ticker_timeline(t, e_by_ticker, snap_dates, snap_state):
-    """종목 t 의 timeline = (date, kind, payload, source) 정렬 리스트.
-    kind ∈ {'event', 'snap'}. 같은 날짜는 event → snap 순 (스냅샷이 post-event 상태)."""
+    """One ticker's timeline: a sorted list of (date, kind, payload, source).
+
+    ``kind`` is 'event' or 'snap'. On a shared date the event sorts first,
+    because a snapshot shows the state after that day's events."""
     timeline = []
     if t in e_by_ticker:
         for _, r in e_by_ticker[t].iterrows():
@@ -124,7 +128,7 @@ def _build_ticker_timeline(t, e_by_ticker, snap_dates, snap_state):
 
 def _process_event(state, in_date, in_source, payload, src, d, t,
                    index_name, name_map, intervals):
-    """이벤트(ADD/REMOVE) 한 entry 처리. 새 (state, in_date, in_source) 반환."""
+    """Apply one ADD/REMOVE entry. Returns the new (state, in_date, in_source)."""
     if payload == "ADD":
         if state == "IN":
             return state, in_date, in_source  # duplicate ADD
@@ -144,8 +148,10 @@ def _process_event(state, in_date, in_source, payload, src, d, t,
 
 def _process_snap(state, in_date, in_source, in_bool, d, t,
                   index_name, name_map, intervals, synthetic):
-    """스냅샷 한 entry 처리. 새 (state, in_date, in_source) 반환.
-    스냅샷 in/out 과 현재 state 가 어긋나면 synthetic 이벤트 주입."""
+    """Apply one snapshot entry. Returns the new (state, in_date, in_source).
+
+    Where the snapshot and the current state disagree, the event log missed a
+    change, and a synthetic event is injected to carry it."""
     if in_bool:
         if state is None:
             return "IN", pd.NaT, "initial"
@@ -187,10 +193,10 @@ def reconstruct_one(events: pd.DataFrame, snaps: pd.DataFrame, index_name: str):
              index_name, len(snap_dates), snap_dates[0].date(),
              snap_dates[-1].date(), len(snap_state[snap_dates[-1]]))
 
-    # 모든 종목 = 이벤트 + 스냅샷 의 합집합
+    # every ticker either source mentions
     all_tickers = set(e["ticker"]) | {t for d in snap_dates for t in snap_state[d]}
 
-    # 종목명 lookup (스냅샷 우선, 이벤트 보조)
+    # name lookup, preferring the snapshot spelling over the event log
     name_map = {}
     for t, n in zip(s["ticker"], s["name"]):
         if t and pd.notna(n) and n:
@@ -315,13 +321,13 @@ def build_daily_panel(iv_df: pd.DataFrame, index_name: str,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KRX 인덱스 일별 구성종목 패널 재구성")
+    parser = argparse.ArgumentParser(description="Reconstruct the daily KRX index membership panel")
     parser.add_argument("--start-kospi200", default=DEFAULT_PANEL_START["코스피 200"])
     parser.add_argument("--start-kosdaq150", default=DEFAULT_PANEL_START["코스닥 150"])
     parser.add_argument("--end", default=None,
-                        help="패널 종료일 (default: 최신 스냅샷 일자)")
+                        help="last date of the panel (default: the latest snapshot)")
     parser.add_argument("--no-daily", action="store_true",
-                        help="일별 패널 parquet 생성 생략")
+                        help="skip writing the daily panel parquet")
     args = parser.parse_args()
 
     snaps, events = load()
