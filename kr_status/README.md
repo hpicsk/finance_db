@@ -139,6 +139,43 @@ anyone who wants to revisit it:
    we want to upgrade later (canonical halt boundaries, vs. the
    `ChangeCode=='0'` flag).
 
+### `dart_corp_actions.py` — corporate-action ground truth
+
+The one collector here whose output is not a status flag. It harvests DART
+주요사항보고서 events that move a share count and splits them into two
+categories, which is what lets the price-adjustment layer tell a corporate
+action apart from an entity change:
+
+- **genuine** (유상증자 / 무상증자 / 유무상증자 / 감자) — price-affecting, and KRX's
+  ChangesRatio already adjusts for it, so the share-count jump must *not* be
+  read as a series break.
+- **entity** (회사합병 / 회사분할 / 회사분할합병 / 주식교환) — the listing's economic
+  identity may change, so the jump is a break candidate.
+
+Reached through `OpenDartReader.dart_event.event`, one call per (ticker,
+event). Preferred shares have no `corp_code` of their own and resolve to the
+parent common (`code[:5] + '0'`); 액면분할/병합 are absent from the event API and
+are deliberately omitted, since a 액면 change always moves the price inversely
+and is never misread as a break. DART's structured coverage is reliable from
+~2015; earlier events are sparse and fall to the manual-override path.
+
+```bash
+set -a; . ../.env; set +a
+python -m kr_status.dart_corp_actions            # writes data/dart_corp_action_events.parquet
+```
+
+Output columns: `ticker, parent, corp_code, event, category, rcept_dt,
+rcept_no`. Resume-safe — tickers already in the cache are skipped unless
+`--restart`.
+
+Two things to know before running it. The default ticker list is the share-jump
+candidate set, which only exists once the price-adjustment build has written
+it, so this collector runs *after* a seeding build, not before (`--tickers` /
+`--all-universe` override). And its output is deliberately **not** a status
+source: it carries no `status` column, so the panel builder that reads
+`data/*_events.parquet` skips it rather than folding corporate actions into the
+tradable-universe exclusions.
+
 ### Shared utility
 
 `corp_code_map.py` wraps `OpenDartReader.find_corp_code(ticker)` with a
@@ -153,6 +190,7 @@ fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
 | marcap snapshots | `../marcap/data/marcap-YYYY.parquet` | **canonical source for `halt`, `admin`, `alert`** (`marcap_halt_infer.py`): halt via `ChangeCode=='0'`, admin via `Dept~'관리종목'` (2014+), alert via `Dept~'투자주의환기'` (2014+) |
 | DART `list.json` | `opendart.fss.or.kr/api/list.json` | paginated; filter `report_nm` for title keywords (used by `dart_insincere`) |
 | DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it via `requests.get` directly |
+| DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Reliable from ~2015 |
 | KIND delisting feed | `kind.krx.co.kr/investwarn/delcompany.do` | already-wired in `../kr_delisted/build_delisting_calendar.py`; consumed by `fdr_collect --seed-historical` |
 
 DART rate cap: ~10,000 req/day per API key. `dart_audit` for ~4,300 tickers
@@ -167,6 +205,7 @@ DART rate cap: ~10,000 req/day per API key. `dart_audit` for ~4,300 tickers
 | `dart_insincere`            | quarterly (or on-demand) | DART filings are historical; new ones added monthly |
 | `dart_audit`                | annually (post-Mar audit-filing season) | annual cadence by nature |
 | `fdr_collect --seed-historical` | when `delisting_calendar.csv` is refreshed | pre-2015 audit_qualified proxy seeds |
+| `dart_corp_actions`         | after a marcap refresh, once the candidate share-jump list has been rebuilt | new corporate actions land continuously; resume-safe, so a re-run only fetches what is new |
 
 ## Consumer
 
@@ -175,9 +214,6 @@ The query side lives in `kr_marcap/status/`:
 - `kr_marcap.status.build_panel` — merges all `*_events.parquet` here into one
 - `kr_marcap.status.tradable_universe(date, ...)` — applies status exclusions
   + price/marcap/ADV liquidity filters on top of `kr_marcap.universe(kind='common')`
-
-`fn_shared.data.tradable_universe(date)` and `BiasFreeStore.tradable_universe(date)`
-are thin shims around the kr_marcap function for use in fn_project research code.
 
 ## Coverage gaps
 
