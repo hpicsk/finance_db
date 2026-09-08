@@ -199,6 +199,9 @@ codes are `STK` (KOSPI), `KSQ` (KOSDAQ) and `KNX` (KONEX, from 2013-07-01).
 > zero-row parquet in both cases, and the `out.exists()` resume check then skips
 > it on every later run. A span whose response schema changed has to be deleted
 > before it can be re-fetched — see limitation 6 below.
+> `test_foreign_ownership_empty_files_fall_on_non_sessions` tells the two apart
+> after the fact, by requiring every zero-row file to fall on a day the session
+> calendar does not carry.
 
 ### index_panel_daily.parquet
 Long-format membership, forward-filled to business days. KOSPI200 starts
@@ -365,6 +368,15 @@ r = requests.get(
    (`out.exists()`) then skips that file forever, so a span collected while the
    schema differed stays empty no matter how often the collector is re-run.
    Delete those files to re-fetch them.
+
+   Neither failure raises. The gap each one leaves is checkable, and three
+   assertions read for it: `test_kospi200_panel_inwindow_complete` bounds daily
+   index membership, `test_sector_panel_covers_every_session` requires every
+   session in the panel's span in both markets, and
+   `test_foreign_ownership_empty_files_fall_on_non_sessions` requires every
+   zero-row daily to fall on a day the market was shut. The last two read the
+   marcap session calendar, so a date collected past that clone's last session
+   is classifiable neither way; the check prints how many it left unread.
 
 ---
 

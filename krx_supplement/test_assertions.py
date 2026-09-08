@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 REPO = Path(__file__).resolve().parent.parent
 # The study window every package's figures are quoted on. Duplicated in each
@@ -54,8 +55,96 @@ def test_kospi200_panel_inwindow_complete():
             f"range [{inwin.min()},{inwin.max()}]"), len(inwin)
 
 
+# ---- The session calendar both tripwires below are read against -------------
+def _marcap_sessions() -> set[pd.Timestamp]:
+    """Every trading session the marcap clone carries, at day resolution.
+
+    Read off the clone rather than imported from kr_marcap, because
+    `run_assertions.sh` runs each package on its own and a cross-package import
+    would make this file fail for a reason that is not krx_supplement's.
+    """
+    sessions: set[pd.Timestamp] = set()
+    for fp in sorted((REPO / "marcap/data").glob("marcap-*.parquet")):
+        d = pd.to_datetime(pd.read_parquet(fp, columns=["Date"])["Date"])
+        sessions |= set(d.dt.normalize().unique())
+    assert sessions, f"no marcap-*.parquet under {REPO / 'marcap/data'}"
+    return sessions
+
+
+# ---- Sector panel: a failed fetch is absent from it, not raised -------------
+def test_sector_panel_covers_every_session():
+    """`fetch_sector_snapshot` catches `Exception` per (date, market), logs a
+    warning and moves on, so a fetch that failed leaves that cell out of
+    sector_mapping.parquet rather than stopping the run (limitation 6). Nothing
+    downstream can tell that absence from "the exchange listed nothing that
+    day", and the log is long gone by the time anyone reads the panel. The
+    absence itself is checkable: every session the calendar carries inside the
+    panel's span appears in it, in both markets.
+    """
+    fp = REPO / "krx_supplement/output/sector_mapping.parquet"
+    df = pd.read_parquet(fp, columns=["date", "market"])
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    cells = df.drop_duplicates()
+    markets = set(cells["market"])
+    assert markets == {"KOSPI", "KOSDAQ"}, (
+        f"the panel carries markets {sorted(markets)}, where collect_sector's "
+        f"MARKET_CODES fetches KOSPI and KOSDAQ — either a market stopped being "
+        f"collected, or one was added and this check has not been re-read")
+    have = set(zip(cells["date"], cells["market"]))
+    sessions = _marcap_sessions()
+    # The panel runs past the marcap clone's last session, and a date the
+    # calendar cannot reach is classifiable neither way, so the span stops where
+    # the calendar does.
+    lo, hi = df["date"].min(), min(df["date"].max(), max(sessions))
+    span = sorted(d for d in sessions if lo <= d <= hi)
+    cells_wanted = len(span) * len(markets)
+    missing = [(d, m) for d in span for m in sorted(markets) if (d, m) not in have]
+    assert not missing, (
+        f"{len(missing)} of {cells_wanted:,} session-market cells are absent "
+        f"from sector_mapping.parquet, so a 업종분류현황 fetch failed and was "
+        f"skipped: {[(str(d.date()), m) for d, m in missing[:5]]}")
+    return (f"sector panel covers all {len(span):,} sessions "
+            f"{span[0].date()}..{span[-1].date()} in both markets"), cells_wanted
+
+
+# ---- Foreign-ownership dailies: an empty file is the failure and the record --
+def test_foreign_ownership_empty_files_fall_on_non_sessions():
+    """`_fetch` maps `KeyError` to `None`, which is right when KRX returns an
+    empty `output` array on a holiday and wrong when the response schema moved,
+    and `None` writes an `_EMPTY_SCHEMA` parquet either way (limitation 6). That
+    file is a real artifact, so the `out.exists()` resume check skips the date on
+    every later run and the gap never refills. An empty file therefore has to
+    fall on a day the market was shut.
+    """
+    base = REPO / "krx_supplement/output/foreign_ownership_daily"
+    sessions = _marcap_sessions()
+    cal_end = max(sessions)
+    on_session, n_empty, examined, past_calendar = [], 0, 0, 0
+    for fp in sorted(base.rglob("*.parquet")):
+        date = pd.Timestamp(fp.stem.split("_")[0])
+        if date > cal_end:
+            past_calendar += 1
+            continue
+        examined += 1
+        if pq.ParquetFile(fp).metadata.num_rows:
+            continue
+        n_empty += 1
+        if date in sessions:
+            on_session.append(fp.name)
+    assert not on_session, (
+        f"{len(on_session)} of {n_empty} empty-schema files fall on a trading "
+        f"session, so the endpoint returned nothing on a day the market was open "
+        f"and the resume check will never fetch that date again — delete them to "
+        f"re-fetch: {on_session[:5]}")
+    return (f"{examined:,} dailies through {cal_end.date()}: {n_empty} empty, "
+            f"none on a session; {past_calendar} later files sit past the "
+            f"calendar and are unchecked"), examined
+
+
 CHECKS = [
     test_kospi200_panel_inwindow_complete,
+    test_sector_panel_covers_every_session,
+    test_foreign_ownership_empty_files_fall_on_non_sessions,
 ]
 
 

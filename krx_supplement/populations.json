@@ -1,6 +1,14 @@
 {
+  "test_foreign_ownership_empty_files_fall_on_non_sessions": {
+    "bound": "monotone",
+    "n": 14462
+  },
   "test_kospi200_panel_inwindow_complete": {
     "bound": "exact",
     "n": 5217
+  },
+  "test_sector_panel_covers_every_session": {
+    "bound": "monotone",
+    "n": 10430
   }
 }
