@@ -150,6 +150,134 @@ def test_taiwan_tree_readers_import_the_window():
             f"{sorted(excepted)} excepted"), len(readers)
 
 
+def test_taiwan_coverage_does_not_outrun_the_data():
+    """`COVERAGE_END` is a claim about the artifacts, so it is read off them.
+
+    The assertion this replaces compared the package's span against a `WIN_END`
+    duplicated across five packages — a study window, which is a research
+    decision, sitting in a package that holds data and no study. It could not
+    fail on anything the data did: coverage could name a session no artifact
+    carries, and every figure quoted on the window would then be measured over
+    a shorter panel than it claims, invisibly, because `clip` returns what
+    exists rather than what was asked for.
+
+    Three artifacts have to reach the far edge and they are three different
+    claims. The session calendar is what `universe_at` snaps a date to, so a
+    coverage end past its last row is a date with no universe. The price panel
+    is what every count is taken over. And `listing_spans`' `registry_pull` is
+    the day the 興櫃 boundary was read, so coverage past it dates names against
+    a registry that had not yet seen them.
+
+    Both ends must *be* sessions rather than merely lie inside the calendar. A
+    coverage end on a Sunday would pass a `<=` against the last session and
+    name a day the market was shut, which is the same defect one day wide.
+    """
+    import pyarrow.parquet as pq
+
+    cal_path = REPO / "finmind_data/trading_sessions.parquet"
+    spans_path = REPO / "finmind_data/listing_spans.parquet"
+    if not cal_path.exists() or not spans_path.exists():
+        raise Skipped("trading_sessions.parquet / listing_spans.parquet not "
+                      "built — run `python -m finmind_data.pit_universe`")
+    cal = list(pd.read_parquet(cal_path)["date"])
+    lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
+    assert lo in cal and hi in cal, (
+        f"coverage runs {lo}..{hi} and the session calendar runs "
+        f"{cal[0]}..{cal[-1]}; "
+        f"{[d for d in (lo, hi) if d not in cal]} is not a session in it, so "
+        f"the window opens or closes on a day the market was shut or on a day "
+        f"the tape does not carry. Re-run `pit_universe` after extending the "
+        f"tape, or move COVERAGE_END back to a session"
+    )
+    assert cal[-1] == hi, (
+        f"the calendar holds {cal[-1]} after COVERAGE_END {hi}, so the tape "
+        f"reaches further than the package answers for and the two were built "
+        f"from different constants")
+
+    pull = pd.read_parquet(spans_path)["registry_pull"]
+    assert pull.nunique() == 1, (
+        f"listing_spans carries {pull.nunique()} registry stamps; the 興櫃 "
+        f"boundary is one pull and a second means two were spliced")
+    stamp = str(pull.iloc[0])
+    assert stamp >= hi, (
+        f"the 興櫃 registry was read on {stamp} and coverage runs to {hi}, so "
+        f"every name listed between the two is dated against a registry that "
+        f"had not seen it")
+
+    quoted = 0
+    for f in sorted((REPO / "finmind_data/ohlcv").glob("*.parquet")):
+        if "date" not in pq.read_schema(f).names:
+            continue
+        d = pd.read_parquet(f, columns=["date"])
+        if hi in set(d["date"].astype(str)):
+            quoted += 1
+            if quoted >= 50:
+                break
+    assert quoted >= 50, (
+        f"only {quoted} stocks carry a quote on {hi}; the calendar calls it a "
+        f"session, so the price tree is short of the day coverage ends on"
+    )
+    return (f"coverage {lo}..{hi} sits on sessions the calendar carries "
+            f"({len(cal):,} of them), the registry was pulled {stamp}, and the "
+            f"price tree quotes {quoted}+ names on the last one"), len(cal)
+
+def test_taiwan_tape_years_are_whole():
+    """A tape year file is skipped because it exists, so a partial one is invisible.
+
+    `tape_universe.sweep()` writes one file per year and skips a year whose file
+    is already on disk. That is the right resume rule while every year inside
+    coverage is whole, and it stops being right the moment coverage ends inside
+    a year: the file written then holds January to the coverage end, the next
+    extension skips it for existing, and the rest of that year never reaches the
+    calendar `pit_universe` builds. `universe_at` would then raise on a session
+    the market held.
+
+    Nothing else sees it. The gap is not a hole in the middle of the calendar
+    that a continuity check would find — it is the calendar ending early, which
+    reads exactly like coverage ending early.
+
+    A whole year opens in January and closes in December; the first and last
+    files are the two that may be cut, and each is cut at a coverage end this
+    file knows. Months rather than dates, because which session opens or closes
+    a year is the tape's answer and not something to restate here.
+    """
+    import pyarrow.parquet as pq
+
+    from finmind_data.tape_universe import _YEAR_END_SLACK
+
+    files = sorted((REPO / "finmind_data/tape").glob("*.parquet"))
+    if not files:
+        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+    years = [int(f.stem) for f in files]
+    assert years == list(range(years[0], years[-1] + 1)), (
+        f"the tape skips a year: {sorted(set(range(years[0], years[-1] + 1)) - set(years))}")
+    assert years[0] == COVERAGE_START.year and years[-1] == COVERAGE_END.year, (
+        f"the tape runs {years[0]}..{years[-1]} and coverage "
+        f"{COVERAGE_START.year}..{COVERAGE_END.year}; the sweep was run under a "
+        f"different window than the one applied to it")
+
+    ragged = []
+    for f, y in zip(files, years):
+        d = pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"])
+        first, last = d.min(), d.max()
+        want_open = COVERAGE_START if y == years[0] else pd.Timestamp(y, 1, 1)
+        want_close = COVERAGE_END if y == years[-1] else pd.Timestamp(y, 12, 31)
+        # The slack is `sweep()`'s own, imported rather than restated: it is
+        # what decides whether that function re-sweeps a year, so a check
+        # written to a second copy would disagree with the code it guards.
+        if first > want_open + _YEAR_END_SLACK:
+            ragged.append(f"{y} opens {first.date()}, a month after {want_open.date()}")
+        if last < want_close - _YEAR_END_SLACK:
+            ragged.append(f"{y} closes {last.date()}, a month before {want_close.date()}")
+    assert not ragged, (
+        f"{len(ragged)} tape year files do not span the coverage they were "
+        f"swept for: {ragged[:4]}. `sweep()` skips a year whose file exists, so "
+        f"re-running will not repair these — delete the file and re-sweep"
+    )
+    rows = sum(pq.read_metadata(f).num_rows for f in files)
+    return (f"{len(files)} tape years {years[0]}..{years[-1]}, each spanning "
+            f"the coverage swept for it, {rows:,} rows"), len(files)
+
 def test_taiwan_delisting_frame_does_not_follow_coverage():
     """A frozen sample frame, and a coverage constant that moves under it.
 
@@ -4424,6 +4552,8 @@ def test_taiwan_par_value_changes_are_priced():
 
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
+    test_taiwan_coverage_does_not_outrun_the_data,
+    test_taiwan_tape_years_are_whole,
     test_taiwan_loader_takes_the_callers_span,
     test_taiwan_delisting_frame_does_not_follow_coverage,
     test_taiwan_dataset_names_in_code_resolve,

@@ -42,8 +42,10 @@ sessions the exchange does hold are Saturdays.
 
     python -m finmind_data.tape_universe
 
-Resumable per year: a year whose file exists is skipped, so an interrupted
-sweep resumes at the year it stopped in.
+Resumable per year: a year whose file already reaches the end of what this
+window asks for is skipped, so an interrupted sweep resumes at the year it
+stopped in — and a year written short because coverage once ended inside it is
+re-swept rather than skipped for existing.
 """
 from __future__ import annotations
 
@@ -68,6 +70,13 @@ OUT = HERE / "tape_universe.parquet"
 # costs, which finishes inside the hour with margin; a fourth would overshoot
 # the quota and earn a 402, and fetch() answers that by sleeping to the reset.
 WORKERS = 3
+
+# The longest the exchange is shut inside a year. 農曆春節 closes it for up to
+# nine sessions, so a year file whose last date falls short of the last day
+# swept for by less than this is complete rather than truncated. A month is
+# that with room: the case it has to separate is a year cut off in March, not
+# one whose last session was the 28th.
+_YEAR_END_SLACK = pd.Timedelta(days=31)
 
 # Only 4-digit numeric codes are kept. This is `build_universe.py`'s filter, and
 # keeping the tape to it drops the warrants that make a recent session 50,000
@@ -125,8 +134,20 @@ def sweep() -> None:
     for year, block in days.groupby(days.year).items():
         path = TAPE / f"{year}.parquet"
         if path.exists():
-            print(f"{year}: skip (exists)", flush=True)
-            continue
+            # What the file holds, not that it exists. A year coverage ended
+            # inside was written short, and skipping it for existing leaves the
+            # rest of that year out of the calendar permanently — the calendar
+            # `pit_universe` builds, so `universe_at` would raise on a session
+            # the market held. `test_taiwan_tape_years_are_whole` is the check
+            # that finds one already written.
+            have = pd.to_datetime(pd.read_parquet(path, columns=["date"])["date"])
+            reach = have.max() if len(have) else None
+            if reach is not None and reach >= block.max() - _YEAR_END_SLACK:
+                print(f"{year}: skip (covers to {reach.date()})", flush=True)
+                continue
+            print(f"{year}: re-sweep — file reaches "
+                  f"{reach.date() if reach is not None else 'nothing'}, "
+                  f"this window asks to {block.max().date()}", flush=True)
         dates = [d.strftime("%Y-%m-%d") for d in block]
         t0 = time.time()
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:

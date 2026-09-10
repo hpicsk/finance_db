@@ -34,11 +34,19 @@ brings its own event log can use them; nothing here is measured over them.
 `window.py` declares `COVERAGE_START` and `COVERAGE_END` once, along with the
 `clip` that applies them, and every script that reads the trees imports from it
 rather than restating the date. That is also what makes the boundary checkable:
-`test_assertions.py` asserts the package's coverage sits inside the shared study
-window rather than re-deriving it, and asserts the import rule itself — a new
-module that reads the trees without going through `window.py` fails the suite,
-because an unclipped read measures the sessions outside the window into a figure
-published as being about it.
+`test_assertions.py` asserts the import rule itself — a new module that reads
+the trees without going through `window.py` fails the suite, because an
+unclipped read measures the sessions outside the window into a figure published
+as being about it.
+
+The boundary is also checked against the artifacts rather than against another
+constant. `test_taiwan_coverage_does_not_outrun_the_data` requires both ends to
+be sessions the tape calendar carries, the calendar to stop exactly where
+coverage does, the 興櫃 registry to have been pulled no earlier, and the price
+tree to quote names on the last day. A coverage end past any of them names a
+session nothing has, and every count published as being about the window would
+then be measured over a shorter panel — silently, because `clip` returns the
+rows that exist rather than the ones it was asked for.
 
 The window was originally 2015-01-01 → 2024-12-31; on 2026-04-27 the start
 was rolled back to 2005-01-01 for a 20-year span, and on 2026-08-17 the
@@ -314,6 +322,17 @@ first check passes**; nothing in it reads a market classification. The
 reconciliation catches it and nothing else does. So a clone without `tape/` can
 verify that no delisted name is missing, and cannot verify that no 興櫃 name is
 present.
+
+**The tape is swept one file per year, and a year written short is the one way
+it goes wrong quietly.** `sweep()` used to skip a year whose file existed,
+which is right while every year inside coverage is whole and wrong the moment
+coverage ends inside one: the file holds January to the coverage end, the next
+sweep skips it, and the rest of that year never reaches
+`trading_sessions.parquet`. `universe_at` then raises on a session the market
+held. The skip now reads how far the file reaches rather than that it is there,
+and `test_taiwan_tape_years_are_whole` fails on one already written that way —
+the gap is the calendar ending early, which no continuity check can tell from
+coverage ending early.
 
 ## Directory layout
 
