@@ -216,13 +216,24 @@ def _delisting_date(stock_id: str):
 
 def load_adjusted(stock_id: str,
                   ohlcv_dir: Path = OHLCV_DIR,
-                  price_adj_dir: Path = PRICE_ADJ_DIR) -> pd.DataFrame:
+                  price_adj_dir: Path = PRICE_ADJ_DIR, *,
+                  start: "pd.Timestamp | str | None" = None,
+                  end: "pd.Timestamp | str | None" = None) -> pd.DataFrame:
     """One stock's raw OHLCV plus its total-return adjusted close, windowed.
 
-    Returns `COVERAGE_START..COVERAGE_END` only. The per-stock files are wider
-    on both sides — prices from 2005, and whatever `download.py --extend` last
-    reached — and the window is applied here rather than left to the caller,
-    because the derivations below are properties of the rows they were given.
+    Returns `start..end`, defaulting to `COVERAGE_START..COVERAGE_END`. The
+    per-stock files are wider on both sides — prices from 2005, and whatever
+    `download.py --extend` last reached — and the span is applied at the read
+    rather than to the result, because the derivations below are properties of
+    the rows they were given.
+
+    A study names `start` and `end`. Two of the derivations below are read off
+    the span's own edges — the factor anchors on its last priced session, and
+    `series_break` is measured inside it — so the span is part of what the
+    numbers say rather than a filter over them, and the same stock read over
+    two spans returns two sets of adjusted prices, correct on both. The default
+    is this package's coverage, which is a property of the package and not a
+    period any study chose.
 
     Added columns:
       ``tr_factor``      total-return back-adjustment factor, 1.0 on the last row
@@ -247,13 +258,16 @@ def load_adjusted(stock_id: str,
     tr_factor`` — which is what makes the factor rather than the adjusted close
     the primary output.
 
-    The factor is re-anchored to 1.0 on the window's last priced session rather
+    The factor is re-anchored to 1.0 on the span's last priced session rather
     than left on the vendor's anchor, which is the latest session in FinMind's
     own database and therefore moves every time the download is repeated. Both
     anchors give identical returns; only this one gives identical *numbers* on a
-    re-download — and only because the frame is windowed first. Anchored on the
+    re-download — and only because the frame is clipped first. Anchored on the
     file's last session instead, the numbers would move whenever the tree grew,
-    which is the drift the re-anchoring exists to remove.
+    which is the drift the re-anchoring exists to remove. A named `end` is what
+    carries that stability across a change to coverage: the anchor is the last
+    priced session of the span asked for, so a study that names one keeps its
+    numbers when the package's own span moves.
 
     ``adj_close_tr`` is NaN on a session the stock did not trade and on any
     session nothing covers; ``adj_source`` separates the two. ``df.attrs``
@@ -284,11 +298,13 @@ def load_adjusted(stock_id: str,
     # on. Clipping before the derivations rather than after also keeps the
     # break rule intact: a gap that straddles a window edge separates rows
     # this frame does not contain from rows that are all on one side of it.
-    out = clip(out)
+    out = clip(out, start=start, end=end)
     if not len(out):
+        lo = COVERAGE_START if start is None else pd.Timestamp(start)
+        hi = COVERAGE_END if end is None else pd.Timestamp(end)
         raise ValueError(f'{stock_id}: no sessions inside '
-                         f'{COVERAGE_START.date()}..{COVERAGE_END.date()}, so '
-                         f'there is no series this package answers for')
+                         f'{lo.date()}..{hi.date()}, so there is no series '
+                         f'to return over that span')
 
     a = Path(price_adj_dir) / f'{stock_id}.parquet'
     if not a.exists():
@@ -298,7 +314,7 @@ def load_adjusted(stock_id: str,
     adj = pd.read_parquet(a)
     if len(adj):
         adj['date'] = pd.to_datetime(adj['date'])
-        adj = clip(adj)
+        adj = clip(adj, start=start, end=end)
     if len(adj):
         _require_raw_covers_vendor(str(stock_id), out, adj)
         adj = adj[['date', 'close']].rename(columns={'close': 'adj_close_tr'})

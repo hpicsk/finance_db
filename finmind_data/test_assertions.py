@@ -150,6 +150,184 @@ def test_taiwan_tree_readers_import_the_window():
             f"{sorted(excepted)} excepted"), len(readers)
 
 
+def test_taiwan_delisting_frame_does_not_follow_coverage():
+    """A frozen sample frame, and a coverage constant that moves under it.
+
+    `delisting_sign` drew its accuracy sample on 2026-08-17 from the delistings
+    inside `_WIN_START.._WIN_END`, stratified on the cuts and seeded. The draw
+    is a function of that frame rather than a report over it, so a frame that
+    grows re-strata a sample whose labels are already collected — the one edit
+    the pre-registration exists to forbid. The frame used to be `window.py`'s
+    `COVERAGE_END`, which moves for the package's reasons rather than this
+    registration's, so the forbidden edit was available to whoever next had a
+    reason to move coverage, with nobody deciding to make it.
+
+    `test_taiwan_delisting_sign_sample_is_preregistered` catches the redraw and
+    not the cause: its message names the cuts, the stratum edges, the seed and
+    the population as equally likely, and a reader who moved none of them has
+    no reason to suspect the fourth. This names it.
+
+    Checked by moving `COVERAGE_END` and re-deriving, not by reading the source
+    for the constant: `_WIN_END = COVERAGE_END` has other spellings, and a grep
+    passes on all of them. The comparison is against the committed
+    `delisting_sign.parquet` rather than a second call on the unperturbed
+    frame, which would cost the same 13-second scan twice and compare the code
+    against itself — git holds the frame the labels were drawn against.
+    """
+    import finmind_data.window as window
+    from finmind_data import delisting_sign
+
+    frozen = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    frozen_ids = set(frozen["stock_id"].astype(str))
+
+    saved = window.COVERAGE_END
+    try:
+        # Two years past the frame, which is more than the 13 delistings the
+        # vendor has recorded since it closed — enough that a frame following
+        # coverage cannot come back the same size by accident.
+        window.COVERAGE_END = saved + pd.Timedelta(days=730)
+        moved = delisting_sign.features()
+    finally:
+        window.COVERAGE_END = saved
+
+    moved_ids = set(moved["stock_id"].astype(str))
+    assert moved_ids == frozen_ids, (
+        f"moving COVERAGE_END two years past the frame changed the delisting "
+        f"population by {len(moved_ids ^ frozen_ids)} names "
+        f"({sorted(moved_ids ^ frozen_ids)[:8]}), so the pre-registered frame "
+        f"is following a constant that moves with the download. The stratified "
+        f"draw is a function of that population, so the accuracy in README's "
+        f"frozen baseline would be reported over a sample redrawn after its "
+        f"labels were collected"
+    )
+    a = moved.set_index("stock_id")["drawdown"].astype(float)
+    b = frozen.set_index("stock_id")["drawdown"].astype(float)
+    b.index = b.index.astype(str)
+    a.index = a.index.astype(str)
+    worst = float((a - b.reindex(a.index)).abs().max())
+    assert worst < 1e-12, (
+        f"the population held but the drawdowns moved by up to {worst:.2e} "
+        f"under a moved COVERAGE_END, so something downstream of the frame — "
+        f"the peak lookback or the panel's last session — is still reading it"
+    )
+    return (f"{len(moved_ids)} names and their drawdowns are unchanged with "
+            f"COVERAGE_END moved to "
+            f"{(saved + pd.Timedelta(days=730)).date()}"), len(moved_ids)
+
+def test_taiwan_loader_takes_the_callers_span():
+    """A study names the period it reports on, because this package holds none.
+
+    Two of `load_adjusted`'s derivations are read off the span's own edge —
+    the factor anchors on its last priced session, and a series break is
+    measured inside it — so the span is part of what the numbers say rather
+    than a filter over them, and a figure taken on the package's coverage
+    moves whenever that constant does, with nothing printed to say so. `clip`
+    and `load_adjusted` take `start` and `end` for that, and
+    the passthrough is what this checks: an argument accepted and then dropped
+    would leave every caller on the default and read identically from outside.
+
+    The cut is placed the session before a 除權息 event rather than at an
+    arbitrary date. Anchored either side of a quiet stretch the two frames
+    agree, so a check written at any other date would pass on a span that
+    reached the read and not the derivation. Across an event the shared stretch
+    rescales by one constant — the same series read off a second anchor — and
+    that constant is 1.0 exactly when the argument was dropped.
+
+    The witness is derived rather than named: the first stock whose events and
+    session counts satisfy the shape above. Its event is the first at least 400
+    days after `COVERAGE_START`, which is a bound that does not move when the
+    trees are extended, so the span compared here is the same one on every run.
+    """
+    import numpy as np
+
+    from finmind_data.adjusted_loader import load_adjusted, available_stocks
+
+    days = pd.DataFrame({"date": pd.date_range(COVERAGE_START, "2030-12-31")})
+    named = clip(days, start="2015-03-02", end="2015-03-06")
+    assert (str(named["date"].min().date()),
+            str(named["date"].max().date())) == ("2015-03-02", "2015-03-06"), (
+        f"clip returned {named['date'].min().date()}..{named['date'].max().date()} "
+        f"for a span of 2015-03-02..2015-03-06, so it is ignoring what it was "
+        f"handed and every caller below it reads the package's coverage instead"
+    )
+
+    stocks = available_stocks()
+    if not stocks:
+        raise Skipped("price_adj/ not built — run `download.py`")
+
+    scanned = 0
+    witness = None
+    for sid in stocks:
+        f = REPO / f"finmind_data/div_result/{sid}.parquet"
+        if not f.exists():
+            continue
+        ev = pd.read_parquet(f)
+        if not len(ev) or "date" not in ev.columns:
+            continue
+        d = pd.to_datetime(ev["date"]).sort_values()
+        d = d[d >= COVERAGE_START + pd.Timedelta(days=400)]
+        if not len(d):
+            continue
+        scanned += 1
+        if scanned > 50:
+            break
+        try:
+            full = load_adjusted(sid)
+        except (FileNotFoundError, ValueError):
+            continue
+        pre = full[full["date"] < d.iloc[0]]
+        if len(pre) < 200 or len(full) - len(pre) < 200:
+            continue
+        witness = (sid, d.iloc[0], pre["date"].iloc[-1], full)
+        break
+    assert witness is not None, (
+        f"no stock among the first {scanned} with an in-window 除權息 event "
+        f"carries 200 sessions on each side of it, so the passthrough has "
+        f"nothing to be measured on — div_result/ or price_adj/ lost rows"
+    )
+    sid, ev_date, cut, full = witness
+
+    half = load_adjusted(sid, end=cut)
+    assert half["date"].max() == cut, (
+        f"{sid}: load_adjusted(end={cut.date()}) returned rows through "
+        f"{half['date'].max().date()}, so `end` did not reach the read"
+    )
+    assert len(half) < len(full), (
+        f"{sid}: the named span returned {len(half):,} rows against the "
+        f"default's {len(full):,}, so the two frames are the same read"
+    )
+
+    for name, frame in (("default", full), ("named", half)):
+        fin = frame["tr_factor"][np.isfinite(frame["tr_factor"])]
+        assert len(fin) and math.isclose(float(fin.iloc[-1]), 1.0, abs_tol=1e-12), (
+            f"{sid}: the {name} frame's last priced session carries "
+            f"tr_factor={float(fin.iloc[-1]) if len(fin) else float('nan')}, "
+            f"not the 1.0 the anchoring puts there — the span did not reach "
+            f"the derivation"
+        )
+
+    a = full.set_index("date")["adj_close_tr"]
+    b = half.set_index("date")["adj_close_tr"]
+    shared = a.index.intersection(b.index)
+    ratio = (a.loc[shared] / b.loc[shared]).dropna()
+    assert len(ratio), f"{sid}: the two frames share no priced session"
+    assert ratio.round(9).nunique() == 1, (
+        f"{sid}: the two frames differ by {ratio.round(9).nunique()} ratios "
+        f"over {len(ratio):,} shared sessions, so they are not the same series "
+        f"on two anchors — one of them lost an event"
+    )
+    r = float(ratio.iloc[0])
+    assert not math.isclose(r, 1.0, abs_tol=1e-9), (
+        f"{sid}: the frame cut at {cut.date()} and the default frame carry the "
+        f"same adjusted numbers, so `end` reached the read and not the anchor. "
+        f"The cut sits the session before the 除權息 of {ev_date.date()}, which "
+        f"rescales one and not the other"
+    )
+    return (f"{sid}: end={cut.date()} returns {len(half):,} of {len(full):,} "
+            f"sessions and re-anchors across the {ev_date.date()} event; "
+            f"{len(ratio):,} shared sessions rescale by {r:.6f}"), len(ratio)
+
+
 # ---- Taiwan: no collector names a dataset the vendor does not publish ------
 def test_taiwan_dataset_names_in_code_resolve():
     """`catalogue`'s own docstring: a dataset name is looked up, not guessed.
@@ -4246,6 +4424,8 @@ def test_taiwan_par_value_changes_are_priced():
 
 CHECKS = [
     test_taiwan_tree_readers_import_the_window,
+    test_taiwan_loader_takes_the_callers_span,
+    test_taiwan_delisting_frame_does_not_follow_coverage,
     test_taiwan_dataset_names_in_code_resolve,
     test_taiwan_ohlcv_one_per_universe,
     test_taiwan_universe_excludes_the_instruments_it_claims_to,

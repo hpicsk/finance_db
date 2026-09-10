@@ -488,6 +488,24 @@ df = load_adjusted("2330")   # raw OHLCV + tr_factor / adj_close_tr
                              #   + adj_source / adj_method / is_valid
 ```
 
+**A study names its own period.** `load_adjusted` and `window.clip` take
+`start` and `end`. Without them they return the package's coverage, and a
+figure quoted on that inherits whatever this package currently answers for
+instead of a period the study chose. The span is a property of the numbers
+rather than a filter on them — the factor anchors on the span's last priced
+session, and a series break is measured inside it — so the same stock read
+over two spans returns two sets of adjusted prices, correct on both.
+
+```python
+df = load_adjusted("2330", start="2011-01-25", end="2024-12-31")
+```
+
+`test_taiwan_loader_takes_the_callers_span` keeps that argument load-bearing.
+It cuts one stock's frame the session before a 除權息 event and requires the
+whole shared stretch to rescale by a single constant, which is 1.0 exactly
+when the span was accepted and then dropped — the failure an argument that
+only filtered the output would not show.
+
 **One convention, and it is total return.** Cash dividends come out
 along with 無償配股, 現增 and 減資, so `adj_close_tr` measures what a
 holder earned, not what the price did. There is no price-return variant

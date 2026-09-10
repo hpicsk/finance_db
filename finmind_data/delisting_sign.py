@@ -179,12 +179,25 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from .adjusted_loader import _BREAK_GAP_DAYS
-from .window import COVERAGE_START, COVERAGE_END, clip
+from .window import clip
 
 HERE = Path(__file__).resolve().parent
 
-# The research window, declared once for the package in `window.py`.
-_WIN_START, _WIN_END = COVERAGE_START, COVERAGE_END
+# The frame the sample was drawn from, frozen here and deliberately not
+# `window.py`'s. `COVERAGE_END` is the package's own constant and moves for the
+# package's own reasons, which are not this registration's — and the draw below
+# is a function of the frame, not merely reported over it: the strata bracket
+# the cuts and
+# `_SAMPLE_SEED` picks inside them, so a frame that grows re-strata a sample
+# whose labels are already collected. That is the one edit the pre-registration
+# above exists to forbid, and following a constant that moves for a data reason
+# would have made it silently, with the labels still on disk and the accuracy
+# still printing. These two dates are the span the package answered for on
+# 2026-08-17, the day the draw was registered. Names that delisted afterwards
+# sit outside them on purpose: an event later than the registration cannot join
+# the sample it would have changed.
+_WIN_START = pd.Timestamp("2011-01-25")
+_WIN_END = pd.Timestamp("2024-12-31")
 
 _PEAK_WINDOW_DAYS = 365
 _DD_DISTRESS = 0.30
@@ -243,7 +256,7 @@ def _price(stock_id: str) -> pd.DataFrame | None:
     already applies it to the event date. It does not bound how far back a
     feature may look to characterise an event that is inside it: `drawdown`
     divides by the peak of the trailing `_PEAK_WINDOW_DAYS`, so clipping the
-    lookback would leave a name whose last trade sits near `COVERAGE_START`
+    lookback would leave a name whose last trade sits near `_WIN_START`
     dividing by a partial window while every other name divides by a full one —
     the same number measured over different spans.
 
@@ -251,9 +264,9 @@ def _price(stock_id: str) -> pd.DataFrame | None:
     suspension, so 120 of the 248 sessions in its peak window are pre-window
     and the peak is among them: clipped, the drawdown rises 0.249 -> 0.378 and
     crosses `_DD_DISTRESS`. The pre-window half is not the contamination
-    `COVERAGE_START` exists to exclude — no capital reduction is filed for it,
-    and no session in the window moves more than the 7 % daily limit, so there
-    is no unexplained cut hiding in it. Clipping here would move a
+    `window.COVERAGE_START` exists to exclude — no capital reduction is filed
+    for it, and no session in the frame moves more than the 7 % daily limit, so
+    there is no unexplained cut hiding in it. Clipping here would move a
     pre-registered draw on an artefact of the truncation.
     """
     f = HERE / f"ohlcv/{stock_id}.parquet"
@@ -272,12 +285,15 @@ def _panel_last_session() -> pd.Timestamp:
     """The last session anywhere in the price panel.
 
     Read across the whole panel rather than the delisted frame, and rather than
-    taken from `COVERAGE_END`: this is the measurement `features()` compares a
+    taken from a constant: this is the measurement `features()` compares a
     name's last quote against, so it has to be a session the panel really has,
     not the date the download was asked to stop on. Those two came to the same
-    thing while the trees ended where the window did; `--extend` separated them,
-    and an unclipped scan now answers 2026 to a question asked about the window.
-    It is the last session the panel really has *inside* the window.
+    thing while the trees ended where the frame did; `--extend` separated them,
+    and an unclipped scan now answers 2026 to a question asked about the frame.
+    It is the last session the panel really has *inside* the frame, and the
+    frame is `_WIN_START.._WIN_END` rather than coverage — a name's
+    `quoted_through` is compared against this, so the two have to be bounded
+    alike or a still-quoted name stops matching the day the trees grow.
 
     Stocks the endpoint returned nothing for are written as zero-row files with
     no schema at all, so the column projection is guarded instead of pushed down
@@ -289,15 +305,15 @@ def _panel_last_session() -> pd.Timestamp:
             continue
         d = pd.read_parquet(f, columns=["date"])
         d["date"] = pd.to_datetime(d["date"])
-        d = clip(d)
+        d = clip(d, start=_WIN_START, end=_WIN_END)
         if not len(d):
-            # Every session this stock has sits outside the window; it
+            # Every session this stock has sits outside the frame; it
             # contributes no candidate rather than a NaT that would swallow
             # the running maximum on the first file that hits it.
             continue
         m = d["date"].max()
         last = m if last is None or m > last else last
-    assert last is not None, "no priced sessions in ohlcv/ inside the window"
+    assert last is not None, "no priced sessions in ohlcv/ inside the frame"
     return last
 
 
@@ -536,7 +552,7 @@ def considerations(f: pd.DataFrame) -> pd.DataFrame:
                     dtype={"stock_id": str, "successor": str})
     c["delist_date"] = pd.to_datetime(c["delist_date"])
     # Two of the six were looked up when the package still answered about 2005
-    # onward and delisted before `COVERAGE_START`. They stay in the file as the
+    # onward and delisted before `_WIN_START`. They stay in the file as the
     # record of what was read, and are dropped here because the frame no longer
     # reaches them. Only that reason is allowed to drop a row: a name inside the
     # window that is not one priced exit is still the assertion below.
