@@ -229,7 +229,7 @@ def _tw_ids():
 def test_taiwan_ohlcv_one_per_universe():
     u, _, uid, files = _tw_ids()
     missing = uid - files
-    assert len(u) == 2158, f"Taiwan universe = {len(u)}, README pins 2,158"
+    assert len(u) == 2159, f"Taiwan universe = {len(u)}, README pins 2,159"
     assert not missing, f"{len(missing)} universe ids have no OHLCV file"
     return f"Taiwan universe = {len(u)}; all have OHLCV", len(u)
 
@@ -326,9 +326,9 @@ def test_taiwan_price_adj_one_per_universe():
     empty = sum(1 for sid in uid
                 if not len(_tree(
                     REPO / f"finmind_data/price_adj/{sid}.parquet")))
-    assert empty == 113, (
-        f"README pins 113 empty adjusted series (50 of them in-window "
-        f"delistings, 42 pre-window, 21 names listed too recently to have an "
+    assert empty == 114, (
+        f"README pins 114 empty adjusted series (50 of them in-window "
+        f"delistings, 42 pre-window, 22 names listed too recently to have an "
         f"adjusted history); the tree now has {empty}. "
         f"A change here moves the survivorship hole the README quantifies"
     )
@@ -580,11 +580,11 @@ def test_taiwan_universe_holds_every_common_the_tape_shows():
     # The other direction is not an error but it is worth pinning: names the
     # universe carries that never traded in the window contribute no
     # observation to anything, so the answerable universe is smaller than the
-    # headline count and a study that assumes uniform coverage over 2,158 is
-    # measuring 63 empty series.
+    # headline count and a study that assumes uniform coverage over 2,159 is
+    # measuring 64 empty series.
     never = sorted(uid - set(tape["stock_id"]))
-    assert len(never) == 63, (
-        f"README 'Universe' pins 2,158 names of which 63 never trade inside "
+    assert len(never) == 64, (
+        f"README 'Universe' pins 2,159 names of which 64 never trade inside "
         f"2011-01-25..2024-12-31; this tree has {len(never)}")
     assert len(u) - len(never) == 2095, (
         f"the in-window answerable universe is 2,095; this tree gives "
@@ -597,7 +597,7 @@ def test_taiwan_universe_holds_every_common_the_tape_shows():
 def test_taiwan_pit_universe_is_dated_and_keeps_its_delistings():
     """README "A universe is a name list until it is dated": `universe_at`.
 
-    `universe.parquet` carries the same 2,158 names on every session, so a
+    `universe.parquet` carries the same 2,159 names on every session, so a
     backtest that screens it at a 2013 rebalance holds 585 names that were dead,
     unlisted, or on 興櫃 that day. `listing_spans.parquet` dates it, and this is
     the property the dating exists for: every name that delisted inside the
@@ -658,9 +658,9 @@ def test_taiwan_pit_universe_is_dated_and_keeps_its_delistings():
     # The claim the artifact exists for: a name list is the same on every
     # session and the universe is not.
     first, last = len(universe_at(cal[0])), len(universe_at(cal[-1]))
-    assert (first, last, len(u)) == (1_458, 1_845, 2_158), (
+    assert (first, last, len(u)) == (1_458, 1_845, 2_159), (
         f"README pins the dated universe at 1,458 names on the first session "
-        f"and 1,845 on the last against a 2,158-name list; it is now "
+        f"and 1,845 on the last against a 2,159-name list; it is now "
         f"{first} / {last} / {len(u)}")
 
     # …and the reason it exists: every name that delisted inside the window is
@@ -2665,9 +2665,9 @@ def test_taiwan_no_trade_rows_are_not_holdable():
                 f"{int((~z[nt]).sum())}/{int(df.loc[nt, 'adj_close_tr'].notna().sum())}"
                 f"/{int(valid[nt].sum())} of {int(nt.sum())} break one of those")
 
-    assert len(empty) == 59, (
-        f"README says load_adjusted refuses 59 of the universe's names — 1 whose "
-        f"OHLCV file holds no rows at all and 58 quoted only outside the window; "
+    assert len(empty) == 60, (
+        f"README says load_adjusted refuses 60 of the universe's names — 1 whose "
+        f"OHLCV file holds no rows at all and 59 quoted only outside the window; "
         f"{len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
     assert (rows, zero, zero_stocks) == (5_883_919, 128_442, 1_152), (
@@ -3693,25 +3693,47 @@ def test_taiwan_reason_frame_is_frozen():
             len(r))
 
 def test_taiwan_filing_dates_cover_the_statement_trees():
-    """README caveat 9: every company with a statement tree is dated.
+    """README caveat 9: every company holding a statement is dated.
 
     The panel exists to say when a figure became public, so a company missing
     from it silently falls back on the deadline — the very bound the caveat says
     is wrong for one quarter in fifteen. Asserting the frames match means a tree
     added later fails here rather than being dated by a rule nobody chose.
+
+    The first assertion ranges over the companies whose tree carries rows, not
+    over the tree files. A file is written for every name in the universe and
+    182 of them are empty, so the two sets differ by whether the vendor served
+    a statement — and a company with no statement has nothing that could fall
+    back on a deadline, which is the whole failure this looks for. 181 of the
+    182 are dated anyway, because the document server carries filings FinMind
+    does not serve; the exception is 3718, a holding company listed on
+    2026-09-10 whose page is empty on both the plain and the holdco route while
+    its delisted predecessor's carries 382 documents. Requiring a filing date
+    for a company that has filed nothing asks the server for a date that does
+    not exist.
+
+    The second assertion still ranges over every tree file, because it asks the
+    opposite question: a dated code with no tree at all is a page answered for
+    someone else, and narrowing that set would turn the 181 into failures.
     """
+    import pyarrow.parquet as pq
+
     path = REPO / "finmind_data/filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built — "
                       "run `filing_dates.py` then `--consolidate`")
     d = pd.read_parquet(path)
-    trees = {p.stem for p in (REPO / "finmind_data/fin_is").glob("*.parquet")}
-    missing = sorted(trees - set(d["stock_id"]))
+    trees, holding = set(), set()
+    for f in (REPO / "finmind_data/fin_is").glob("*.parquet"):
+        trees.add(f.stem)
+        if pq.read_metadata(f).num_rows:
+            holding.add(f.stem)
+    missing = sorted(holding - set(d["stock_id"]))
     assert not missing, (
-        f"README caveat 9 dates all {len(trees)} companies that carry a "
-        f"statement tree; {len(missing)} have no filing dates ({missing[:5]}), "
-        f"so their statements would be dated by the deadline the caveat says "
-        f"is a bound and not a date"
+        f"README caveat 9 dates all {len(holding)} companies whose statement "
+        f"tree carries rows; {len(missing)} have no filing dates "
+        f"({missing[:5]}), so their statements would be dated by the deadline "
+        f"the caveat says is a bound and not a date"
     )
     extra = sorted(set(d["stock_id"]) - trees)
     assert not extra, (
@@ -3722,7 +3744,8 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     undated = int(d["first_public"].isna().sum())
     assert not undated, f"{undated} rows carry no 上傳日期 and date nothing"
     return (f"{len(d):,} company-quarters over {d['stock_id'].nunique():,} "
-            f"companies, none undated", len(d))
+            f"companies, none undated; {len(holding):,} of {len(trees):,} "
+            f"trees carry a statement and every one of them is dated", len(d))
 
 
 def test_taiwan_statements_are_published_after_their_deadline():
@@ -4150,8 +4173,8 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
         sell=("ShortSaleSell", "sum"), bal=("ShortSaleTodayBalance", "sum"))
     dead = int((m["sell"] == 0).sum())
     flat = int((m["bal"] == 0).sum())
-    assert len(m) == 168 and len(frames) == 2076 and not dead and not flat, (
-        f"README claims 'across the 168 in-window months, on 2,076 names, not "
+    assert len(m) == 168 and len(frames) == 2077 and not dead and not flat, (
+        f"README claims 'across the 168 in-window months, on 2,077 names, not "
         f"one month has zero short-sale volume and not one has zero short "
         f"balance'; {len(m):,} months on {len(frames):,} names, {dead} with no "
         f"volume and {flat} with no balance")

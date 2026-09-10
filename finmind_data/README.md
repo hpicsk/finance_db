@@ -46,26 +46,26 @@ answerable range was cut to 2011-01-25 for the reason above.
 
 ## Universe
 
-**2,158 common stocks** (4-digit ticker codes), from the 2026-08-17
+**2,159 common stocks** (4-digit ticker codes), from the 2026-09-10
 `build_universe.py` rebuild:
 
 | Exchange | Count |
 |---|---|
 | TWSE                                   | 1,178 |
-| TPEx                                   |   923 |
+| TPEx                                   |   924 |
 | In-window delistings the endpoint dropped (type unknown) | 57 |
-| **Total**                              | **2,158** |
+| **Total**                              | **2,159** |
 
 **2,095 of them trade inside the window**, and that is the number a study
-meets. The other 63 hold a code and contribute no observation: **42 delisted
+meets. The other 64 hold a code and contribute no observation: **42 delisted
 before 2011-01-25** and are carried because the live endpoint still lists them
 — 1107, 2341, 2381 and 2396 among them, quoted on 興櫃 after their exit but
-never again on a board — and **21 first traded after 2024-12-31**, the earliest
+never again on a board — and **22 first traded after 2024-12-31**, the earliest
 on 2025-01-03, which `build_universe.py` does not filter on because it reads a
-registry rather than a calendar. **None of the 63 delisted inside the window**,
+registry rather than a calendar. **None of the 64 delisted inside the window**,
 which is the case that would have been a coverage failure rather than dead
 weight. Nothing is biased by their presence; a study that assumes uniform
-coverage over 2,158 is measuring 63 empty series. Both counts are checked
+coverage over 2,159 is measuring 64 empty series. Both counts are checked
 against the tape rather than asserted, in
 `test_taiwan_universe_holds_every_common_the_tape_shows`.
 
@@ -208,7 +208,7 @@ survivorship-biased where a price study is not; caveat 10 measures it.
 
 Everything above is about *membership*: the 164 in-window delistings are all
 here, so no name is missing. It says nothing about *when*, and
-`universe.parquet` carries the same 2,158 names on every session of the window
+`universe.parquet` carries the same 2,159 names on every session of the window
 — which is not a universe a backtest can rebalance against. Screening the name
 list at a 2013-06-28 rebalance puts **585** names in that session's universe
 that were not listed that day:
@@ -320,7 +320,7 @@ present.
 ```
 /home/st/research/finance_db/finmind_data/
 ├── README.md                          (this file)
-├── universe.parquet                   2,158 common stocks (id, name, type, industry)
+├── universe.parquet                   2,159 common stocks (id, name, type, industry)
 ├── delisted_universe.parquet          723 historical delistings — `TaiwanStockDelisting` output
 ├── listing_spans.parquet              when each name was listed, as maximal session runs (2011-2024)
 ├── trading_sessions.parquet           the 3,414 sessions the exchange held in the window
@@ -667,9 +667,9 @@ makes them a hole rather than the ragged end of a covered series, and
 the rebuild takes them on the same path as the 50: 54 stocks, 61,505
 traded sessions in all.
 
-113 downloaded adjusted files are empty inside the window: the 54 above,
-and 59 that have no raw prices in it either — 37 delisted before it opens,
-21 listed after it closes, and one is a zero-row file. Quoting the 99.99 % these
+114 downloaded adjusted files are empty inside the window: the 54 above,
+and 60 that have no raw prices in it either — 37 delisted before it opens,
+22 listed after it closes, and one is a zero-row file. Quoting the 99.99 % these
 same files give once the 54 leave the denominator reports the coverage of
 a panel the bias has already been removed from — the vendor's coverage is
 98.90 %, and `available_stocks()` lists the 2,139 names it serves.
@@ -768,8 +768,8 @@ a market observation, and the last exchange close is not one. A name
 that left by merger does not go to 興櫃 at all, so the presence of a
 tail is itself a weak signal on the delisting reason (caveat 8).
 
-And `ohlcv/` itself is a zero-row file for one stock while 58 more hold
-prices only outside the window; `load_adjusted` raises on all 59.
+And `ohlcv/` itself is a zero-row file for one stock while 59 more hold
+prices only outside the window; `load_adjusted` raises on all 60.
 
 ### The gap that runs the other way, and the 1,941 returns it cost
 
@@ -1862,7 +1862,7 @@ regime dummy or a split sample is required, not one pooled estimate.
 
 **The short-sale series has no regime gap in it.** Taiwan ran no market-wide
 short-sale suspension over these years, and the data says so rather than the
-statute: across the 168 in-window months, on 2,076 names, not one month has
+statute: across the 168 in-window months, on 2,077 names, not one month has
 zero short-sale volume and not one has zero short balance. March 2020 — when
 several markets suspended shorting outright — carries **1.66×** the 2019
 monthly mean, not a hole. The consequence for a caller is the useful part: a
