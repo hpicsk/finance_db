@@ -353,6 +353,7 @@ coverage ending early.
 ├── unpriced_actions.parquet           share cancellations no filing explains    (2011-2026)
 ├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2011-2026)
 ├── ohlcv_repull.parquet               60 stocks' prices pulled a second time, 2026-09-11 (2011-2026)
+├── volume_repair.parquet              every count the volume repair replaced, old and new (2012-2020)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -395,6 +396,7 @@ coverage ending early.
 ├── download_split_price.py            TaiwanStockSplitPrice → split_reference.parquet
 ├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
 ├── ohlcv_repull.py                    draws the 60 and pulls them again → ohlcv_repull.parquet
+├── volume_repair.py                   first-answer counts → the endpoint's, record → volume_repair.parquet
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
@@ -864,15 +866,6 @@ The recovered rows are the vendor's own, not a reconstruction. `spread` is
 present on all 1,941 where the arithmetic recovery left it NaN, and the volume
 is the raw endpoint's answer.
 
-**On 12 of the 14 Saturdays, `ohlcv/` keeps a count the vendor has since
-raised.** Against the tape, `ohlcv/`'s volume and value fall short on 5,925
-rows in 745 stocks, all on those 12 Saturdays. Every other in-window row the
-tape holds matches on both. The median row is short by 0.42 % of its volume,
-and the worst by 99.5 %. The per-stock endpoint `ohlcv/` was downloaded from
-now serves the tape's count too: the re-pull under Provenance matches the tape
-on every Saturday row of its sample. `price_adj/` holds all 5,925 rows. It
-carries the tape's count on 1,943 of them and `ohlcv/`'s on the other 3,982.
-
 **What the repair costs, stated plainly.** Of the 1,941 restored rows, only
 **303 have an adjusted counterpart** — 210 traded and 93 no-trade, exactly the
 set the loader used to reconstruct. The other 1,638 are sessions the vendor's
@@ -918,6 +911,25 @@ them. Nothing else is missing from a universe name's `price_adj/` file; the
 1,621 sessions the tape holds and it does not are sessions the adjusted
 endpoint does not serve for those stocks at all, and the 501 rows before a
 file's first session are the documented `vendor_carried` edge.
+
+#### The Saturday rows `ohlcv/` already held carried an older count
+
+On 12 of the 14 Saturdays, `ohlcv/` held a count the vendor has since raised.
+Against the tape, `ohlcv/`'s volume and value fell short on 5,925 rows in 745
+stocks, all on those 12 Saturdays. Every other in-window row the tape holds
+matched on both. The median row was short by 0.42 % of its volume, and the
+worst by 99.5 %. The per-stock endpoint `ohlcv/` was downloaded from serves
+the tape's count too: the re-pull under Provenance matches the tape on every
+Saturday row of its sample.
+
+`volume_repair.py` read the 12 sessions back from the endpoint on 2026-09-11
+and wrote its volume, value and trade count over the 5,925 rows. It stops on a
+row whose price differs from the endpoint's. No row did. `price_adj/` held the
+same first count on 3,982 of the rows, and a lower count than `ohlcv/`'s on
+3713's 2020-02-27. The repair set its three count columns to `ohlcv/`'s on
+those 3,983 rows: only its prices are adjusted. `volume_repair.parquet` keeps
+every value the repair replaced. `ohlcv/` now matches the tape on every
+in-window row the tape holds.
 
 ## Load the full panel
 
@@ -969,13 +981,14 @@ ohlcv_all = pd.concat(
 - **Re-pull, 2026-09-11:** `ohlcv_repull.py` pulled `TaiwanStockPrice` over the
   window again for 60 stocks, drawn at random: 40 of the 684 stocks whose
   `open` is outside `[min, max]` on some traded row (caveat 11), and 20 of the
-  1,437 with traded rows and no such open. `ohlcv_repull.parquet` is that pull as served.
-  The script cannot run once the sponsor tier lapses on 2026-09-16. The parquet
-  is therefore committed rather than regenerated. Against `ohlcv/`, all 159,684
-  of the 60 stocks' in-window rows came back with the same open, max, min,
-  close and spread. 138 rows came back with a higher volume, value and trade
-  count, every one on a make-up Saturday (see "The gap that runs the other
-  way").
+  1,437 with traded rows and no such open. `ohlcv_repull.parquet` is that pull
+  as served. The script cannot run once the sponsor tier lapses on 2026-09-16.
+  The parquet is therefore committed rather than regenerated. Against
+  `ohlcv/`, all 159,684 of the 60 stocks' in-window rows came back with the
+  same open, max, min, close and spread. 138 rows came back with a higher
+  volume, value and trade count, every one on a make-up Saturday. The repair
+  under "The gap that runs the other way" has since written those counts into
+  `ohlcv/`.
 
 ### Frozen baseline
 
@@ -2018,7 +2031,7 @@ Sponsor tier (level 3, since 2026-08-16):
 
 | Subdir | Endpoint | Notes |
 |---|---|---|
-| `price_adj/` | `TaiwanStockPriceAdj` | 還原股價 — the back-adjusted OHLCV, **total-return convention** (see **Adjusted prices**). Gated above `register` until the tier was bought; the docs' "Free (with data_id)" line was wrong for every calling convention. Same schema as `ohlcv/`, and only the five price columns are adjusted. `Trading_Volume` matches `ohlcv/`'s on all but 1,944 of the 6,611,442 in-window rows the two share: 1,943 make-up Saturday rows where `ohlcv/` keeps the vendor's first count (see "The gap that runs the other way"), and 3713 on 2020-02-27, where `price_adj/`'s count is the lower. |
+| `price_adj/` | `TaiwanStockPriceAdj` | 還原股價 — the back-adjusted OHLCV, **total-return convention** (see **Adjusted prices**). Gated above `register` until the tier was bought; the docs' "Free (with data_id)" line was wrong for every calling convention. Same schema as `ohlcv/`, and only the five price columns are adjusted. Its three count columns equal `ohlcv/`'s on every in-window row the two share, 3,983 of them set from `ohlcv/` by the repair under "The gap that runs the other way". |
 
 The tier reports itself at `api.web.finmindtrade.com/v2/user_info`:
 `level: 3`, `level_title: "Sponsor"`, `api_request_limit_hour: 6000` — ten times

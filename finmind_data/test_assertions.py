@@ -1402,6 +1402,10 @@ def test_taiwan_repull_returns_the_stored_prices():
 
     The sample is drawn again rather than trusted: `ohlcv_repull.draw` must
     return the committed 60 from today's strata, so a hand-picked sample fails.
+
+    The repair under "The gap that runs the other way" has since written the
+    re-pulled counts into `ohlcv/`. The rows that came back higher are
+    therefore read off `volume_repair.parquet`, which keeps their first counts.
     """
     from finmind_data.ohlcv_repull import draw, strata
 
@@ -1437,20 +1441,27 @@ def test_taiwan_repull_returns_the_stored_prices():
         f"{len(m):,} rows compare, and these moved: {moved}")
 
     counts = ["Trading_Volume", "Trading_money", "Trading_turnover"]
-    differ = pd.concat({c: m[f"{c}_s"].ne(m[f"{c}_f"]) for c in counts}, axis=1)
-    higher = pd.concat({c: m[f"{c}_f"] > m[f"{c}_s"] for c in counts}, axis=1)
-    rows = differ.any(axis=1)
+    still = {c: int(m[f"{c}_s"].ne(m[f"{c}_f"]).sum()) for c in counts}
+    assert not any(still.values()), (
+        f"README Provenance says the repair has since written the re-pulled "
+        f"counts into ohlcv/; these still differ: {still}")
+    log = pd.read_parquet(REPO / "finmind_data/volume_repair.parquet")
+    log = log[log["tree"] == "ohlcv"].assign(date=lambda x: pd.to_datetime(x["date"]))
+    hit = m.merge(log, on=["date", "stock_id"])
+    higher = all(((hit[f"{c}_old"] < hit[f"{c}_f"])
+                  & (hit[f"{c}_new"] == hit[f"{c}_f"])).all() for c in counts)
     sessions = pd.to_datetime(pd.read_parquet(
         REPO / "finmind_data/trading_sessions.parquet")["date"])
     saturdays = sessions[sessions.dt.dayofweek == 5]
-    got = (int(rows.sum()), bool(higher[rows].all().all()),
-           bool(m.loc[rows, "date"].isin(saturdays).all()))
+    got = (len(hit), higher, bool(hit["date"].isin(saturdays).all()))
     assert got == (138, True, True), (
         f"README Provenance says 138 rows came back with a higher volume, "
-        f"value and trade count, every one on a make-up Saturday; (rows, all "
-        f"three higher on each, all on a Saturday session) now reads {got}")
-    return (f"{len(ids)} stocks, {len(m):,} rows: every price as stored, "
-            f"{got[0]} rows with higher counts, all on Saturday sessions"), len(m)
+        f"value and trade count, every one on a make-up Saturday; (rows the "
+        f"repair replaced, first count lower and new count the re-pull's on "
+        f"all three, all on a Saturday session) now reads {got}")
+    return (f"{len(ids)} stocks, {len(m):,} rows: every field as stored; "
+            f"{got[0]} came back with higher counts, all on Saturday sessions, "
+            f"and the repair wrote them in"), len(m)
 
 
 # ---- Taiwan: the biases the delisting table does *not* fix -----------------
@@ -3271,15 +3282,16 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
             f"ticker-days; price_adj/ carries none ohlcv/ lacks"), examined
 
 
-def test_taiwan_make_up_saturdays_keep_the_first_volume():
-    """README, "The gap that runs the other way": on 12 of the 14 Saturdays,
-    `ohlcv/` keeps a count the vendor has since raised.
+def test_taiwan_volume_repair_matches_the_tape():
+    """README, "The gap that runs the other way": `volume_repair.py` wrote the
+    vendor's raised count over the 5,925 rows where `ohlcv/` held its first one.
 
     The tape is the reference: the date-keyed endpoint, read later than the
     tree. It is a reference only if the per-stock endpoint the tree came from
-    now serves the same count, so the re-pull's Saturday rows are held against
-    it too. `price_adj/` is read for the sponsor-tier table, which quotes where
-    its volume and `ohlcv/`'s differ.
+    serves the same count, so the re-pull's Saturday rows are held against it
+    too. The first counts are gone from the trees and kept in
+    `volume_repair.parquet`, so the figures about the shortfall are read off
+    it, and each tree must hold the record's `new` value on every row it names.
     """
     import pyarrow.parquet as pq
 
@@ -3292,37 +3304,44 @@ def test_taiwan_make_up_saturdays_keep_the_first_volume():
     sessions = pd.to_datetime(pd.read_parquet(
         REPO / "finmind_data/trading_sessions.parquet")["date"])
     saturdays = sessions[sessions.dt.dayofweek == 5]
+    log = pd.read_parquet(REPO / "finmind_data/volume_repair.parquet")
+    log["date"] = pd.to_datetime(log["date"])
+    counts = ["Trading_Volume", "Trading_money", "Trading_turnover"]
 
     raw, adj = [], []
     for sid in _panel_ids():
         p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         if pq.ParquetFile(p).metadata.num_rows:
-            raw.append(_tree(p, columns=["date", "stock_id", "Trading_Volume",
-                                         "Trading_money"]))
+            raw.append(_tree(p, columns=["date", "stock_id"] + counts))
         q = REPO / f"finmind_data/price_adj/{sid}.parquet"
         if q.exists() and pq.ParquetFile(q).metadata.num_rows:
-            adj.append(_tree(q, columns=["date", "stock_id", "Trading_Volume"]))
+            adj.append(_tree(q, columns=["date", "stock_id"] + counts))
     raw = pd.concat(raw, ignore_index=True)
     adj = pd.concat(adj, ignore_index=True)
 
     m = raw.merge(tape, on=["date", "stock_id"], suffixes=("", "_tape"))
-    s = m[m["Trading_Volume"].ne(m["Trading_Volume_tape"])
-          | m["Trading_money"].ne(m["Trading_money_tape"])]
-    short = bool((s["Trading_Volume"] < s["Trading_Volume_tape"]).all()
-                 and (s["Trading_money"] < s["Trading_money_tape"]).all())
-    got = (len(s), s["stock_id"].nunique(), s["date"].nunique(), len(saturdays),
-           bool(s["date"].isin(saturdays).all()), short)
+    off = int((m["Trading_Volume"].ne(m["Trading_Volume_tape"])
+               | m["Trading_money"].ne(m["Trading_money_tape"])).sum())
+    assert off == 0, (
+        f"README says ohlcv/ now matches the tape on every in-window row the "
+        f"tape holds; {off:,} of {len(m):,} rows differ on volume or value")
+
+    o = log[log["tree"] == "ohlcv"]
+    short = all((o[f"{c}_old"] < o[f"{c}_new"]).all()
+                for c in ["Trading_Volume", "Trading_money"])
+    got = (len(o), o["stock_id"].nunique(), o["date"].nunique(), len(saturdays),
+           bool(o["date"].isin(saturdays).all()), short)
     assert got == (5925, 745, 12, 14, True, True), (
-        f"README says that against the tape, ohlcv/'s volume and value fall "
-        f"short on 5,925 rows in 745 stocks, all on 12 of the 14 Saturdays, and "
-        f"that every other in-window row the tape holds matches on both; (rows, "
-        f"stocks, dates, calendar Saturdays, all on a Saturday, short on both) "
-        f"now reads {got}")
-    gap = 1 - s["Trading_Volume"] / s["Trading_Volume_tape"]
+        f"README says that against the tape, ohlcv/'s volume and value fell "
+        f"short on 5,925 rows in 745 stocks, all on 12 of the 14 Saturdays; "
+        f"(rows the repair replaced, stocks, dates, calendar Saturdays, all on "
+        f"a Saturday, short on both) now reads {got}")
+    gap = 1 - o["Trading_Volume_old"] / o["Trading_Volume_new"]
     assert (math.isclose(gap.median(), 0.0042, abs_tol=0.00005)
             and math.isclose(gap.max(), 0.995, abs_tol=0.0005)), (
-        f"README says the median row is short by 0.42 % of its volume, and the "
-        f"worst by 99.5 %; the tree gives {gap.median():.2%} and {gap.max():.1%}")
+        f"README says the median row was short by 0.42 % of its volume, and the "
+        f"worst by 99.5 %; the repair record gives {gap.median():.2%} and "
+        f"{gap.max():.1%}")
 
     fresh = pd.read_parquet(REPO / "finmind_data/ohlcv_repull.parquet",
                             columns=["date", "stock_id", "Trading_Volume",
@@ -3337,30 +3356,36 @@ def test_taiwan_make_up_saturdays_keep_the_first_volume():
         f"Saturday row of its sample; {len(f)} of its {len(fresh)} Saturday "
         f"rows are in the tape, all matching: {agree}")
 
-    held = s.merge(adj, on=["date", "stock_id"], suffixes=("", "_adj"))
-    carried = int(held["Trading_Volume_adj"].eq(held["Trading_Volume_tape"]).sum())
-    repeated = int(held["Trading_Volume_adj"].eq(held["Trading_Volume"]).sum())
-    assert (len(held), carried, repeated) == (5925, 1943, 3982), (
-        f"README says price_adj/ holds all 5,925 rows, and carries the tape's "
-        f"count on 1,943 of them and ohlcv/'s on the other 3,982; it holds "
-        f"{len(held):,}, {carried:,} with the tape's count and {repeated:,} "
-        f"with ohlcv/'s")
+    a = log[log["tree"] == "price_adj"]
+    same = a.merge(o, on=["date", "stock_id"], suffixes=("", "_ohlcv"))
+    first = all((same[f"{c}_old"] == same[f"{c}_old_ohlcv"]).all() for c in counts)
+    rest = a[~a.set_index(["date", "stock_id"]).index.isin(
+        same.set_index(["date", "stock_id"]).index)]
+    others = [(r.stock_id, f"{r.date:%Y-%m-%d}", r.Trading_Volume_old < r.Trading_Volume_new)
+              for r in rest.itertuples()]
+    assert (len(same), first, others) == (3982, True, [("3713", "2020-02-27", True)]), (
+        f"README says price_adj/ held the same first count on 3,982 of the rows, "
+        f"and a lower count than ohlcv/'s on 3713's 2020-02-27; the repair "
+        f"record gives {len(same):,} rows sharing ohlcv/'s entry, the same "
+        f"first count on each: {first}, and beside them {others}")
+
+    for name, tree in (("ohlcv", raw), ("price_adj", adj)):
+        now = tree.merge(log[log["tree"] == name], on=["date", "stock_id"])
+        wrong = int(sum((now[c] != now[f"{c}_new"]).sum() for c in counts))
+        assert len(now) == int((log["tree"] == name).sum()) and wrong == 0, (
+            f"README says volume_repair.parquet keeps every value the repair "
+            f"replaced; {name}/ holds {len(now):,} of its rows, {wrong} of them "
+            f"without the recorded new count")
     shared = raw.merge(adj, on=["date", "stock_id"], suffixes=("", "_adj"))
-    d = shared[shared["Trading_Volume"].ne(shared["Trading_Volume_adj"])]
-    wk = d[~d["date"].isin(saturdays)]
-    others = [(r.stock_id, f"{r.date:%Y-%m-%d}", r.Trading_Volume_adj < r.Trading_Volume)
-              for r in wk.itertuples()]
-    assert (len(shared), len(d), others) == (
-            6611442, 1944, [("3713", "2020-02-27", True)]), (
-        f"README's sponsor-tier table says price_adj/'s Trading_Volume matches "
-        f"ohlcv/'s on all but 1,944 of the 6,611,442 in-window rows the two "
-        f"share: the 1,943 make-up Saturday rows, and 3713 on 2020-02-27, where "
-        f"price_adj/'s count is the lower; {len(d):,} of {len(shared):,} "
-        f"differ, and off the Saturdays: {others}")
-    return (f"ohlcv/ short of the tape on {len(s):,} rows, all on "
-            f"{s['date'].nunique()} Saturdays; the re-pull matches the tape on "
-            f"{len(f)} Saturday rows; price_adj/ carries the tape's count on "
-            f"{carried:,} of them"), len(m)
+    differ = int(sum(shared[c].ne(shared[f"{c}_adj"]).sum() for c in counts))
+    assert differ == 0, (
+        f"README's sponsor-tier table says price_adj/'s three count columns equal "
+        f"ohlcv/'s on every in-window row the two share; {differ:,} values of "
+        f"{len(shared):,} rows differ")
+    return (f"ohlcv/ matches the tape on {len(m):,} rows; the repair replaced "
+            f"{len(o):,} ohlcv/ rows on {o['date'].nunique()} Saturdays and "
+            f"{len(a):,} price_adj/ rows; the re-pull matches the tape on "
+            f"{len(f)} Saturday rows"), len(m)
 
 
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
@@ -4996,7 +5021,7 @@ CHECKS = [
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,
-    test_taiwan_make_up_saturdays_keep_the_first_volume,
+    test_taiwan_volume_repair_matches_the_tape,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,
