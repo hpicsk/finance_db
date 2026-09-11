@@ -10,22 +10,22 @@ price by ten, and the exchange publishes the pre- and post-change reference
 prices for it exactly as it does for a 減資.
 
 Without this file the rebuilt factor steps straight across the change and
-carries the whole division as a return: on the twelve in-window events it is
-wrong by 49 to 99 percentage points, reading 6548's 2019-09-09 ten-for-one as a
-−89.0 % day. ``detect_unpriced_actions`` cannot cover for that, because it looks
-for share-count *drops* — a cancellation — and this action is a share-count
-*multiplication*. The two blind spots line up, which is why the class was
-invisible from inside the package.
+carries the whole division as a return: on the in-window events it is wrong by
+the whole width of the reprice, 46 to 95 percentage points, reading 6548's
+2019-09-09 ten-for-one as a −89.0 % day. ``detect_unpriced_actions`` cannot
+cover for that, because it looks for share-count *drops* — a cancellation — and
+this action is a share-count *multiplication*. The two blind spots line up,
+which is why the class was invisible from inside the package.
 
 **The endpoint's first row is not a publication floor.** ``TaiwanStockSplitPrice``
 begins on 2019-09-09, well inside the window, so the natural worry is caveat 5
 again — a chain that starts after the prices do and hides its own early events.
 It is not: an independent scan of ``shares/`` × ``ohlcv/`` for the signature of
 this action — the share count multiplying while the close divides by the
-matching ratio — finds eleven candidates across the whole window and every one
-of them is already in the endpoint, the earliest on the endpoint's own first
-date. Nothing precedes it because the flexible-par regime produced no listed
-change before it, not because the table was trimmed.
+matching ratio — finds eleven candidates across 2011-01-25..2024-12-31, the span
+it was run over, and every one of them is already in the endpoint, the earliest
+on the endpoint's own first date. Nothing precedes it because the flexible-par
+regime produced no listed change before it, not because the table was trimmed.
 
 The one event the scan does not reproduce is 8476's 2024-11-11, whose share
 count updates two sessions after the reprice; that is the endpoints disagreeing

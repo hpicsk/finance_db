@@ -38,15 +38,22 @@ from pathlib import Path
 
 import pandas as pd
 
+from .window import COVERAGE_END
+
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "exright_reference.parquet"
 
 URL = ("https://www.twse.com.tw/rwd/zh/exRight/TWT49U"
        "?startDate={start}&endDate={end}&response=json")
 
-# The price series starts 2005-09-02 and ends 2024-12-31; TWT49U serves the
-# whole span (probed 2026-08-01, the earliest accepted start being 2005).
-YEARS = range(2005, 2025)
+# The price series starts 2005-09-02; TWT49U serves the whole span (probed
+# 2026-08-01, the earliest accepted start being 2005). The far end is
+# `COVERAGE_END`'s year rather than a literal: the cash leg is wanted for the
+# 除權息 the panel carries, so an extension that moves coverage into a new year
+# leaves this file one year short of the events it exists to explain, and the
+# events it cannot name come back as NaN price-return steps rather than as an
+# error. Whole years are stored and the clip is applied where they are read.
+YEARS = range(2005, COVERAGE_END.year + 1)
 
 # One request per year against an exchange that publishes this for free.
 _SLEEP_SECONDS = 3.0

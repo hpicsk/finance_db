@@ -10,12 +10,12 @@ delisted before the window and were still being quoted inside it, so the vendor
 covers none of their in-window sessions either.
 
 The rebuild is possible because ``ohlcv/close`` is raw: it equals the exchange's
-published pre-event ``before_price`` on 99.84 % of 除權息 events, so nothing has
+published pre-event ``before_price`` on 99.83 % of 除權息 events, so nothing has
 been removed from it and the reference prices can be applied directly. Both
 event chains are the exchange's own numbers rather than a redistribution of a
 declared dividend — ``div_result/`` for 除權息, ``capital_reduction.parquet`` for
 減資 and ``split_reference.parquet`` for 面額變更 / 分割 / 反分割 — and no two of
-them ever share a ``(stock_id, date)``: 0 overlaps across 18,277, 636 and 33
+them ever share a ``(stock_id, date)``: 0 overlaps across 21,418, 674 and 35
 filings, so the three chains multiply without double counting.
 ``_assert_disjoint`` re-checks it per stock rather than trusting that.
 
@@ -23,7 +23,7 @@ The third chain was the last one added and it was added because it was missing,
 not because it was new. A 面額變更 divides the quoted price and multiplies the
 share count by the same factor, so it moves a price exactly as mechanically as
 a 減資 does — and until ``split_reference.parquet`` existed the rebuilt factor
-stepped straight across all twelve in-window events, reading 6548's 2019-09-09
+stepped straight across every in-window event, reading 6548's 2019-09-09
 ten-for-one as a −89.0 % day. ``detect_unpriced_actions`` could not have caught
 it either: that script finds share-count *drops*, and this action is a
 share-count *multiplication*. See ``download_split_price`` for why the chain's
@@ -40,7 +40,7 @@ looks like it should. The company cancels a fraction ``r`` of the shares and
 refunds par for them, ``C = 10r`` per share, and the exchange prices
 ``after = (before - C)/(1 - r)``. That reference price is value-conserving
 *including the refund* — ``(1 - r) * after + C == before`` holds to 2.8e-14 on
-all 195 filings where both legs are published and ``after != 10`` — so the step
+all 210 filings where both legs are published and ``after != 10`` — so the step
 below leaves the
 adjusted series flat across the event, which is what reinvesting the refund
 means. Taking the refund out again is a price-return operation, not a
@@ -55,10 +55,10 @@ scaled down; for 減資 it rises, so step < 1; a 面額變更 falls again, and a
 The step is taken at the ex price rather than the cum one, which is not a
 cosmetic choice: back-adjustment factors compose multiplicatively and only the
 ex form telescopes. A cum-price form ``1 + D/before`` understates each step by
-``(D/before)**2`` — a median 21.5 bp per event and q95 159 bp, because Taiwan's
-steps are large (median 4.6 % of the cum price, q95 12.6 %) where they carry a
-share-count change as well as cash — compounding to a median 3.7 % and a q99
-30.5 % over a stock's full history.
+``(D/before)**2`` — a median 18.0 bp per in-window 除權息 and q95 112 bp,
+because Taiwan's steps are large (median 4.2 % of the cum price, q95 10.6 %)
+where they carry a share-count change as well as cash — compounding to a median
+2.6 % and a q99 26.9 % over a stock's in-window history.
 
 Coverage limit, and it is the 減資 chain's alone.
 ``capital_reduction.parquet`` starts on 2011-01-25 while prices
@@ -101,8 +101,8 @@ _SPL_BEFORE, _SPL_AFTER = 'before_price', 'after_price'
 _TOL_BEFORE_PRICE = 1e-2
 # A filing repeated under both its suspension and its resumption date sits days
 # apart, never years. Two filings carrying identical reference prices further
-# apart than this are separate actions that happen to have repriced alike — 28
-# of the 31 such pairs in the panel — and both are real.
+# apart than this are separate actions that happen to have repriced alike — 33
+# of the 35 such pairs in the window — and both are real.
 _TWIN_WINDOW_DAYS = 30
 
 
@@ -181,10 +181,10 @@ def _read_events(stock_id: str, px: pd.DataFrame) -> pd.DataFrame:
     # last close before the event, so a filing whose predecessor closed at some
     # other price is not describing this series: 6109 files its 2018 現金減資
     # again under 2020-09-25, a date it traded straight through. The identity
-    # holds for 22,952 of the 22,953 filings that have a prior close to check
-    # against, so it rejects that one and leaves every other alone. A prior
-    # close of zero is a stale FinMind row rather than a price and anchors
-    # nothing, so those 41 pass unexamined.
+    # holds for 22,054 of the 22,055 filings inside the window that have a prior
+    # close to check against, so it rejects that one and leaves every other
+    # alone. A prior close of zero is a stale FinMind row rather than a price and
+    # anchors nothing, so those 36 pass unexamined.
     ev = ev.sort_values('date')
     prior = pd.merge_asof(ev[['date']], px, on='date', direction='backward',
                           allow_exact_matches=False)['close'].to_numpy()
@@ -278,17 +278,18 @@ def rebuild_tr_factor(stock_id: str, px: pd.DataFrame) -> tuple[np.ndarray, dict
 
     steps = np.ones(len(px))
     # First session ON OR AFTER the event date, not the exact date. A disclosed
-    # event date is usually a session and this resolves to it, but 274 of the
-    # 22,997 filed events fall on a day the stock did not trade, and 271 of those
-    # are one of 21 dates when nothing traded at all — the exchange was shut,
-    # almost always for a typhoon. TWSE 順延s such an event to the next session,
-    # and the data says so: ``before_price`` equals the close of the session
-    # before the closure, and the next session's realised return matches the
-    # reference-price step to a mean 1 bp. So the step is right and only its date
-    # is stale; placing it on the resumption session is what removes the move,
-    # and skipping it would leave the full step inside a return. The remaining
-    # three are 減資 suspensions, where trading stops for 12 to 18 days to
-    # exchange certificates and the same reasoning applies to the resumption.
+    # event date is usually a session and this resolves to it, but 243 of the
+    # 22,090 events placed inside the window fall on a day the stock did not
+    # trade, and 241 of those are one of 15 dates when nothing traded at all —
+    # the exchange was shut, almost always for a typhoon. TWSE 順延s such an
+    # event to the next session, and the data says so: ``before_price`` equals
+    # the close of the session before the closure, and the next session's
+    # realised return matches the reference-price step to a mean −6 bp. So the
+    # step is right and only its date is stale; placing it on the resumption
+    # session is what removes the move, and skipping it would leave the full
+    # step inside a return. The remaining two are 減資 filings dated inside a
+    # trading suspension, 18 days for 6199 and 195 for 6222, and the same
+    # reasoning applies to the resumption.
     dates = px['date'].to_numpy()
     idx = (np.searchsorted(dates, ev['date'].to_numpy(), 'left')
            if len(ev) else np.array([], int))

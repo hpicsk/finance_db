@@ -14,7 +14,7 @@ rather than done silently.
 
 **The survivorship hole is filled.** ``price_adj/`` serves nothing at all
 inside the window for 54 stocks, 61,505 traded sessions. Fifty are in-window
-universe delistings — 50 of the 164, delisted 2012-2020, and 50 of the 57 names
+universe delistings — 50 of the 179, delisted 2012-2020, and 50 of the 57 names
 the universe carries precisely as its survivorship overlay, dropped from
 FinMind's live registry and from this endpoint on the same list. The other four
 delisted between 2007 and 2010 and went on being quoted on 興櫃 into the window,
@@ -22,9 +22,9 @@ so the vendor's series for them ends before ``COVERAGE_START`` and covers none
 of their in-window sessions. ``adjust.rebuild_tr_factor`` rebuilds all 54 from
 the exchange's own reference prices, which is why they are recoverable at all:
 the reference prices are published per event and do not depend on the registry.
-Validated on the 116 covered in-window delistings — the same era, the same
+Validated on the 131 covered in-window delistings — the same era, the same
 situation, the vendor present to compare against — where the rebuild reproduces
-99.954 % of 203,671 daily adjusted returns to 1e-6 and 99.998 % to 1e-3.
+99.952 % of 247,422 daily adjusted returns to 1e-6 and 99.994 % to 1e-3.
 
 **One vendor event is replaced with the exchange's own step.** 3454's
 2011-07-27 除權息 is filed twice, the second row reading before 0.00 / after
@@ -36,13 +36,13 @@ other way, and all six are dated 2005-2008. ``vendor_event_audit`` grades every
 event and finds both shapes by shape, not by stock id.
 
 **The one edge of the vendor series is carried outward.** It begins one traded
-session after the raw series on 493 stocks, and a factor moves only on an ex
+session after the raw series on 494 stocks, and a factor moves only on an ex
 date — so where no filing sits in the gap, the adjacent covered session's factor
 *is* the missing one, and carrying it is exact rather than an interpolation or a
-splice. That recovers 492 **first returns** — the price was never the loss; the
+splice. That recovers 493 **first returns** — the price was never the loss; the
 session-1-to-session-2 return was. The condition is tested per row against every
 filed 除權息 and 減資 plus the cancellations no filing explains, and it refuses
-the 493rd: 4141's first print sits 376 days before the vendor's first session,
+the 494th: 4141's first print sits 376 days before the vendor's first session,
 with a cancellation on that session. Those rows are ``vendor_carried``. The
 other edge — a vendor series stopping at a delisting while ``ohlcv/`` keeps
 printing — has no in-window instance: every name it applies to delisted before
@@ -63,7 +63,7 @@ refuses to derive one — see ``_require_raw_covers_vendor``.
 **Two conventions therefore live in one panel**, and ``adj_method`` says which.
 FinMind subtracts the *declared* distribution from the prior close; the rebuild
 reads the exchange's *published reference price*. The two name the same number
-to 1e-6 on 84.2 % of 18,087 graded events and to 1e-3 on 99.5 %, and where they
+to 1e-6 on 83.7 % of 21,224 graded events and to 1e-3 on 99.6 %, and where they
 differ it is by a whole cent in the per-share distribution — bounded, not
 cumulative, and confined to the ex-date session. ``vendor_event_audit.parquet``
 is the fixed record of that, so a step found at a vendor/rebuilt boundary is
@@ -75,16 +75,15 @@ calculation should not believe, all measured against ``ohlcv/`` and
 ``unpriced_actions.parquet``:
 
 **A no-trade session carries a price.** FinMind writes a session the stock did
-not trade as ``close == 0`` in ``ohlcv/`` — 127,745 rows there in 1,150 stocks,
-and 127,838 in this panel once the make-up sessions above are put back, 2.17 %
-of it. The adjusted series fills 125,904 of the ones ``ohlcv/`` holds with the
-last traded price instead (8934 has 1,321 of them, every one carrying a number),
-so the zero that identifies them is gone and a caller filtering on
-``adj_close_tr > 0`` keeps all of them. They are NaN here, the raw ``close`` is
-kept alongside so the test stays available, and they are ``is_valid`` False
-under ``invalid_reason = 'no_trade'``: a price nobody could transact at is not a
-position, and a backtest that filtered on the flag alone would otherwise assume
-a fill on a day the stock did not trade.
+not trade as ``close == 0`` in ``ohlcv/`` — 136,383 rows in this panel, in
+1,208 stocks, 2.04 % of it. The adjusted series fills 133,956 of them with the
+last traded price instead (1,321 of 8934's 1,326), so the zero that identifies
+them is gone and a caller filtering on ``adj_close_tr > 0`` keeps all of them.
+They are NaN here, the raw ``close`` is kept alongside so the test stays
+available, and they are ``is_valid`` False under ``invalid_reason =
+'no_trade'``: a price nobody could transact at is not a position, and a
+backtest that filtered on the flag alone would otherwise assume a fill on a day
+the stock did not trade.
 
 **A share cancellation no filing priced goes through unadjusted.** A filing is
 not the only way one reaches the tape: 8101 stopped trading 2024-08-21 at 1.90,
@@ -280,7 +279,8 @@ def load_adjusted(stock_id: str,
         raise FileNotFoundError(f'no price series for {stock_id} at {p}')
     out = pd.read_parquet(p)
     # A stock the price endpoint returned nothing for is written as a zero-row
-    # file with no schema — 13 of them, all listed after the 2024-12-31 window.
+    # file with no schema — 3 of them: 1230, which the tape never quotes, and
+    # two codes the registry excludes from the universe.
     if not len(out):
         raise ValueError(f'{stock_id}: {p} holds no rows, so there is no series '
                          f'to adjust (listed outside the download window?)')
@@ -532,7 +532,7 @@ def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
     the level is continuous by construction rather than by a splice.
 
     One edge needs it inside this window. The vendor series begins one traded
-    session after the raw one on 493 stocks, which costs each of them its
+    session after the raw one on 494 stocks, which costs each of them its
     **first return** rather than its first price, and a first return is the whole
     observation in a listing study. The other edge — a series ending before the
     raw one, at a delisting ``ohlcv/`` kept printing through — has no in-window
@@ -544,7 +544,7 @@ def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
     and a row whose gap to its anchor contains one of them is left NaN. That is
     not hypothetical — 4141's first print sits 376 days before the vendor's
     first session with a cancellation on that very session, and it is the one
-    row of the 493 this refuses.
+    row of the 494 this refuses.
 
     Returns the factor and the mask of rows it filled.
     """
@@ -589,11 +589,11 @@ def _mark_patched(stock_id: str, dates: np.ndarray, covered: np.ndarray,
 def available_stocks(price_adj_dir: Path = PRICE_ADJ_DIR) -> list[str]:
     """Stock ids whose adjusted series is non-empty.
 
-    51 of the 2,154 downloaded files hold zero rows. 38 of those are the
-    survivorship hole ``load_adjusted`` now rebuilds, so they *do* come back
-    with an adjusted series and this list understates the panel by them; the
-    other 13 have no raw prices either. Use it to ask what the vendor covers,
-    not what the loader returns.
+    91 of the 2,231 downloaded files hold zero rows. 50 of those are the
+    survivorship hole ``load_adjusted`` rebuilds, so they *do* come back with
+    an adjusted series and this list understates the panel by them; the other
+    41 have no raw prices inside the window either. Use it to ask what the
+    vendor covers, not what the loader returns.
     """
     return sorted(p.stem for p in Path(price_adj_dir).glob('*.parquet')
                   if len(pd.read_parquet(p)))

@@ -36,6 +36,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 import requests
 
 ROOT = Path(__file__).resolve().parent
@@ -240,21 +241,25 @@ def consolidate() -> pd.DataFrame:
     # They are the same company, so they are kept; but joining a panel on the
     # code inside the row would file them under an identifier no price series
     # has. The row's own code is kept beside it as `filed_as`.
-    d = pd.concat([pd.read_parquet(f).assign(requested_id=f.stem) for f in files],
-                  ignore_index=True)
+    # Out of range per file, before the concat rather than after it. A
+    # 更(補)正 filename the server stores as given can encode a period a century
+    # away — ROC 920 reads as 2831 — which pandas cannot hold as a nanosecond
+    # timestamp at all, so a concat that mixes one such frame with the rest
+    # raises where a later filter would have caught it. Dropped rather than
+    # clipped, because a period that cannot be read is not a period this panel
+    # can date; 13 rows in 255,943, all of them pre-2001 documents.
+    frames, unreadable = [], []
+    for f in files:
+        one = pd.read_parquet(f).assign(requested_id=f.stem)
+        ok = (one["period_end"] >= pd.Timestamp("1990-01-01")) & \
+             (one["period_end"] <= pd.Timestamp("2030-12-31"))
+        unreadable += one.loc[~ok, "filename"].tolist()
+        frames.append(one[ok])
+    if unreadable:
+        log(f"  unreadable-period dropped {len(unreadable)}: {unreadable[:4]}")
+    d = pd.concat(frames, ignore_index=True)
     d = d.rename(columns={"stock_id": "filed_as", "requested_id": "stock_id"})
     d = d[~d["nature"].str.contains(ENGLISH, na=False)]
-    # A handful of filenames carry a period no calendar has — 192003, 291001,
-    # 283102 — and parse to years centuries away. Thirteen rows in 164,074, all
-    # of them pre-2001 documents whose names the server stores as given. They
-    # are dropped rather than clipped, because a period that cannot be read is
-    # not a period this panel can date.
-    plausible = ((d["period_end"] >= pd.Timestamp("1990-01-01"))
-                 & (d["period_end"] <= pd.Timestamp("2030-12-31")))
-    if (~plausible).any():
-        bad = d.loc[~plausible, "filename"].tolist()
-        log(f"  unreadable-period dropped {len(bad)}: {bad[:4]}")
-        d = d[plausible]
     if d["upload_ts"].isna().any():
         raise ValueError(f"{int(d['upload_ts'].isna().sum())} filings carry no "
                          f"上傳日期; a row without one cannot date anything")
@@ -274,6 +279,28 @@ def targets() -> list[str]:
     if not ids:
         raise FileNotFoundError("fin_is/ is empty — nothing to date")
     return ids
+
+
+def covers_tree(stock_id: str) -> bool:
+    """Whether the cached history reaches the newest period the tree carries.
+
+    What the file holds, not that it exists. The statements are pulled on their
+    own schedule and this cache on its own, so a file written before the tree
+    gained a quarter is skipped for existing and that quarter can never be
+    dated: `observed_date` returns NaT and the row leaves a join silently
+    instead of failing. A company whose newest statement genuinely has no filing
+    on the server is re-asked once per run, which is what not skipping the ones
+    that do costs.
+    """
+    tree = ROOT / "fin_is" / f"{stock_id}.parquet"
+    path = OUT_DIR / f"{stock_id}.parquet"
+    if not path.exists():
+        return False
+    if not tree.exists() or not pq.read_metadata(tree).num_rows:
+        return True                          # no statements to date
+    ends = pd.to_datetime(pd.read_parquet(tree, columns=["date"])["date"])
+    have = pd.to_datetime(pd.read_parquet(path, columns=["period_end"])["period_end"])
+    return bool(len(have)) and have.max() >= ends.max()
 
 
 def main() -> int:
@@ -297,7 +324,7 @@ def main() -> int:
 
     for i, sid in enumerate(ids, 1):
         path = OUT_DIR / f"{sid}.parquet"
-        if path.exists():
+        if covers_tree(sid):
             skipped += 1
             continue
         df = fetch(sid)

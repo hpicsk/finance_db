@@ -58,6 +58,7 @@ import pandas as pd
 import requests
 
 from .auth import token
+from .pit_universe import emerging_boundary
 from .window import COVERAGE_START, COVERAGE_END
 
 HERE = Path(__file__).resolve().parent
@@ -65,10 +66,10 @@ API = "https://api.finmindtrade.com/api/v4/data"
 TAPE = HERE / "tape"
 OUT = HERE / "tape_universe.parquet"
 
-# The sponsor tier allows 6,000 requests/hour and the sweep needs ~4,360. Three
+# The sponsor tier allows 6,000 requests/hour and the sweep needs ~4,890. Three
 # workers hold the rate near 5,400/hr at the ~2 s round trip a recent session
-# costs, which finishes inside the hour with margin; a fourth would overshoot
-# the quota and earn a 402, and fetch() answers that by sleeping to the reset.
+# costs, which finishes inside the hour; a fourth would overshoot the quota and
+# earn a 402, and fetch() answers that by sleeping to the reset.
 WORKERS = 3
 
 # The longest the exchange is shut inside a year. 農曆春節 closes it for up to
@@ -178,11 +179,18 @@ def _registry() -> pd.DataFrame:
     excluded = {"ETF", "ETN", "受益證券", "存託憑證", "臺灣存託憑證",
                 "創新版股票", "創新板股票"}
     g = raw.groupby("stock_id")
-    return pd.DataFrame({
+    out = pd.DataFrame({
         "registry_types": g["type"].apply(lambda s: "|".join(sorted(set(s)))),
         "registry_excluded": g["industry_category"].apply(
             lambda s: bool(set(s) & excluded)),
-    }).reset_index()
+    })
+    # `registry_types` is the union over a code's rows and says nothing about
+    # when each applied, so a name that left 興櫃 after the window closed reads
+    # as a listing that traded inside it. The registry dates its rows; the
+    # boundary is joined in here so a check reading this file can tell the two
+    # apart without a pull of its own.
+    out["emerging_until"] = emerging_boundary(raw)
+    return out.reset_index()
 
 
 def summarise() -> pd.DataFrame:

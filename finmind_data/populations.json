@@ -1,27 +1,27 @@
 {
   "test_capital_reduction_artifact_exists": {
     "bound": "monotone",
-    "n": 636
+    "n": 674
   },
   "test_taiwan_adj_covered_survives_concat": {
     "bound": "monotone",
-    "n": 5503
+    "n": 5912
   },
   "test_taiwan_adj_source_partitions_the_panel": {
     "bound": "monotone",
-    "n": 16610
+    "n": 18126
   },
   "test_taiwan_adjusted_coverage_decomposition": {
     "bound": "monotone",
-    "n": 5755477
+    "n": 6540520
   },
   "test_taiwan_adjusted_series": {
     "bound": "monotone",
-    "n": 101
+    "n": 117
   },
   "test_taiwan_adjusted_survivorship_hole": {
     "bound": "exact",
-    "n": 164
+    "n": 179
   },
   "test_taiwan_anchor_overrides_agree_with_their_own_window": {
     "bound": "monotone",
@@ -35,9 +35,17 @@
     "bound": "exact",
     "n": 27
   },
+  "test_taiwan_coverage_does_not_outrun_the_data": {
+    "bound": "monotone",
+    "n": 3823
+  },
   "test_taiwan_dataset_names_in_code_resolve": {
     "bound": "monotone",
     "n": 20
+  },
+  "test_taiwan_delisting_frame_does_not_follow_coverage": {
+    "bound": "monotone",
+    "n": 164
   },
   "test_taiwan_delisting_sign_accuracy": {
     "bound": "exact",
@@ -49,7 +57,7 @@
   },
   "test_taiwan_delisting_table_has_no_reason": {
     "bound": "monotone",
-    "n": 723
+    "n": 725
   },
   "test_taiwan_exchange_provision_markers_match_what_they_govern": {
     "bound": "monotone",
@@ -57,7 +65,7 @@
   },
   "test_taiwan_filing_dates_cover_the_statement_trees": {
     "bound": "monotone",
-    "n": 163991
+    "n": 164112
   },
   "test_taiwan_filing_deadline_q2_boundary_is_fy2013": {
     "bound": "monotone",
@@ -65,19 +73,23 @@
   },
   "test_taiwan_filing_deadline_table_covers_the_data": {
     "bound": "monotone",
-    "n": 332
+    "n": 371
   },
   "test_taiwan_fundamentals_are_fiscal_dated": {
     "bound": "monotone",
-    "n": 43779
+    "n": 412659
   },
   "test_taiwan_listing_spans_reconcile_with_the_tape": {
     "bound": "exact",
-    "n": 5816392
+    "n": 6590905
+  },
+  "test_taiwan_loader_takes_the_callers_span": {
+    "bound": "monotone",
+    "n": 370
   },
   "test_taiwan_month_rev_date_is_the_following_month": {
     "bound": "monotone",
-    "n": 281009
+    "n": 320533
   },
   "test_taiwan_mops_covers_every_delisted_name": {
     "bound": "monotone",
@@ -105,15 +117,15 @@
   },
   "test_taiwan_no_session_the_tape_holds_is_missing": {
     "bound": "monotone",
-    "n": 5906434
+    "n": 6710863
   },
   "test_taiwan_no_trade_rows_are_not_holdable": {
     "bound": "monotone",
-    "n": 5883919
+    "n": 6676903
   },
   "test_taiwan_observed_date_leaves_the_undatable_undated": {
     "bound": "monotone",
-    "n": 94772
+    "n": 106472
   },
   "test_taiwan_observed_date_rolls_past_the_session_close": {
     "bound": "monotone",
@@ -121,27 +133,27 @@
   },
   "test_taiwan_ohlcv_is_raw": {
     "bound": "monotone",
-    "n": 18276
+    "n": 21417
   },
   "test_taiwan_ohlcv_one_per_universe": {
     "bound": "monotone",
-    "n": 2158
+    "n": 2159
   },
   "test_taiwan_open_outside_session_range": {
     "bound": "monotone",
-    "n": 5755477
+    "n": 6540520
   },
   "test_taiwan_overlay_covers_the_window": {
     "bound": "exact",
-    "n": 175
+    "n": 190
   },
   "test_taiwan_par_value_changes_are_priced": {
     "bound": "exact",
-    "n": 12
+    "n": 23
   },
   "test_taiwan_pit_universe_is_dated_and_keeps_its_delistings": {
     "bound": "exact",
-    "n": 164
+    "n": 179
   },
   "test_taiwan_post_delisting_sessions_are_marked": {
     "bound": "monotone",
@@ -153,7 +165,7 @@
   },
   "test_taiwan_price_adj_one_per_universe": {
     "bound": "monotone",
-    "n": 2158
+    "n": 2159
   },
   "test_taiwan_reason_frame_is_frozen": {
     "bound": "exact",
@@ -161,11 +173,11 @@
   },
   "test_taiwan_rebuild_matches_vendor": {
     "bound": "exact",
-    "n": 203655
+    "n": 247422
   },
   "test_taiwan_short_sale_series_has_no_regime_gap": {
     "bound": "monotone",
-    "n": 5028482
+    "n": 5748089
   },
   "test_taiwan_silent_names_keep_their_unknown": {
     "bound": "monotone",
@@ -177,7 +189,7 @@
   },
   "test_taiwan_statement_trees_drop_old_delistings": {
     "bound": "exact",
-    "n": 164
+    "n": 179
   },
   "test_taiwan_statements_are_published_after_their_deadline": {
     "bound": "monotone",
@@ -195,21 +207,25 @@
     "bound": "monotone",
     "n": 11
   },
+  "test_taiwan_tape_years_are_whole": {
+    "bound": "monotone",
+    "n": 16
+  },
   "test_taiwan_tree_readers_import_the_window": {
     "bound": "monotone",
-    "n": 10
+    "n": 11
   },
   "test_taiwan_universe_bridges_a_halt_only_when_asked": {
     "bound": "exact",
-    "n": 580
+    "n": 609
   },
   "test_taiwan_universe_excludes_the_instruments_it_claims_to": {
     "bound": "monotone",
-    "n": 2158
+    "n": 2159
   },
   "test_taiwan_universe_holds_every_common_the_tape_shows": {
     "bound": "monotone",
-    "n": 2038
+    "n": 2060
   },
   "test_taiwan_vendor_defects_are_patched": {
     "bound": "monotone",
@@ -221,6 +237,6 @@
   },
   "test_taiwan_vendor_event_audit_is_current": {
     "bound": "monotone",
-    "n": 18277
+    "n": 21418
   }
 }

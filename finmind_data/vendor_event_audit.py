@@ -14,7 +14,7 @@ what ``adjusted_loader`` patches:
 
 ``sign_flip``
     A 現金增資 subscribed above the market price raises the reference price —
-    ``after > before``, 15 filed and 14 gradable inside the window — and where
+    ``after > before``, 17 filed and 16 gradable inside the window — and where
     the vendor applies the move in the opposite direction the error is the full
     width of the reprice, sitting in the factor for the stock's whole history
     behind that date.
@@ -22,8 +22,8 @@ what ``adjusted_loader`` patches:
     **The window holds none of them**, and that is a fact about the era rather
     than a rate. Six flips exist in the vendor's series, dated 2005-04-21,
     2005-07-28, 2006-02-09, 2006-07-07, 2007-12-21 and 2008-09-16, all of them
-    before ``COVERAGE_START``; the 14 in-window upward reprices from 2011-09-15
-    through 2024-12-12 are exact. The cut is not clean even there — 2008-08-06
+    before ``COVERAGE_START``; the 16 in-window upward reprices from 2011-08-09
+    through 2026-06-11 are exact. The cut is not clean even there — 2008-08-06
     and 2008-08-28 are already exact while 2008-09-16 is still flipped — so what
     the dates show is a transition over the autumn of 2008 rather than a switch
     thrown on one day. Either way something in the vendor's pipeline changed and
@@ -42,12 +42,13 @@ Both are found by shape rather than by stock id, so a re-download that moves
 them is graded, not matched against a list.
 
 Writes ``vendor_event_audit.parquet``: one row per filed 除權息, whether or not
-the vendor series covers it. **18,277 filed, 18,087 gradable** — both numbers
+the vendor series covers it. **21,418 filed, 21,224 gradable** — both numbers
 are the file's own and neither is a filter that moved. ``checkable`` is the
-column that separates them, and the 190 it excludes are 174 events in the stocks
-the vendor serves nothing for and 16 whose bracketing sessions sit further apart
-than ``_MAX_BRACKET_DAYS``. Every rate quoted here — 84.2 %, 99.5 %, the defect
-counts — is over the 18,087; every count of what was *filed* is over the 18,277.
+column that separates them, and the 194 it excludes are 174 events in the stocks
+the vendor serves nothing for, 19 whose bracketing sessions sit further apart
+than ``_MAX_BRACKET_DAYS``, and 3454's non-positive row. Every rate quoted here
+— 83.7 %, 99.6 %, the defect counts — is over the 21,224; every count of what
+was *filed* is over the 21,418.
 
     python -m finmind_data.vendor_event_audit
 """

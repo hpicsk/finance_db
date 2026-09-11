@@ -1,8 +1,8 @@
-# Taiwan Equity Market Dataset (TWSE + TPEx, 2011-2024)
+# Taiwan Equity Market Dataset (TWSE + TPEx, 2011-2026)
 
 Per-stock daily / monthly / quarterly market data for common equities
 listed on the Taiwan Stock Exchange (TWSE) and Taipei Exchange (TPEx),
-covering **2011-01-25 to 2024-12-31**: OHLCV raw and back-adjusted,
+covering **2011-01-25 to 2026-09-09**: OHLCV raw and back-adjusted,
 institutional order flow, shareholding, valuation multiples (PER/PBR),
 margin + short balances, monthly revenue, fundamentals (IS/BS/CF),
 dividends, securities lending, and capital-reduction events. Plus
@@ -42,15 +42,22 @@ as being about it.
 The boundary is also checked against the artifacts rather than against another
 constant. `test_taiwan_coverage_does_not_outrun_the_data` requires both ends to
 be sessions the tape calendar carries, the calendar to stop exactly where
-coverage does, the 興櫃 registry to have been pulled no earlier, and the price
-tree to quote names on the last day. A coverage end past any of them names a
+coverage does, the 興櫃 registry to have been pulled no earlier, and every name
+the tape quotes on the last session to carry a row in the price tree. A pull
+that crossed the exchange's close leaves that day written for the stocks
+fetched after it and not for the ones fetched before, and the tape is what says
+so — a floor on the count would have to be a number nothing here derives. A
+coverage end past any of them names a
 session nothing has, and every count published as being about the window would
 then be measured over a shorter panel — silently, because `clip` returns the
 rows that exist rather than the ones it was asked for.
 
 The window was originally 2015-01-01 → 2024-12-31; on 2026-04-27 the start
 was rolled back to 2005-01-01 for a 20-year span, and on 2026-08-17 the
-answerable range was cut to 2011-01-25 for the reason above.
+answerable range was cut to 2011-01-25 for the reason above. The far end moved
+to 2026-09-09 on 2026-09-10, when `download.py --extend` topped every tree up to
+the vendor's last published session: it is where the download reached, not a
+period anything here reports on.
 
 ## Universe
 
@@ -64,16 +71,14 @@ answerable range was cut to 2011-01-25 for the reason above.
 | In-window delistings the endpoint dropped (type unknown) | 57 |
 | **Total**                              | **2,159** |
 
-**2,095 of them trade inside the window**, and that is the number a study
-meets. The other 64 hold a code and contribute no observation: **42 delisted
-before 2011-01-25** and are carried because the live endpoint still lists them
-— 1107, 2341, 2381 and 2396 among them, quoted on 興櫃 after their exit but
-never again on a board — and **22 first traded after 2024-12-31**, the earliest
-on 2025-01-03, which `build_universe.py` does not filter on because it reads a
-registry rather than a calendar. **None of the 64 delisted inside the window**,
-which is the case that would have been a coverage failure rather than dead
-weight. Nothing is biased by their presence; a study that assumes uniform
-coverage over 2,159 is measuring 64 empty series. Both counts are checked
+**2,117 of them trade inside the window**, and that is the number a study
+meets. The other 42 hold a code and contribute no observation: every one of
+them **delisted before 2011-01-25** and is carried because the live endpoint
+still lists it — 1107, 2341, 2381 and 2396 among them, quoted on 興櫃 after
+their exit but never again on a board. **None of the 42 delisted inside the
+window**, which is the case that would have been a coverage failure rather than
+dead weight. Nothing is biased by their presence; a study that assumes uniform
+coverage over 2,159 is measuring 42 empty series. Both counts are checked
 against the tape rather than asserted, in
 `test_taiwan_universe_holds_every_common_the_tape_shows`.
 
@@ -138,8 +143,11 @@ criterion rather than the total.
 
 Six of the 29 have since transferred to the ordinary board and are
 excluded here too: the earliest retired Innovation Board classification
-is stamped 2024-11-25, so each was on the relaxed-disclosure tier for
-all but the last five weeks of the 2011-2024 window.
+is stamped 2024-11-25, so each was on the relaxed-disclosure tier until at
+least then — all but the last five weeks of the window as it stood when the
+exclusion was decided. The rule excludes a code on any row carrying the
+classification, so all six stay out for the whole window, including the
+sessions after their transfer that the 2026-09-10 extension added.
 
 Two things this correction did not do. Per-stock files under
 `ohlcv/`, `price_adj/` and the rest still exist for the 33 removed
@@ -171,7 +179,7 @@ Two *inclusions* are deliberate, and both could be read the other way:
   9136 凱羿-KY) are **kept**. The company is incorporated offshore, but the
   shares are a primary listing that price here — not a receipt over a
   listing somewhere else, which is what the TDR row above removes.
-- **Delisted-during-window tickers** are kept — all 164 eligible
+- **Delisted-during-window tickers** are kept — all 179 eligible
   delistings, see `### Survivorship bias` below.
 
 Things **not** filtered at universe-build time, by design: liquidity floors,
@@ -184,11 +192,12 @@ other study reads.
 **The universe includes every stock delisted during the sample window.**
 FinMind's `taiwan_stock_info` endpoint returns recently-delisted stocks
 alongside currently-listed ones, and the rest are merged in from
-`delisted_universe.parquet`. Of the **175** four-digit codes the table
-dates inside 2011-01-25 → 2024-12-31, 11 are ETFs or depositary receipts
-excluded by instrument type (`00xx` and `91xx`), leaving **164 commons,
-all 164 present** — 107 already in the live endpoint's output and **57
-added by the overlay**.
+`delisted_universe.parquet`. Of the **190** four-digit codes the table
+dates inside 2011-01-25 → 2026-09-09, 11 are ETFs or depositary receipts
+excluded by instrument type (`00xx` and `91xx`), leaving **179 commons,
+all 179 present** — 122 already in the live endpoint's output and **57
+added by the overlay**. Every one of the 15 that delisted after 2024-12-31 is
+still served live; the overlay is the same 57 it was.
 
 The overlay's gate is the window, not a date chosen inside it, and the
 test of whether a name needs re-adding is whether the endpoint still
@@ -206,44 +215,41 @@ Per-stock parquet files for delisted tickers end on their delisting date,
 so you should filter by `date` rather than assume uniform coverage.
 
 **This completeness is about prices, and does not reach the filings.** The
-164 names are all here with a return series, but `fin_is/` carries a
-statement for 63 of them and `fin_bs/` for 82, because the endpoints serving
+179 names are all here with a return series, but `fin_is/` carries a
+statement for 78 of them and `fin_bs/` for 97, because the endpoints serving
 company filings answer for a company that still reports rather than for a
 code that once listed. A fundamentals study on this panel is therefore still
 survivorship-biased where a price study is not; caveat 10 measures it.
 
 ### A universe is a name list until it is dated
 
-Everything above is about *membership*: the 164 in-window delistings are all
+Everything above is about *membership*: the 179 in-window delistings are all
 here, so no name is missing. It says nothing about *when*, and
 `universe.parquet` carries the same 2,159 names on every session of the window
 — which is not a universe a backtest can rebalance against. Screening the name
-list at a 2013-06-28 rebalance puts **585** names in that session's universe
+list at a 2013-06-28 rebalance puts **586** names in that session's universe
 that were not listed that day:
 
 | names | why they are not in that day's universe |
 |---:|---|
-| **416** | had not listed yet — they IPO after 2013-06-28 |
-| **84** | were on 興櫃 for the whole window and never listed inside it |
+| **522** | had not listed yet — an IPO, or a promotion from 興櫃, after 2013-06-28 |
 | **42** | had already delisted when the window opened, in 2007-2011 |
-| **21** | listed after the window closed, in 2025-2026 |
 | **19** | had already delisted by that date |
 | **3** | were listed but not quoted that day — a halt, or a 興櫃 phase before promotion |
 
-The 416, the 19 and most of the 3 are ordinary timing — the name list has no
-dates in it, so it cannot express them, and dating it is the whole fix. The
-other 147 are defects in the list itself, and they persist at *every* rebalance
-date:
+The 522, the 19 and most of the 3 are ordinary timing — the name list has no
+dates in it, so it cannot express them, and dating it is the whole fix. Two
+things are defects in the list itself rather than timing:
 
-- **42 + 21 names are outside the window in both directions.**
+- **42 names are outside the window**, at every rebalance date.
   `taiwan_stock_info` still serves 力霸 (2007) and 歌林 (2008) on a retired
   classification row, and `build_universe.py` keeps any code carrying a
-  twse/tpex row; the same pull carries 2025-2026 IPOs. None of them trades on a
-  single in-window session.
-- **120 codes have a 興櫃 phase inside the window** — 84 of them for all of it.
-  The emerging board is not a listing, and the registry records only what a code
-  is *now*, so a name promoted to TPEx in 2025 reads as TPEx for all of
-  2011-2024. It is 71,789 code-sessions, 1.22 % of the panel.
+  twse/tpex row. None of them trades on a single in-window session.
+- **135 codes have a 興櫃 phase inside the window**, 99 of them promoted in
+  2025-2026. The emerging board is not a listing, and the registry records only
+  what a code is *now*, so a name promoted to TPEx in 2025 reads as TPEx for
+  every session before its promotion. It is 90,406 code-sessions, 1.35 % of the
+  panel.
 
 `pit_universe.py` dates the universe against the tape — what actually traded,
 not what a registry still lists — and corrects it in the two places the tape
@@ -251,8 +257,8 @@ alone is wrong:
 
 ```python
 from finmind_data.pit_universe import universe_at, sessions
-universe_at("2016-06-30")     # 1,702 codes; 1,458 on the first session, 1,845 on the last
-sessions()                    # the 3,414 the exchange held, to snap a rebalance date onto
+universe_at("2016-06-30")     # 1,702 codes; 1,458 on the first session, 1,935 on the last
+sessions()                    # the 3,823 the exchange held, to snap a rebalance date onto
 ```
 
 A date the market was shut **raises** rather than returning an empty index. A
@@ -260,16 +266,16 @@ rebalance calendar written in month-ends lands on one several times a year, and
 a universe of zero names reads to a backtest as a month with nothing worth
 holding rather than as a question it should not have asked.
 
-**興櫃 sessions are removed** — 71,789 code-sessions across the 120 names above.
+**興櫃 sessions are removed** — 90,406 code-sessions across the 135 names above.
 A code is excluded on every session up to the day its `emerging` classification
 was retired, which is the only point-in-time market fact the registry carries: a
 retired row keeps the date it was retired on, a live row carries the query date,
 so a name still on 興櫃 today is excluded throughout. That boundary is a vendor
 pull like any other and `listing_spans.parquet` stamps the date it was taken.
 
-**The suspension before a delisting is added back** — 5,392 sessions across 137
-of the 164. For every one of the 164 the tape's last session is exactly
-`delisting_sign.last_trade`, which is not the delisting: 台一 stopped trading
+**The suspension before a delisting is added back** — 5,538 sessions across 150
+of the 179. For every one of the 179 the tape's last traded session is exactly
+the name's last trade in `ohlcv/`, which is not the delisting: 台一 stopped trading
 229 days before its listing ended. In those sessions the company is still
 listed, the position is still open, and the terminal value is still owed, so a
 span runs to the session before the delisting date rather than to the last
@@ -278,11 +284,11 @@ question starts — caveat 8 is what is still unanswered inside that window, and
 this is what keeps the name in the universe long enough to ask it.
 
 **An interior gap is the caller's rule, because no threshold here is the
-package's to pick.** 580 codes have at least one session between their first and
-last quote that the tape does not carry, over 1,225 gaps in all, and the span
+package's to pick.** 609 codes have at least one session between their first and
+last quote that the tape does not carry, over 1,281 gaps in all, and the span
 table splits on every one. The distribution is bimodal and the two halves want
 opposite treatment: the median gap is 7 sessions, which is a trading halt where
-the name is still listed and dropping it is wrong, while 45 codes have a gap of
+the name is still listed and dropping it is wrong, while 48 codes have a gap of
 60 sessions or more — 8227 is absent for nine years — which is not a halt, and
 no registry in this package explains it. Bridging serves the first case and
 fabricates a listing in the second, and no threshold separating them is
@@ -293,8 +299,8 @@ bridge_gaps_upto=n)` closes gaps of at most `n` sessions at query time. The
 number belongs to the strategy: one that cannot sell into a halt holds through
 it and says so in the call, one that marks to the last print does not. The
 default is 0, which is the artifact's own semantics rather than an answer about
-halts, and raising it takes the 3,236 spans to 2,761 at 5 sessions, 2,074 at 20
-and 2,011 at the whole window — one span per code, and a listing asserted on
+halts, and raising it takes the 3,398 spans to 2,913 at 5 sessions, 2,186 at 20
+and 2,117 at the whole window — one span per code, and a listing asserted on
 sessions nothing here witnesses. On 2016-06-30 the universe runs 1,702 names at
 0, 1,704 at 20 and 1,711 bridged throughout. No setting can resurrect a delisted
 name: bridging merges runs inside a code and never extends the last one, which
@@ -302,13 +308,13 @@ name: bridging merges runs inside a code and never extends the last one, which
 setting rather than argues from the loop.
 
 `test_taiwan_pit_universe_is_dated_and_keeps_its_delistings` pins the property
-the whole construction exists for: every one of the 164 is in the universe on
+the whole construction exists for: every one of the 179 is in the universe on
 its own last trading session, stays in it through the suspension to the session
 before its listing ends, and is gone on the day it ends. It reads only committed
 artifacts, so a clone can check that without rebuilding the tape — which costs
 an hour of API quota and a token.
 `test_taiwan_listing_spans_reconcile_with_the_tape` needs `tape/`, reconciles
-all 5.8 M code-sessions against it, and pins both corrections by count and by
+all 6.6 M code-sessions against it, and pins both corrections by count and by
 which names they may touch.
 
 **The two are not interchangeable, and the split is measured rather than
@@ -341,11 +347,11 @@ coverage ending early.
 ├── README.md                          (this file)
 ├── universe.parquet                   2,159 common stocks (id, name, type, industry)
 ├── delisted_universe.parquet          723 historical delistings — `TaiwanStockDelisting` output
-├── listing_spans.parquet              when each name was listed, as maximal session runs (2011-2024)
-├── trading_sessions.parquet           the 3,414 sessions the exchange held in the window
-├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2024)
-├── unpriced_actions.parquet           share cancellations no filing explains    (2005-2024)
-├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2005-2024)
+├── listing_spans.parquet              when each name was listed, as maximal session runs (2011-2026)
+├── trading_sessions.parquet           the 3,823 sessions the exchange held in the window
+├── capital_reduction.parquet          consolidated cap-reduction events         (2011-01-25→2026)
+├── unpriced_actions.parquet           share cancellations no filing explains    (2011-2026)
+├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2011-2026)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -353,30 +359,30 @@ coverage ending early.
 ├── filing_dates.parquet                when each statement first became public (1997-2026)
 ├── mops_reason.parquet                why each exit happened, read off MOPS subjects (2011-2024)
 ├── split_reference.parquet            面額變更 / 分割 reference prices, the third event chain (2019-2026)
-├── tender_offers.parquet              every filed 公開收購 and its per-share price (2016-2024)
+├── tender_offers.parquet              every filed 公開收購 and its per-share price (2016-2026)
 ├── mops_detail_refusals.csv           the names MOPS will not serve a 說明 for
 ├── mops_acquirer_refusals.csv         同, for the buyers of the swap exits (per target)
-├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2024)
-├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2024)
+├── filing_deadlines.csv               versioned statutory filing deadlines, cited (2005-2026)
+├── exright_reference.parquet          TWSE 除權除息計算結果表 (權值/息值 split)   (2005-2026)
 ├── filing_dates/<stock_id>.parquet    every 財務報告書 this company filed, with 上傳日期
 ├── mops_listing/<stock_id>.parquet    重大訊息 主旨, delisting ROC year and the two before
 ├── mops_detail/<stock_id>.parquet     同, with 符合條款 / 事實發生日 / 說明 where served
 ├── mops_acquirer_listing/<tgt>.parquet 主旨 of the *acquirer* that bought this target
 ├── mops_acquirer_detail/<tgt>.parquet 同, bodies of the deal filings — where a ratio or a squeeze-out price is read
-├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2024)
-├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2024)
-├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2024)
-├── shares/<stock_id>.parquet          shares outstanding + foreign ownership             (2005-2024)
-├── per_pbr/<stock_id>.parquet         daily PER / PBR / dividend yield                   (2005-2024)
-├── margin_short/<stock_id>.parquet    margin balances + short-sale (informed-trader)     (2005-2024)
-├── month_rev/<stock_id>.parquet       monthly revenue (TW 10-day disclosure)             (2005-2024)
-├── fin_is/<stock_id>.parquet          quarterly income statement (incl. EPS row)         (2005-2024)
-├── fin_bs/<stock_id>.parquet          quarterly balance sheet                            (2005-2024)
-├── fin_cf/<stock_id>.parquet          quarterly cash-flow statement                      (2005-2024)
-├── dividend/<stock_id>.parquet        cash + stock dividends, declaration level          (2005-2024)
-├── div_result/<stock_id>.parquet      除權息 exchange reference prices → adj. factor      (2005-2024)
-├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2024)
-├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2011-2024)
+├── ohlcv/<stock_id>.parquet           daily prices & volume, **raw**                     (2005-2026)
+├── price_adj/<stock_id>.parquet       同, back-adjusted (還原股價, total return)          (2005-2026)
+├── instflow/<stock_id>.parquet        institutional order flow                           (2005-2026)
+├── shares/<stock_id>.parquet          shares outstanding + foreign ownership             (2005-2026)
+├── per_pbr/<stock_id>.parquet         daily PER / PBR / dividend yield                   (2005-2026)
+├── margin_short/<stock_id>.parquet    margin balances + short-sale (informed-trader)     (2005-2026)
+├── month_rev/<stock_id>.parquet       monthly revenue (TW 10-day disclosure)             (2005-2026)
+├── fin_is/<stock_id>.parquet          quarterly income statement (incl. EPS row)         (2005-2026)
+├── fin_bs/<stock_id>.parquet          quarterly balance sheet                            (2005-2026)
+├── fin_cf/<stock_id>.parquet          quarterly cash-flow statement                      (2005-2026)
+├── dividend/<stock_id>.parquet        cash + stock dividends, declaration level          (2005-2026)
+├── div_result/<stock_id>.parquet      除權息 exchange reference prices → adj. factor      (2005-2026)
+├── sec_lending/<stock_id>.parquet     securities lending (借券 short proxy)              (2005-2026)
+├── cap_red/<stock_id>.parquet         per-stock capital-reduction events (mostly empty)  (2011-2026)
 ├── build_universe.py                  universe construction script (incl. delisted merge)
 ├── pit_universe.py                    dates that universe → listing_spans.parquet, `universe_at(date)`
 ├── refresh_delisting.py               re-pulls the market-wide TaiwanStockDelisting table
@@ -402,14 +408,14 @@ coverage ending early.
 
 ### `ohlcv/<stock_id>.parquet` — daily prices
 
-One row per trading day (~5,300 rows in a full 2005-2026 series; ~3,410
+One row per trading day (~5,300 rows in a full 2005-2026 series; ~3,820
 of them inside the window).
 
 | column | dtype | description |
 |---|---|---|
 | `date`             | str    | YYYY-MM-DD |
 | `stock_id`         | str    | 4-digit ticker |
-| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — the cum-session close matches the exchange's own pre-event `before_price` on 99.84 % of the 18,276 除權息 events inside the window (99.87 % of the 7,543 since 2020), at the two decimals the exchange publishes. This is what says `ohlcv/` reflects nothing, which is why `price_adj/` exists; `test_assertions.py` re-derives it |
+| `open/max/min/close` | float64 | TWD, **raw/unadjusted** — the cum-session close matches the exchange's own pre-event `before_price` on 99.83 % of the 21,417 除權息 events inside the window (99.85 % of the 10,684 since 2020), at the two decimals the exchange publishes. This is what says `ohlcv/` reflects nothing, which is why `price_adj/` exists; `test_assertions.py` re-derives it |
 | `spread`           | float64 | close − prior close (TWD) |
 | `Trading_Volume`   | int64  | shares traded |
 | `Trading_money`    | int64  | **trading value in TWD** (used for FFI normalization) |
@@ -544,15 +550,16 @@ merely the same returns.
 
 **What the vendor computes**, and where it is wrong. Each 除權息 event
 should contribute the exchange's own `before_price / after_price`, and
-`vendor_event_audit.py` grades all 18,277 filed events against it —
-18,087 of them sit between two adjacent covered sessions and can be
+`vendor_event_audit.py` grades all 21,418 filed events against it —
+21,224 of them sit between two adjacent covered sessions and can be
 read. Both numbers come out of the same file and neither is a filter
-that moved: `checkable` is the column that separates them, and the 190
-it excludes are 174 events in the stocks the vendor serves nothing for
-and 16 whose bracketing sessions sit more than ten days apart. Every
-*rate* below is over the 18,087; every count of what was filed is over
-the 18,277. The step matches to 1e-6 on 84.2 % and to 1e-3 on 99.5 % (p99
-7.6e-4, max 3.0e-2). The residual is FinMind reaching the same number a
+that moved: `checkable` is the column that separates them, and the 194
+it excludes are 174 events in the stocks the vendor serves nothing for,
+19 whose bracketing sessions sit more than ten days apart, and 3454's
+non-positive row. Every
+*rate* below is over the 21,224; every count of what was filed is over
+the 21,418. The step matches to 1e-6 on 83.7 % and to 1e-3 on 99.6 % (p99
+7.3e-4, max 3.0e-2). The residual is FinMind reaching the same number a
 different way: it subtracts the *declared* distribution from the prior
 close instead of reading the reference price, and the two land a whole
 cent apart in the per-share amount. 3006's 2011-07-04 event is typical —
@@ -580,7 +587,7 @@ six such events the vendor scaled the history the other way — `sign_flip`
 in the audit's vocabulary. All six are dated between 2005-04-21 and
 2008-09-16, which is before this package answers for anything, so the
 class is a fact about the vendor rather than a rate in the panel: the
-window's 14 upward reprices, 2011-09-15 through 2024-12-12, all carry the
+window's 16 upward reprices, 2011-08-09 through 2026-06-11, all carry the
 exchange's own direction and none is flagged. Two consequences for
 anyone extending the coverage backwards: a search for more of these can
 be confined to pre-2009, and a defect rate measured on a 2005-2007
@@ -604,11 +611,11 @@ df = df[df["is_valid"] & df["adj_close_tr"].notna()]   # then take returns
 `is_valid` is "this row is a position a study could have held", and it
 fails three ways. Two are the ends of the series: behind the last break
 — a share cancellation no filing priced, or a multi-year trading gap
-after which the ticker came back as a different listing (52 breaks in 50
-stocks, 22,401 rows, 0.38 % of the panel) — and past the delisting date,
+after which the ticker came back as a different listing (53 breaks in 51
+stocks, 24,743 rows, 0.37 % of the panel) — and past the delisting date,
 the 1,134 quotes in the four delisted names below. The third is one
-session anywhere between them: the stock did not trade (125,055 rows in
-1,141 stocks), so no level the panel carries was a price anyone could
+session anywhere between them: the stock did not trade (133,590 rows in
+1,200 stocks), so no level the panel carries was a price anyone could
 transact at.
 
 `invalid_reason` says which, because the flag is one column and the four
@@ -623,13 +630,13 @@ back on 2024-11-19 at 10.45 — and the vendor's series carries both
 numbers at a factor step of exactly 1, leaving a +450 % return across the
 gap (caveat 5).
 
-The two segment reasons win where they overlap the third, so the 2,783
+The two segment reasons win where they overlap the third, so the 2,793
 no-trade sessions a segment claims keep the segment's name — a row in a
 history this series does not continue, or one printed after the listing
-ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 128,442, so
+ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 136,383, so
 the two-column filter above dropped them before this reason existed;
 what changed is that `is_valid` alone now drops them too, and that every
-False row in the panel's 5,883,919 carries a reason for being one.
+False row in the panel's 6,676,903 carries a reason for being one.
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -639,7 +646,7 @@ before comparing anything across the boundary:
 |---|---|---|
 | `vendor` | `declared_dividend` | FinMind's series as served |
 | `vendor_patched` | `declared_dividend` | behind the one replaced event (120 rows) |
-| `vendor_carried` | `declared_dividend` | the first traded session, ahead of where the vendor series starts — factor carried from the adjacent session (492) |
+| `vendor_carried` | `declared_dividend` | the first traded session, ahead of where the vendor series starts — factor carried from the adjacent session (497: 493 first sessions, and in four of those stocks the Saturday make-up session right after it) |
 | `rebuilt_factored` | `exchange_reference` | 37 of the 54 holes, with a factor chain (50,064 rows) |
 | `rebuilt_noevent` | `none` | 17 of the 54, no corporate action in window — factor is 1.0 (11,441 rows) |
 | `""` | `""` | no price: the stock did not trade, or nothing covers the session |
@@ -666,26 +673,30 @@ cannot vary is not provenance; the guard that raises is, and the flag was
 dropped rather than kept as a constant nothing reads.
 
 `adj_close_tr` is NaN where the raw `close` is 0 — FinMind's encoding
-for a session the stock did not trade (**128,442 rows, 2.18 %, in 1,152
+for a session the stock did not trade (**136,383 rows, 2.04 %, in 1,208
 stocks**, and the same figure in `ohlcv/` as in the panel: the 93-row
 difference the two used to show was the no-trade sessions the loader
 reconstructed, and the raw tree now holds them). The vendor prices
-126,027 of the ones `ohlcv/` holds anyway, at the last traded price, so
+133,956 of the ones `ohlcv/` holds anyway, at the last traded price, so
 the zero that identifies them survives only in `ohlcv/`; filtering on
 `adj_close_tr > 0` alone would keep every one of them, and so would
 filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
-`price_adj/` reaches 5,692,446 of the 5,755,477 traded sessions in
-`ohlcv/` — 98.90 % — and the 63,031 it misses are not missing at
-random. They split four ways: **61,505** in the 54 stocks with no adjusted
+`price_adj/` reaches 6,477,486 of the 6,540,520 traded sessions in
+`ohlcv/` — 99.04 % — and the 63,034 it misses are not missing at
+random. They split five ways: **61,505** in the 54 stocks with no adjusted
 series at all, **0** past the end of a vendor series that stopped at a
-delisting, **493** first sessions the vendor opens one day late on, and
+delisting, **494** first sessions the vendor opens one day late on,
 **1,033** make-up sessions the raw endpoint serves and the adjusted product
-does not. Only the first is a bias.
+does not, and **2** weekdays inside a live series the adjusted endpoint is
+simply short of — 3064 on 2026-08-26 and 6236 on 2026-08-12, each a lone
+traded day inside a suspension, and each served short when the endpoint is
+asked for the stretch directly. The panel marks both `adj_covered=False`.
+Only the first is a bias.
 
-**50 of the 164 in-window universe delistings have raw prices
+**50 of the 179 in-window universe delistings have raw prices
 and no adjusted series at all** (60,371 sessions). They delisted
 between 2012 and 2020, scattered rather than banked against either edge
 of the window, which is the shape the 2026-08-17 delisting refresh
@@ -704,12 +715,12 @@ makes them a hole rather than the ragged end of a covered series, and
 the rebuild takes them on the same path as the 50: 54 stocks, 61,505
 traded sessions in all.
 
-114 downloaded adjusted files are empty inside the window: the 54 above,
-and 60 that have no raw prices in it either — 37 delisted before it opens,
-22 listed after it closes, and one is a zero-row file. Quoting the 99.99 % these
-same files give once the 54 leave the denominator reports the coverage of
-a panel the bias has already been removed from — the vendor's coverage is
-98.90 %, and `available_stocks()` lists the 2,139 names it serves.
+92 downloaded adjusted files are empty inside the window: the 54 above,
+and 38 that have no raw prices in it either — 37 delisted before it opens,
+and one is a zero-row file. Quoting the 99.98 % these same files give once the
+54 leave the denominator reports the coverage of a panel the bias has already
+been removed from — the vendor's coverage is 99.04 %, and `available_stocks()`
+lists the 2,140 names it serves.
 
 `load_adjusted` fills all 54 rather than returning a column of NaN a
 panel build would drop. `adjust.py` rebuilds the factor from the
@@ -727,11 +738,14 @@ factor flat across an event that happened, and `div_result/` and
 in the first place.
 
 **The rebuild is validated where the vendor exists.** The gate set is
-the 116 in-window delistings `price_adj/` *does* cover — same era, same
+the 131 in-window delistings `price_adj/` *does* cover — same era, same
 delisting situation — run through the identical code path. Across
-203,655 daily adjusted returns the rebuild reproduces the vendor on
-99.954 % to 1e-6 and 99.998 % to 1e-3; what is left is the declared-vs-
-published cent above, on the ex-date session only.
+247,422 daily adjusted returns the rebuild reproduces the vendor on
+99.952 % to 1e-6 and 99.994 % to 1e-3; what is left is the declared-vs-
+published cent above, on the ex-date session only. All 15 returns past 1e-3
+fall on a 除權息 date, and 11 of them are two financials that delisted in
+2025-2026 with long, low-priced dividend histories, where one cent is a
+larger share of the price.
 
 `adj_covered` stays False across all 54 even though they now carry a
 price, so the vendor's hole remains countable after it is filled — as a
@@ -762,14 +776,16 @@ moved.
 
 ### The edge of the vendor series, and the edge that left with the window
 
-The other 492 carried sessions are not whole stocks but one end of a
-series the vendor serves. 493 stocks are short exactly one traded
-session — their first, one per stock, verified as that and nothing else.
-492 of them are carried and the 493rd is refused, below.
+The other 497 carried sessions are not whole stocks but one end of a
+series the vendor serves. 494 stocks are short their first traded session,
+one per stock, verified as that and nothing else. 493 of them are carried and
+the 494th is refused, below. In four of the 493 the series opens on a Friday
+and the Saturday make-up session after it is missing too; the carry covers
+both.
 
 The window has **one** edge, not two. A vendor series that stops at a
 delisting while `ohlcv/` keeps printing used to be the other, and inside
-2011-01-25..2024-12-31 no such stretch exists: every name it applied to
+2011-01-25..2026-09-09 no such stretch exists: every name it applied to
 delisted before the window opens, so the vendor covers none of its
 in-window sessions and there is no adjacent covered factor to carry.
 Those names are the four in the hole above, filled by the rebuild rather
@@ -787,7 +803,7 @@ gap holds one is left NaN. It refuses exactly one: 4141's first print
 sits 376 days before the vendor's first session, with a cancellation on
 that session. Those rows are `adj_source == "vendor_carried"`.
 
-What the head fill recovers is **492 first returns**, not 492 prices.
+What the head fill recovers is **493 first returns**, not 493 prices.
 The price was never the loss — the session-1-to-session-2 return was,
 and in a listing study that is the observation.
 
@@ -805,8 +821,8 @@ a market observation, and the last exchange close is not one. A name
 that left by merger does not go to 興櫃 at all, so the presence of a
 tail is itself a weak signal on the delisting reason (caveat 8).
 
-And `ohlcv/` itself is a zero-row file for one stock while 59 more hold
-prices only outside the window; `load_adjusted` raises on all 60.
+And `ohlcv/` itself is a zero-row file for one stock while 37 more hold
+prices only outside the window; `load_adjusted` raises on all 38.
 
 ### The gap that runs the other way, and the 1,941 returns it cost
 
@@ -870,7 +886,7 @@ per-load half of the check — it sees only what `price_adj/` exposes, and the
 1,638 rows neither tree held were invisible to it by construction. The full
 measurement is `test_taiwan_no_session_the_tape_holds_is_missing`, which pins
 the condition from both directions against the tape: no session the tape holds
-is absent from the interior of a raw series, across 5,906,434 vendor-served
+is absent from the interior of a raw series, across 6,710,863 vendor-served
 ticker-days, and `price_adj/` carries none `ohlcv/` lacks.
 
 #### Why the adjusted tree was not repaired the same way
@@ -889,10 +905,10 @@ holds, and it refuses **44 rows in 12 stocks** — 1597, 2066, 2496, 3147, 4162,
 with the endpoint. Those need the whole file re-downloaded rather than a row
 added, and that is left undone: re-anchoring them would move every adjusted
 value they carry and invalidate the `vendor_event_audit.parquet` rows over
-them. Nothing else is missing from `price_adj/`; the 1,649 sessions the tape
-holds and it does not are sessions the adjusted endpoint does not serve for
-those stocks at all, and the 506 rows before a file's first session are the
-documented `vendor_carried` edge.
+them. Nothing else is missing from a universe name's `price_adj/` file; the
+1,621 sessions the tape holds and it does not are sessions the adjusted
+endpoint does not serve for those stocks at all, and the 501 rows before a
+file's first session are the documented `vendor_carried` edge.
 
 ## Load the full panel
 
@@ -906,7 +922,7 @@ universe = pd.read_parquet(R/"universe.parquet")
 ohlcv_all = pd.concat(
     [pd.read_parquet(p) for p in (R/"ohlcv").glob("*.parquet")],
     ignore_index=True,
-)  # ~5M rows
+)  # ~8.6M rows
 ```
 
 ## Provenance
@@ -935,6 +951,12 @@ ohlcv_all = pd.concat(
 - **Adjusted prices:** 2026-08-16, after the account moved to the
   sponsor tier. 2,154 requests at `--sleep 0.7` under the 6000/hr
   quota, ~40 min, 0 failures. Log: `nohup.price_adj.out`.
+- **Extension to 2026-09-09:** 2026-09-10, `download.py --extend --end
+  2026-09-15 --start 2025-01-01` over the rebuilt 2,159-name universe, 11:24
+  to 17:20, 0 failures. Every file resumed from its own last date, and the
+  2011-01-25..2024-12-31 rows of all 31,220 files that existed before it are
+  byte-identical after it by per-file hash. The pull crossed the exchange's
+  close, which is why coverage stops a day short of its last row.
 
 ### Frozen baseline
 
@@ -976,7 +998,7 @@ green result means every check in the suite actually read something.
 1. **Individual retail flow** is not directly reported. Derive from total
    volume minus institutional volume, or use it as a residual sign.
 2. **Partial-window stocks**: IPOs after 2011-01-25 or delistings before
-   2024 will have shorter series. Always filter by `date` after concat.
+   2026-09-09 will have shorter series. Always filter by `date` after concat.
 3. **ETFs, DRs, warrants** are intentionally excluded. 11 of the
    in-window delistings are `00xx` ETFs or `91xx` depositary receipts and
    are not present (see `delisted_universe.parquet` vs `universe.parquet`
@@ -985,7 +1007,7 @@ green result means every check in the suite actually read something.
    nothing, not splits and not capital reductions. `price_adj/` carries the
    adjusted series, in the total-return convention only; there is no
    price-return variant to buy. It also serves nothing at all for 54 stocks —
-   50 of the 164 in-window delistings and four names quoted into the window
+   50 of the 179 in-window delistings and four names quoted into the window
    after a pre-window exit — is wrong on one event, and stops one traded session
    short at the start of the series; `load_adjusted` rebuilds the first,
    patches the second and carries the third, marking all of them in
@@ -998,41 +1020,42 @@ green result means every check in the suite actually read something.
    nothing reconstructs the step — including FinMind, whose adjusted series
    carries such a reduction through at a factor step of exactly 1.
    `detect_unpriced_actions.py` finds the cancellations from
-   `shares/NumberOfSharesIssued` instead (92.6 % precision, 92.0 % recall where
+   `shares/NumberOfSharesIssued` instead (93.4 % precision, 90.4 % recall where
    the filed events can score it) and `adjusted_loader.py` marks the history
    behind each one `is_valid=False`. The uncovered years are the reason the
    window opens where it does, so what is left inside it is the cancellations no
-   filing explains at all: of the 616 the share count shows, 574 match a filed
-   減資 and 42 in 40 stocks do not. Run it after `consolidate_capred.py`;
+   filing explains at all: of the 651 the share count shows, 608 match a filed
+   減資 and 43 in 41 stocks do not. Run it after `consolidate_capred.py`;
    `load_adjusted` raises if its output is missing rather than serving the
    vendor series as if the window were clean.
 
    **A second action reprices the same way, and was in no chain at all.** A
    面額變更 — the flexible par value the FSC opened to listed companies — divides
    the quoted price and multiplies the share count by the same factor, so it
-   moves a price exactly as mechanically as a 減資 does. There are **12** of them
-   in the window, ratios from 0.10 to 0.50, and until `split_reference.parquet`
+   moves a price exactly as mechanically as a 減資 does. There are **23** of them
+   in the window, ratios from 0.05 to 0.50, and until `split_reference.parquet`
    existed the rebuilt factor stepped straight across every one: it read 6548's
-   2019-09-09 ten-for-one as a **−89.0 %** day, and was wrong by 49 to 99
-   percentage points on the other eleven. Two things kept that invisible.
+   2019-09-09 ten-for-one as a **−89.0 %** day, and was wrong by 46 to 95
+   percentage points on the other 22. Two things kept that invisible.
    `detect_unpriced_actions.py` looks for share-count *drops*, and this action is
    a share-count *multiplication*, so no threshold it carries could ever fire on
    one. And the gate that certifies the rebuild scores on in-window delistings —
    while a par value change is what a healthy company with an expensive share
-   does, and **none of the 12 names ever delisted**. The validation set was
+   does, and **none of the 21 names ever delisted**. The validation set was
    anti-correlated with the failure, which is the shape of thing a green suite
-   cannot report. Nothing was actually served wrong: all 12 are vendor-covered
+   cannot report. Nothing was actually served wrong: all 23 are vendor-covered
    and `adj_source` reads `vendor` across each event, so the defect was latent,
    live only in the rebuilt names it had not yet reached.
    `download_split_price.py` now takes the exchange's reference prices for the
    class and `adjust.py` multiplies them in as a third chain, which reproduces
-   the vendor on all 12 to 1e-3. Unlike the 減資 chain this one has no
+   the vendor on all 23 to 1e-3. Unlike the 減資 chain this one has no
    publication gap behind it: scanning `shares/` × `ohlcv/` for the signature —
    the share count multiplying while the close divides by the matching ratio —
-   turns up eleven candidates across the whole window and every one is already
-   in the endpoint, the earliest on its own first date. The twelfth, 8476, is
-   found by the endpoint and not the scan because its share count updates two
-   sessions after the reprice.
+   turns up eleven candidates across 2011-01-25..2024-12-31, the span it was
+   run over, and every one is already in the endpoint, the earliest on its own
+   first date. The twelfth event in that span, 8476, is found by the endpoint
+   and not the scan because its share count updates two sessions after the
+   reprice.
 6. **A handful of raw prices are wrong**, and no adjustment can repair a bad
    input: stale near-zero quotes, sporadic pre-listing 興櫃 sessions
    (2007-03-03 and 2007-04-14 carry clusters of them, all TPEx, both outside
@@ -1050,7 +1073,7 @@ green result means every check in the suite actually read something.
    (2005-01-03 with 1,114 series and 2006-12-13 with 118) and ahead of any real
    listing day. No single row gives itself away: the OHLCV is internally
    consistent, and `spread` reads −1.00 on all twelve, which on one row is an
-   ordinary one-dollar fall — it is that on 1.1 % of the panel — and on twelve
+   ordinary one-dollar fall — it is that on 1.2 % of the panel — and on twelve
    is not chance. Whatever the vendor means by it, it is a property of the
    cohort and not a test a row can be put to, so the cohort is what is read.
 
@@ -1091,6 +1114,16 @@ green result means every check in the suite actually read something.
    only for a company still registered as 公開發行, which 14 are, so what a
    holder received is still read one filing at a time and a delisting return
    that substitutes the last close is still an assumption wearing a number.
+
+   **The 164 here are not the 179 above.** This caveat's frame is the
+   delistings inside 2011-01-25..2024-12-31, frozen on its own dates when its
+   sample was pre-registered (`delisting_sign.py`, `_WIN_START.._WIN_END`), so
+   the 15 that delisted after 2024-12-31 are in the universe and in every
+   survivorship check but have no reason, label or terminal value read here.
+   Letting the frame follow coverage would have redrawn a seeded sample whose
+   labels were already collected;
+   `test_taiwan_delisting_frame_does_not_follow_coverage` moves `COVERAGE_END`
+   two years and requires the same 164 names back.
 
     The obvious cheaper source is empty, and it is worth saying so because it is
     the first place anyone looks. TWSE's own 終止上市公司 table
@@ -1479,7 +1512,7 @@ green result means every check in the suite actually read something.
     公開收購申報資料彙總表 is filed by the *offeror* and served by period rather
     than by company, so a deregistered target has nothing to gate: 2325 矽品 and
     4180 安成藥業 both answer where their own 說明 does not (probed 2026-08-25).
-    `tender_offers.py` takes the whole of it in one request — **89 offers** from
+    `tender_offers.py` takes the whole of it in one request — **119 offers** from
     ROC 105/11 (2016-11), the floor the query form states, each with the
     per-share 收購對價 in words, who was buying, and how much they got.
     **Fifteen** were made on a name in this frame.
@@ -1648,21 +1681,22 @@ green result means every check in the suite actually read something.
    no column for the latter. Joining them to prices on `date` hands a trader
    figures weeks before they existed, which is look-ahead bias, not
    survivorship, and it reaches every fundamental signal built here.
-   `month_rev/` has a `create_time` field that would carry the disclosure
-   stamp, and for this window it does not — not because the column is
-   meaningless, but because every value it holds falls outside the window.
-   941 of the 43,779 rows in the first 200 files carry one, in 177 stocks, and
-   they are two different things on either side. On the 2005-2010 backfill the
-   stamp post-dates its own revenue month by 5,982 to 7,808 days, which is the
-   vendor's ingest time for rows it rewrote in 2026 rather than a release date;
-   on the 2026-03 to 2026-07 rows the lag is 1 to 51 days with a median of 10,
+   `month_rev/` has a `create_time` field carrying the disclosure stamp, and
+   it holds one for the end of the window and nothing for the rest. 13,905 of
+   the 412,659 rows carry a value and 398,754 are blank, and where the values
+   fall is what says which rows can be aligned point-in-time. **From reporting
+   month 2026-03 the vendor stamps at publication**: 12,954 rows across 1,944
+   stocks, lagging their own reporting date by 0 to 79 days with a median of 9,
    which is what a release date looks like under Taiwan's 10th-of-the-month
-   revenue deadline. **Not one stamped row is inside 2011-01-25..2024-12-31**,
-   so the look-ahead limit here is a fact about the window rather than about the
-   column — and it will not lift by the vendor stamping more, because the
-   window's revenue months were ingested years after the fact and only what the
-   vendor publishes now carries a release date. The other 42,838 rows are
-   blank. `dividend/` is the exception that
+   revenue deadline. Before that month the column is a trickle of rewrites —
+   601 in-window rows in 18 stocks at a median lag of 1,964 days, and 350
+   pre-window rows at 5,617 to 7,808 — which is the vendor's ingest time for
+   rows it rewrote rather than a release date. So the look-ahead limit holds
+   from 2011-01-25 to 2026-02 and lifts from 2026-03 on. It was always a fact
+   about the window rather than about the column, which is why it moved when
+   the window did: the earlier revenue months were ingested years after the
+   fact, and only what the vendor publishes now carries a release date.
+   `dividend/` is the exception that
    shows what the others lack: it carries `AnnouncementDate` and
    `AnnouncementTime`, so its events align point-in-time as delivered.
 
@@ -1698,7 +1732,7 @@ green result means every check in the suite actually read something.
     the back-stop is both the binding and the later date.
 
     `month_rev.date` is already the first of the month **after** the revenue
-    month — 2011-02-01 carries `revenue_month` 1 of 2011, on all 281,009 rows
+    month — 2011-02-01 carries `revenue_month` 1 of 2011, on all 320,533 rows
     — so its deadline is nine days on, not a month and nine.
 
     Two ways the bound stays loose, both deliberate. Shortened deadlines are
@@ -1723,22 +1757,29 @@ green result means every check in the suite actually read something.
     deadline cannot bound.** `filing_dates.py` collects TWSE's document server —
     `doc.twse.com.tw/server-java/t57sb01`, which stamps every filed report with
     its 上傳日期 to the second — for all **2,230** companies that carry a
-    statement tree: **255,795 documents**, consolidated to **163,991**
+    statement tree: **255,943 documents**, consolidated to **164,112**
     company-quarters in `filing_dates.parquet`, one row per period with the
     earliest Chinese report that made it public. The server is not 公開資訊觀測站
     and carries none of its registration gate, so it answers for delisted and
-    deregistered names alike — 158 of the 164 in-window delistings are dated
-    here. A blank `year` returns a company's whole history, so this is one
-    request per company rather than one per quarter.
+    deregistered names alike — all 179 in-window delistings are dated here. A
+    blank `year` returns a company's whole history, so this is one request per
+    company rather than one per quarter.
 
-    Of the **93,527** company-quarters inside the window, **6,138 — 6.56 %,
-    across 1,421 companies — were published after the deadline this package
-    computes**, a median of 15 days late, 234 at the 90th percentile and 1,665
-    at the worst. That is the bias caveat 9 names, now measured rather than
-    asserted: one company-quarter in fifteen, joined on the deadline, hands a
-    trader a figure that did not yet exist. Where the deadline does hold it is
-    tight — the on-time filings land a median of 3 days ahead of it — so it
-    remains a good bound and a bad date.
+    Of the **93,527** company-quarters with a period end from 2011-12-31 to
+    2024-12-31, **6,138 — 6.56 %, across 1,421 companies — were published
+    after the deadline this package computes**, a median of 15 days late, 234
+    at the 90th percentile and 1,665 at the worst. That is the bias caveat 9
+    names, now measured rather than asserted: one company-quarter in fifteen,
+    joined on the deadline, hands a trader a figure that did not yet exist.
+    Where the deadline does hold it is tight — the on-time filings land a
+    median of 3 days ahead of it — so it remains a good bound and a bad date.
+
+    The frame stops where coverage did when these figures were measured, and it
+    stays there when coverage moves. A report is in the file only once it is
+    uploaded, so the quarters after 2024 are short of exactly the late filings
+    counted here: FY2025's annual reads 0.85 % late against 6.66-7.68 % for
+    FY2019-FY2023. FY2024 already reads 3.11 %, so the frame's own last year
+    may carry some of the same shortfall.
 
     **`observed_date` is how a study joins on it.** Given a `stock_id` and the
     period end it returns the day that quarter's figures became tradable, and
@@ -1755,14 +1796,14 @@ green result means every check in the suite actually read something.
     turns out to sit. TWSE's regular session closes at 13:30 and **74.9 %** of
     reports are uploaded after it, so a report filed on its deadline at 17:00
     cannot be acted on until the next session. Counting that, **13,710 —
-    14.66 %** — of the window's company-quarters could not be traded on by the
+    14.66 %** — of those company-quarters could not be traded on by the
     deadline this package computes, against the 6,138 that were filed after it.
     More than double, on the same frame and the same deadline, and 2330 is the
-    case in miniature: it filed after its deadline exactly **once** in 56
-    in-window quarters and is still a session late on **14** of them.
+    case in miniature: it filed after its deadline on **none** of its 53
+    quarters in that frame and is still a session late on **13** of them.
 
-    **19 quarters come back `NaT`, and are left there.** Of the 94,772 in-window
-    company-quarters `fin_is` holds, 94,753 carry an observed date. The 19 that
+    **19 quarters come back `NaT`, and are left there.** Of the 106,472 in-window
+    company-quarters `fin_is` holds, 106,453 carry an observed date. The 19 that
     do not fall over 18 companies, and 15 of them sit outside the span the
     document server holds for their company — an annual filed before the
     company listed or after it stopped filing, which the vendor kept and the
@@ -1836,11 +1877,11 @@ green result means every check in the suite actually read something.
 10. **The statement trees drop old delistings; the exchange's daily trees keep
     them.** The overlay puts every delisted name back in the universe and the
     rebuild gives each one an adjusted return series, but that completeness
-    stops at the price. Of the **164** commons delisted inside the window,
-    `fin_is/` carries rows for **63**, `fin_cf/` for 61, `fin_bs/` for 82 and
-    `shares/` for 107. The rest are not short files, they are **empty** ones —
+    stops at the price. Of the **179** commons delisted inside the window,
+    `fin_is/` carries rows for **78**, `fin_cf/` for 76, `fin_bs/` for 97 and
+    `shares/` for 122. The rest are not short files, they are **empty** ones —
     zero rows before any clipping — so the gap is absence at the source rather
-    than a window artifact: 90 of the missing names lived through eight or more
+    than a window artifact: 91 of the 101 missing names traded in eight or more
     in-window quarters and not one of them carries a single statement row.
     `download.py` asks for them on every pass and the endpoint returns nothing,
     which `download.log` records as `fin_is=ok(0)`.
@@ -1848,15 +1889,16 @@ green result means every check in the suite actually read something.
     What the vendor retains is the **company**, not the listing. Twelve of the
     sixteen pre-break delistings that do carry statements are names that kept
     filing after they left the board — 5854 left in 2011 and its income
-    statement runs to 2026-03-31 — and the other four sit within months of the
-    break. The break itself is sharp and one-sided: every one of the **47**
+    statement runs to 2026-06-30 — and the other four sit within months of the
+    break. The break itself is sharp and one-sided: every one of the **62**
     names delisted after **2020-11-20** has an income statement, against 16 of
     the 117 delisted on or before it. `fin_cf/` breaks on the same date,
     `shares/` three days earlier, `fin_bs/` on 2019-03-29, and `month_rev/` on
-    2020-08-25 — where the loss is partial rather than total, since 139 of the
-    164 keep a file but only 3 of the 117 pre-break names keep the full span
-    against 29 of the 47 after it. The daily series the exchange publishes show
-    no break at all: `per_pbr/` covers 162 of the 164 and `instflow/` 156.
+    2020-08-25 — where the loss is partial rather than total, since 154 of the
+    179 keep a file but only 2 of the 117 pre-break names carry every revenue
+    month from their first in the window to the one before their delisting,
+    against 32 of the 62 after it. The daily series the exchange publishes show
+    no break at all: `per_pbr/` covers 177 of the 179 and `instflow/` 171.
 
     So **a fundamental signal on this panel is still survivorship-biased even
     though the price panel is not**, and the two are not separable by care in
@@ -1876,11 +1918,11 @@ green result means every check in the suite actually read something.
     its last row and writes nothing when the fetch comes back empty — and an
     empty file is re-pulled whole, so the gap closes by itself if the vendor
     ever backfills.
-11. **`open` is not inside `[min, max]` on 2.2 % of rows.** 125,114 traded rows
-    across 669 stocks report an `open` above the session `max` or below the
+11. **`open` is not inside `[min, max]` on 2.0 % of rows.** 131,257 traded rows
+    across 684 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
     beyond the bar is small on most of them — median 0.75 %, and 59 % sit within
-    1 % — but 0.2 % of them exceed 10 % and the worst reaches 113 %. They are
+    1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. They are
     spread over every year of the window rather than clustered in any one
     regime, so
     this is a property of the `open` field, not of a period or a venue. A
@@ -1899,7 +1941,7 @@ regime dummy or a split sample is required, not one pooled estimate.
 
 **The short-sale series has no regime gap in it.** Taiwan ran no market-wide
 short-sale suspension over these years, and the data says so rather than the
-statute: across the 168 in-window months, on 2,077 names, not one month has
+statute: across the 189 in-window months, on 2,082 names, not one month has
 zero short-sale volume and not one has zero short balance. March 2020 — when
 several markets suspended shorting outright — carries **1.66×** the 2019
 monthly mean, not a hole. The consequence for a caller is the useful part: a
@@ -1938,8 +1980,8 @@ Second batch (free-tier verified):
 | `fin_is/` | `TaiwanStockFinancialStatements` | Quarterly income statement (includes EPS as a `type` row) |
 | `fin_bs/` | `TaiwanStockBalanceSheet` | Quarterly balance sheet |
 | `fin_cf/` | `TaiwanStockCashFlowsStatement` | Quarterly cash-flow statement |
-| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends, at **declaration** level — the per-component split (`CashEarningsDistribution`, `StockEarningsDistribution`, `CashIncreaseSubscriptionRate`). Units differ per field: stock dividends are per NT$10 par, rights are 每仟股. Also carries `CashExDividendTradingDate`, a **declared ex-date usable as an independent second source** for `div_result`'s event date — the two agree on 19,722 of 19,730 comparable events (**99.96 %**; of 2,480 non-matches, 2,472 are outside that stock's `div_result` span and only 8 are real). Present for 1,846 of the 2,158 universe stocks, counting a stock as covered when any row carries a non-blank value (re-measured 2026-08-17). |
-| `div_result/` | `TaiwanStockDividendResult` | 除權除息結果表 — the exchange's **published reference prices** per ex-event (`before_price`, `after_price`). 18,277 in-window events / 1,903 stocks. This, not `dividend/`, is what the adjusted series is built from. |
+| `dividend/` | `TaiwanStockDividend` | Cash + stock dividends, at **declaration** level — the per-component split (`CashEarningsDistribution`, `StockEarningsDistribution`, `CashIncreaseSubscriptionRate`). Units differ per field: stock dividends are per NT$10 par, rights are 每仟股. Also carries `CashExDividendTradingDate`, a **declared ex-date usable as an independent second source** for `div_result`'s event date — the two agree on 22,619 of 22,628 comparable events (**99.96 %**; of 2,508 non-matches, 2,499 are outside that stock's `div_result` span and only 9 are real). Present for 1,951 of the 2,159 universe stocks, counting a stock as covered when any row carries a non-blank value (re-measured 2026-09-10). |
+| `div_result/` | `TaiwanStockDividendResult` | 除權除息結果表 — the exchange's **published reference prices** per ex-event (`before_price`, `after_price`). 21,418 in-window events / 2,028 stocks. This, not `dividend/`, is what the adjusted series is built from. |
 | `sec_lending/` | `TaiwanStockSecuritiesLending` | 借券/議借 — institutional short proxy |
 
 Sponsor tier (level 3, since 2026-08-16):
@@ -1982,14 +2024,14 @@ Follow-up — delivered (top-level files, not in per-stock DATASETS):
 | File | Endpoint | Notes |
 |---|---|---|
 | `delisted_universe.parquet` | `TaiwanStockDelisting` | Already in repo — the existing file *is* the `TaiwanStockDelisting` market-wide one-shot output (723 rows, 2001-2026). Refreshed 2026-08-17. Columns: `date`, `stock_id`, `stock_name`, `year` (year derived from date). No re-download needed. |
-| `split_reference.parquet` | `TaiwanStockSplitPrice` | 面額變更 / 分割 / 反分割 reference prices, market-wide and free. 33 filings, 31 stocks, 2019-09-09 onward, of which **12 are in-window on a universe name**. `download_split_price.py` writes it; `adjust.py` reads it as a third chain. `TaiwanStockParValueChange` covers the same actions under other column names and every one of its 15 rows is already keyed here, so only the wider table is taken. Probed 2026-08-25. |
+| `split_reference.parquet` | `TaiwanStockSplitPrice` | 面額變更 / 分割 / 反分割 reference prices, market-wide and free. 35 filings, 33 stocks, 2019-09-09 onward, of which **23 are in-window on a universe name**. `download_split_price.py` writes it; `adjust.py` reads it as a third chain. `TaiwanStockParValueChange` covers the same actions under other column names and every one of its 15 rows is already keyed here, so only the wider table is taken. Probed 2026-08-25. |
 | `capital_reduction.parquet` | `TaiwanStockCapitalReductionReferencePrice` | Concatenated event log (sparse: most stocks have 0 events). 9 columns including `PostReductionReferencePrice`, `ExrightReferencePrice`, `ReasonforCapitalReduction`. Per-stock raw files in `cap_red/`; `consolidate_capred.py` merges them. **The endpoint's earliest row is 2011-01-25**, six years after the price series starts — see caveat 5. |
 
 Not a FinMind endpoint at all — the exchange serves it free and without a key:
 
 | File | Source | Notes |
 |---|---|---|
-| `exright_reference.parquet` | TWSE **TWT49U** 除權除息計算結果表, `www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=&endDate=&response=json` | 15,314 events / 1,269 stocks, 2005-01-11 → 2024-12-31. Whole-year queries are not truncated (2007 returns 538 rows either way), so `download_exright.py` needs 20 requests. Carries the same two reference prices as `div_result/` — they agree to 1e-6 on **99.99 %** of the 13,892 joined events, the single exception being 3454's malformed 2011-07-27 twin that the vendor audit also flags — plus the **權值 / 息值 split** `div_result` lacks, which resolves 143 fused events whose cash dividend was never declared. Schema narrows in 2009; see caveat 7. Probed 2026-08-01. |
+| `exright_reference.parquet` | TWSE **TWT49U** 除權除息計算結果表, `www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=&endDate=&response=json` | 17,940 events / 1,375 stocks, 2005-01-11 → 2026-09-10, whole years stored so the last runs a day past coverage. Whole-year queries are not truncated (2007 returns 538 rows either way), so `download_exright.py` needs 22 requests. Carries the same two reference prices as `div_result/` — they agree to 1e-6 on **99.99 %** of the 15,669 joined events, the single exception being 3454's malformed 2011-07-27 twin that the vendor audit also flags — plus the **權值 / 息值 split** `div_result` lacks, which resolves 143 fused events whose cash dividend was never declared. Schema narrows in 2009; see caveat 7. Probed 2026-08-01. |
 | — | TWSE **TWTAUU** 股票減資恢復買賣參考價格, `…/rwd/zh/reducation/TWTAUU` | **Not downloaded, and it settles caveat 5.** The exchange refuses any start date before ROC 100/1/1 (`查詢開始日期小於100年1月1日，請重新查詢!`) and its first row is 100/01/25 = **2011-01-25**, byte-identical to where FinMind's `cap_red/` begins. The pre-2011 gap is therefore TWSE's own publication limit, not a vendor tier — no paid plan and no other mirror can close it. Probed 2026-08-01. |
 
 **The whole Taiwan catalogue, swept 2026-08-25.** FinMind publishes a machine
@@ -2023,9 +2065,9 @@ left is read one filing at a time from MOPS and from
 
 | Reachable, not taken | What it is | Why not |
 |---|---|---|
-| `TaiwanStockDispositionSecuritiesPeriod` | 處置有價證券 — 4,832 rows, 2011-01-04 → 2024-12-31, with the exchange's own `measure` text | Full-window distress marker and the largest thing on this list. It was the first place to go when the delisting sign needed a source that is not a filing, and caveat 8 records what came back: it marks abnormal trading rather than a reason, reaches 22 % of the band, and points the wrong way on the names that can score it |
+| `TaiwanStockDispositionSecuritiesPeriod` | 處置有價證券 — 6,405 rows, 2011-01-25 → 2026-09-09, with the exchange's own `measure` text | Full-window distress marker and the largest thing on this list. It was the first place to go when the delisting sign needed a source that is not a filing, and caveat 8 records what came back: it marks abnormal trading rather than a reason, reaches 22 % of the band, and points the wrong way on the names that can score it |
 | `TaiwanStockSuspended` | 暫停交易公告 with `resumption_date`, 7,114 rows from 2011-11-04 | Thin where it would matter: only 266 rows are 4-digit commons, across 224 names, and just 46 of the 246 in-window delisted names have one. Most of the table is warrants |
-| `TaiwanStockTradingDate` | the session calendar — 3,414 in-window sessions | Already held. It matches a continuously-listed name's tape exactly: 0 sessions either way against 2330's `ohlcv/`. Worth knowing it exists, not worth storing twice |
+| `TaiwanStockTradingDate` | the session calendar — 3,823 in-window sessions | Already held. It matches a continuously-listed name's tape exactly: 0 sessions either way against 2330's `ohlcv/`. Worth knowing it exists, not worth storing twice |
 | `TaiwanStockMarginShortSaleSuspension`, `TaiwanStockDayTradingSuspension` | 暫停融券賣出 / 暫停當沖, ~30k rows each | Routine rather than distress — the modal `reason` is 分配收益, the ordinary pre-ex-dividend suspension |
 | `TaiwanStockParValueChange` | the same 面額變更 actions under other column names | A strict subset: every one of its 15 rows is already keyed in `TaiwanStockSplitPrice`, which is taken instead |
 | `TaiwanStockMarketValue` | 市值, Backer/Sponsor, 2004 → now | Returns 0 rows market-wide despite the docs offering that form. Market cap is `close × NumberOfSharesIssued` here anyway |
@@ -2113,7 +2155,7 @@ nohup python download.py --datasets price_adj --sleep 0.4 \
 # Validity mask — needs div_result/, capital_reduction.parquet and shares/
 python -m finmind_data.detect_unpriced_actions --calibrate   # → unpriced_actions.parquet
 
-# Exchange 除權息 report, independent of the above (~20 requests, no key)
+# Exchange 除權息 report, independent of the above (~22 requests, no key)
 python -m finmind_data.download_exright   # → exright_reference.parquet
 ```
 
@@ -2123,9 +2165,35 @@ move `--end`. That is what `--extend` is for.
 
 ### Extending the far end
 
+Extending the trees extends what this package answers for. `COVERAGE_END` is
+where the download reached, so it moves with the pull and every figure below
+moves with it — which is why the extension is not finished when `download.py`
+exits. Rebuild the universe *before* the pull, not after: `download.py` walks
+`universe.parquet`, so a name absent from it is never fetched and the hole it
+leaves is invisible afterwards.
+
+Set `COVERAGE_END` to the last session the pull *finished*, not the last it
+touched. A pull crossing the exchange's close writes that day's bar for the
+stocks fetched after it and not for the ones fetched before, and coverage ending
+there publishes the day as a market of a few hundred names;
+`test_taiwan_coverage_does_not_outrun_the_data` measures the last session
+against the tape and names the date to move back to.
+
 ```bash
-# Top every file up to a later end date. Each resumes from its own last date.
+python -m finmind_data.build_universe        # before the pull, not after
 python download.py --extend --end <YYYY-MM-DD> --sleep 0.4
+# then, in this order — each reads what the one above it wrote
+$EDITOR finmind_data/window.py               # COVERAGE_END = last whole session
+python -m finmind_data.tape_universe         # → tape/, tape_universe.parquet
+python -m finmind_data.pit_universe          # → trading_sessions, listing_spans
+python -m finmind_data.consolidate_capred    # → capital_reduction.parquet
+python -m finmind_data.download_exright      # → exright_reference.parquet
+python -m finmind_data.download_split_price  # → split_reference.parquet
+python -m finmind_data.detect_unpriced_actions --calibrate  # → unpriced_actions
+python -m finmind_data.vendor_event_audit    # → vendor_event_audit.parquet
+python -m finmind_data.tender_offers         # → tender_offers.parquet
+python finmind_data/filing_dates.py --consolidate   # → filing_dates.parquet
+python finmind_data/test_assertions.py --write-populations
 ```
 
 An empty file carries no last date to resume from, so it is re-pulled whole —
@@ -2135,9 +2203,9 @@ concatenated, since `pd.concat` would widen the frame and leave each pull's
 rows NaN in the other's columns: the stock logs `schema-drift`, counts as a
 failure, and its file is left as it was.
 
-Extending the trees does not extend what this package answers for. The window
-is `window.py`'s, every reader applies it (`window.clip`), and the figures
-below are quoted on it — so an extension adds rows on disk and changes no
-number here. Moving `COVERAGE_END` is a separate decision, and not this
-package's alone: the study window it sits inside is shared across the
-repository.
+`tape_universe` sweeps to `COVERAGE_END`, so editing the constant first is what
+lets the tape reach the new sessions; run it before `pit_universe`, which builds
+the calendar out of it. The last line re-seeds `populations.json`: coverage
+moving is the one thing that legitimately changes a clipped population, and
+every other assertion still has to pass before the new numbers are written
+down.

@@ -20,10 +20,13 @@ if [ ! -e "${files[0]}" ]; then
   exit 1
 fi
 
-# The study window is duplicated in each package's file, because the container
-# holds no shared module to import it from. Drift between the copies would
-# silently change what every downstream check measures without failing anything,
-# so the copies are compared here rather than trusted.
+# The study window is duplicated in each package whose figures are quoted on
+# one, because the container holds no shared module to import it from. Drift
+# between the copies would silently change what every downstream check measures
+# without failing anything, so the copies are compared here rather than trusted.
+# A package holding data and no study defines neither constant and is not
+# counted: its checks are quoted on the span its own downloads reached, which
+# moves when they are re-run and is nobody else's to agree with.
 windows=$(grep -h '^WIN_START\|^WIN_END' "${files[@]}" | sort -u)
 if [ "$(echo "$windows" | wc -l)" -ne 2 ]; then
   echo "FAIL  study-window constants disagree across packages:" >&2

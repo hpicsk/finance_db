@@ -14,7 +14,7 @@ This script looks for cancellations, and only for those. A share count can also
 *multiply* — a 面額變更 divides the price and multiplies the count by the same
 factor — and no threshold on a drop will ever see one. That class is covered by
 being filed rather than by being detected: ``split_reference.parquet`` carries
-the exchange's reference prices for all twelve in-window events, so
+the exchange's reference prices for every in-window event, so
 ``adjust.filed_event_dates`` explains them and nothing here needs to. Before
 that file existed the two blind spots lined up, which is why the class was
 invisible from inside the package.
@@ -39,10 +39,10 @@ Parameters (see CLAUDE.md §6.1):
             dated by different endpoints and disagree by days, not weeks.
 
 Calibrated against the years where ``capital_reduction.parquet`` *is* the ground
-truth (2011-01-25 onward): 92.6 % of detections match a filed event and 92.0 % of
+truth (2011-01-25 onward): 93.4 % of detections match a filed event and 90.4 % of
 filed events are detected. ``--calibrate`` reprints that table. Precision is flat
-at ~92 % across drop thresholds once the suspension condition is on, so the 5 %
-floor sets recall, not the pass mark.
+at 92-93 % across drop thresholds from 2 % to 50 % once the suspension condition
+is on, so the 5 % floor sets recall, not the pass mark.
 """
 from __future__ import annotations
 

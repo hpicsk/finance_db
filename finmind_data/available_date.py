@@ -43,8 +43,8 @@ so the back-stop is the deadline that binds, and it is also the later of the two
 which is the direction this module errs in on purpose.
 
 **Monthly revenue is already offset.** ``month_rev.date`` is the first of the
-month *after* the revenue month — 2005-01-01 carries ``revenue_month`` 12 of
-2004, on all 80,292 rows checked — so the deadline is the 10th of that same
+month *after* the revenue month — 2011-02-01 carries ``revenue_month`` 1 of
+2011, on all 320,533 in-window rows — so the deadline is the 10th of that same
 month, nine days later, not a month and nine days.
 
 **Two ways this bound stays loose**, both left in rather than closed:
@@ -72,10 +72,11 @@ existed. That is the one direction the deadline cannot bound away on its own,
 and it is what ``observed_date`` below is for. ``filing_dates.parquet`` carries
 the 上傳日期 of the report that first made each company-quarter public, collected
 by ``filing_dates.py`` from TWSE's document server, and against it 6.56 % of the
-window's company-quarters were published after their deadline (README caveat 9).
+company-quarters ending 2011-12-31..2024-12-31 were published after their
+deadline (README caveat 9).
 
 The tradable gap is wider than the published one, because three quarters of
-reports are uploaded after the session closes: **14.66 %** of the window's
+reports are uploaded after the session closes: **14.66 %** of those
 company-quarters could not be traded on by their deadline, against the 6.56 %
 that were filed after it. The deadline is still the right default — it is what
 the law required, it needs no external file, and where it holds it is tight, a
@@ -249,7 +250,7 @@ def observed_date(stock_id, period_end) -> pd.Series:
     figures can be traded at is the following session's.
 
     ``NaT`` where the panel carries no filing for that company-quarter — 19 of
-    the 94,772 in-window quarters ``fin_is`` holds, almost all of them an annual
+    the 106,472 in-window quarters ``fin_is`` holds, almost all of them an annual
     report from before the company listed or after it left, which the vendor
     kept and the document server never carried. They are left undated rather
     than dated by the deadline: substituting the bound there would put back

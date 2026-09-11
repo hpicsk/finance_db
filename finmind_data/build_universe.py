@@ -32,6 +32,7 @@ from FinMind.data import DataLoader
 import pandas as pd
 from pathlib import Path
 
+from .pit_universe import emerging_boundary
 from .window import COVERAGE_START, COVERAGE_END
 
 OUT = Path(__file__).resolve().parent
@@ -58,6 +59,16 @@ excluded_ids = set(raw.loc[raw["industry_category"].isin(exclude_industries),
 # TWSE + TPEx only (drop 'emerging'), again on the evidence of any row: a name
 # that moved up from the emerging board keeps its frozen `emerging` row.
 listed_ids = set(raw.loc[raw["type"].isin(["twse", "tpex"]), "stock_id"])
+# That row is undated evidence, and the registry dates its rows. A code whose
+# 興櫃 row runs to or past `COVERAGE_END` is still on the emerging board when the
+# panel ends, so its twse/tpex row, read as the promotion that follows 興櫃, is a
+# listing that begins after the panel: it trades on the tape without ever being
+# a listed common here. A name that fell back to 興櫃 after a delisting would
+# read the same way and be dropped with them. `pit_universe` draws the same
+# boundary per session, and the rule is imported rather than restated so the
+# two cannot disagree about which side of it a name is on.
+boundary = emerging_boundary(raw)
+listed_ids -= set(boundary.index[boundary >= COVERAGE_END])
 
 # Keep only 4-digit numeric codes (common stocks).
 # Excludes: ETFs (00xxx, 5-6 digits), warrants (6-digit alphanumeric),

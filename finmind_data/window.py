@@ -15,15 +15,21 @@ Six years of prices with no event log underneath them is not a shorter panel,
 it is a panel whose errors are silent, and the choice is which of the two this
 package hands a researcher. It hands the shorter one.
 
-`COVERAGE_END` is not where the download stopped — the trees run past it, and
-`download.py --extend` moves that edge whenever it is run. It is the last
-session this package answers for, and it stops at the study window the rest of
-the repo quotes its figures on.
+`COVERAGE_END` is where the download reached. `download.py --extend` moves that
+edge every time it runs and this constant follows it: the package holds data and
+no study, so how far it answers for is a fact about the last pull rather than a
+research decision. A study names the period it reports on through
+`clip(start=, end=)` rather than inheriting this one.
+
+It stops at the last session the trees hold whole. A pull crossing the
+exchange's close writes that day's bar for the stocks fetched after it and not
+for the ones fetched before, so the trees run a partial session past this date.
+Coverage ending on that day would publish it as a market of a few hundred names.
+`test_taiwan_coverage_does_not_outrun_the_data` reads the edge off the artifacts
+rather than trusting this line.
 
 `clip` is how a reader applies the window, and it exists as one function
 because the alternative is the same comparison written out at each of them.
-It takes `start` and `end` so a study can name the period it reports on rather
-than inherit this package's coverage, which is a property of the package.
 The tree holds sessions on both sides of the window, so a reader that forgets
 does not fail — it quietly measures a wider panel than it reports, and the
 number it returns is the kind that gets published. The check is that every
@@ -33,7 +39,7 @@ it writes the tree, and writing it short is what the window is not for.
 import pandas as pd
 
 COVERAGE_START = pd.Timestamp("2011-01-25")
-COVERAGE_END = pd.Timestamp("2024-12-31")
+COVERAGE_END = pd.Timestamp("2026-09-09")
 
 
 def clip(df: pd.DataFrame, col: str = "date", *,
