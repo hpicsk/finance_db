@@ -1977,14 +1977,19 @@ green result means every check in the suite actually read something.
     across 684 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
     beyond the bar is small on most of them — median 0.75 %, and 59 % sit within
-    1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. The share
-    falls from 3.45 % of 2011's rows to 1.36 % of 2024's and 0.21 % of 2026's
-    to 2026-09-09. What produces that fall is not identified. A re-download of
-    40 of the 684 stocks returned every price unchanged (see the re-pull under
-    Provenance). A strategy that
-    enters at the open therefore prices ~2 % of its fills off a number the
-    same row contradicts, while the same strategy on `close` is
-    unaffected. Screen with `open.between(min, max)` before using it; caveat 6's
+    1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. **29,651
+    of the 131,257 fall on 興櫃 sessions**, which `pit_universe.py` removes. The
+    share on the sessions `pit_universe.py` keeps is 1.57 %: 2.18 % for the
+    names the Universe table counts under TPEx, against 1.12 % for those under
+    TWSE. The TPEx share is the higher of the two in every year to 2024. The
+    share on those sessions falls from 3.33 % of 2011's rows to 0.06 % of
+    2024's. No session `pit_universe.py` keeps from 2025 on carries such an
+    open. What produces that fall is not identified. A re-download of 40 of the
+    684 stocks returned every price unchanged (see the re-pull under
+    Provenance). A strategy that enters at the open on the sessions
+    `pit_universe.py` keeps therefore prices ~1.6 % of its fills off a number
+    the same row contradicts, while the same strategy on `close` is unaffected.
+    Screen with `open.between(min, max)` before using it; caveat 6's
     individually corrupt rows are a separate and much smaller set.
 
 ## Two regime facts about the window

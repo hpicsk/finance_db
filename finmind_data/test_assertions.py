@@ -1344,11 +1344,23 @@ def test_taiwan_open_outside_session_range():
     `close` never does, which is what makes this a property of the `open` field
     rather than of the sessions. Asserted because the caveat is the only thing
     standing between the panel and a backtest that enters at the open.
+
+    The shares the caveat prints after the count are measured on the sessions
+    `pit_universe.py` keeps, read off the spans `universe_at` reads. The board
+    is `type` in `universe.parquet`, the column the Universe table counts. The
+    per-year claims range over every year of the window.
     """
     import pyarrow.parquet as pq
+    from finmind_data.pit_universe import _spans
 
-    bad = tot = stocks = bad_close = 0
-    by_year = pd.DataFrame(columns=["bad", "rows"], dtype=int)
+    spans = {s: list(zip(pd.to_datetime(g["start"]), pd.to_datetime(g["end"])))
+             for s, g in _spans().groupby("stock_id")}
+    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    board = dict(zip(u["stock_id"].astype(str), u["type"]))
+    until = pd.to_datetime(_tape_universe().set_index("stock_id")["emerging_until"])
+
+    bad = tot = stocks = bad_close = gone = gone_emerging = 0
+    kept = []
     for sid in _panel_ids():
         p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         # Some files hold no rows and carry no schema, so a column-projected
@@ -1360,11 +1372,18 @@ def test_taiwan_open_outside_session_range():
         tot += len(r)
         out = (r["open"] > r["max"]) | (r["open"] < r["min"])
         n = int(out.sum())
-        by_year = by_year.add(out.groupby(r["date"].dt.year).agg(
-            bad="sum", rows="size"), fill_value=0)
         bad += n
         stocks += n > 0
         bad_close += int(((r["close"] > r["max"]) | (r["close"] < r["min"])).sum())
+        keep = pd.Series(False, index=r.index)
+        for a, b in spans.get(sid, []):
+            keep |= r["date"].between(a, b)
+        if keep.any():
+            kept.append(out[keep].groupby(r.loc[keep, "date"].dt.year)
+                        .agg(bad="sum", rows="size")
+                        .assign(board=board[sid] or "none"))
+        gone += int((out & ~keep).sum())
+        gone_emerging += int((out & ~keep & (r["date"] <= until.get(sid, pd.NaT))).sum())
 
     assert bad_close == 0, (
         f"README caveat 11 rests on close being consistent with its own session "
@@ -1375,21 +1394,51 @@ def test_taiwan_open_outside_session_range():
         f"README caveat 11 pins 131,257 rows across 684 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
-    # The README quotes three years of the share, each to its last printed
-    # digit. Pinning all three pins the fall they describe.
-    quoted = {2011: 0.0345, 2024: 0.0136, 2026: 0.0021}
-    share = by_year["bad"] / by_year["rows"]
-    off = {y: f"{share[y]:.2%}" for y, q in quoted.items()
-           if not math.isclose(share[y], q, abs_tol=0.00005)}
+    # The rows `pit_universe.py` removes, each on or before the day its name
+    # left 興櫃.
+    assert (gone, gone_emerging) == (29651, 29651), (
+        f"README caveat 11 says 29,651 of the 131,257 fall on 興櫃 sessions, "
+        f"which pit_universe.py removes; it removes {gone:,} of them, "
+        f"{gone_emerging:,} on or before their name left 興櫃")
+
+    # The README quotes each share to its last printed digit.
+    k = pd.concat(kept).rename_axis("year").reset_index()
+    by_board = k.groupby("board")[["bad", "rows"]].sum()
+    by_year = k.groupby("year")[["bad", "rows"]].sum()
+    share = {"kept": by_board["bad"].sum() / by_board["rows"].sum(),
+             **{b: by_board.loc[b, "bad"] / by_board.loc[b, "rows"]
+                for b in ("tpex", "twse")},
+             **{y: by_year.loc[y, "bad"] / by_year.loc[y, "rows"]
+                for y in (2011, 2024)}}
+    quoted = {"kept": 0.0157, "tpex": 0.0218, "twse": 0.0112,
+              2011: 0.0333, 2024: 0.0006}
+    off = {key: f"{share[key]:.2%}" for key, q in quoted.items()
+           if not math.isclose(share[key], q, abs_tol=0.00005)}
     assert not off, (
-        f"README caveat 11 says the share falls from 3.45 % of 2011's rows "
-        f"to 1.36 % of 2024's and 0.21 % of 2026's to 2026-09-09; the tree "
-        f"gives {off}"
-    )
+        f"README caveat 11 says the share on the sessions pit_universe.py keeps "
+        f"is 1.57 %, 2.18 % for the names the Universe table counts under TPEx "
+        f"against 1.12 % for those under TWSE, and falls from 3.33 % of 2011's "
+        f"rows to 0.06 % of 2024's; the tree gives {off}")
+
+    window = list(range(COVERAGE_START.year, COVERAGE_END.year + 1))
+    last = int(by_year.index[by_year["bad"] > 0].max())
+    assert list(by_year.index) == window and last == 2024, (
+        f"README caveat 11 says no session pit_universe.py keeps from 2025 on "
+        f"carries such an open; kept sessions fall in {list(by_year.index)} "
+        f"and the last such open is in {last}")
+    g = k.groupby(["year", "board"])[["bad", "rows"]].sum()
+    yearly = (g["bad"] / g["rows"]).unstack("board")
+    lower = [y for y in range(COVERAGE_START.year, last + 1)
+             if not yearly.loc[y, "tpex"] > yearly.loc[y, "twse"]]
+    assert not lower, (
+        f"README caveat 11 says the TPEx share is the higher of the two in every "
+        f"year to 2024; it is not in {lower}")
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
-            f"({100 * bad / tot:.2f} %) in {stocks} stocks, "
-            f"{'/'.join(f'{share[y]:.2%}' for y in quoted)} in "
-            f"{'/'.join(map(str, quoted))}; close on 0"), tot
+            f"({100 * bad / tot:.2f} %) in {stocks} stocks, {gone:,} on "
+            f"興櫃; kept sessions {share['kept']:.2%}, TPEx {share['tpex']:.2%} "
+            f"against TWSE {share['twse']:.2%}, higher in every year to {last}; "
+            f"{share[2011]:.2%} in 2011, {share[2024]:.2%} in 2024, none from "
+            f"{last + 1}; close on 0"), tot
 
 
 def test_taiwan_repull_returns_the_stored_prices():
