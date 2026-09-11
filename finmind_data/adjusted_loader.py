@@ -600,7 +600,7 @@ def available_stocks(price_adj_dir: Path = PRICE_ADJ_DIR) -> list[str]:
 
 
 if __name__ == '__main__':
-    for sid in ('2330', '8934', '2396', '2822', '1207'):
+    for sid in ('2330', '8934', '2396', '8287', '4415'):
         df = load_adjusted(sid)
         src = df.loc[df['adj_source'] != '', 'adj_source'].unique()
         print(f'{sid}: {len(df):,} rows {df["date"].min().date()}..'

@@ -1774,12 +1774,21 @@ green result means every check in the suite actually read something.
     Where the deadline does hold it is tight — the on-time filings land a
     median of 3 days ahead of it — so it remains a good bound and a bad date.
 
-    The frame stops where coverage did when these figures were measured, and it
-    stays there when coverage moves. A report is in the file only once it is
-    uploaded, so the quarters after 2024 are short of exactly the late filings
-    counted here: FY2025's annual reads 0.85 % late against 6.66-7.68 % for
-    FY2019-FY2023. FY2024 already reads 3.11 %, so the frame's own last year
-    may carry some of the same shortfall.
+    The frame ends where coverage did when these figures were measured. It
+    does not move when coverage does, because the late rate falls from its
+    last year on: FY2024's annual reports read 3.11 % late and FY2025's
+    0.85 %, against 6.66-7.68 % for FY2019-FY2023. Right-censoring biases the
+    newest years' rate down: a report is in the file only once it is uploaded,
+    so a year near the pull is short of the late reports still to come. The
+    bias is small next to the fall. The file's last upload is 2026-08-31, 153
+    days past FY2025's annual deadline and 518 days past FY2024's. FY2025 will
+    read at most 1.5 % late and FY2024 at most 3.7 % if their late reports
+    follow the upload pattern of any year in the frame. The same bound, applied
+    to every quarter in the frame, lifts its 6.56 % by at most 0.11 points. The
+    annual filings moved earlier over the same years: the median came 87-89
+    days after year end for FY2011-FY2019 and 72 days after for FY2024. What
+    moved them is not established here. A frame ending a year earlier, at
+    2023-12-31, reads 6.81 %.
 
     **`observed_date` is how a study joins on it.** Given a `stock_id` and the
     period end it returns the day that quarter's figures became tradable, and
@@ -1866,13 +1875,14 @@ green result means every check in the suite actually read something.
     empty history, because twice the empty was the collector and not the company.
 
     Two smaller things the panel keeps and drops. **1,057 rows are filed under a
-    six-digit 公開發行 registration number** rather than a ticker — a company that
-    was publicly issued before it listed filed its first reports under that
-    number, and the server returns them on the listed code's page; they are the
-    same company, so they are kept under the listed code with the old one beside
-    them in `filed_as`. **Thirteen filenames carry a period no calendar has** —
-    192003, 291001, 283102 — and are dropped rather than clipped, all of them
-    pre-2001 documents outside the window.
+    code other than the company's own.** 605 carry a six-digit 公開發行
+    registration number and 452 an earlier four-digit code. A company publicly
+    issued before it listed filed its first reports under that registration
+    number. The server returns them on the listed code's page; they are the
+    same company, so they are kept under the listed code with the old one
+    beside them in `filed_as`. **Thirteen filenames carry a period no calendar
+    has** — 192003, 291001, 283102 — and are dropped rather than clipped, all
+    of them pre-2001 documents outside the window.
 
 10. **The statement trees drop old delistings; the exchange's daily trees keep
     them.** The overlay puts every delisted name back in the universe and the
@@ -1922,12 +1932,11 @@ green result means every check in the suite actually read something.
     across 684 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
     beyond the bar is small on most of them — median 0.75 %, and 59 % sit within
-    1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. They are
-    spread over every year of the window rather than clustered in any one
-    regime, so
-    this is a property of the `open` field, not of a period or a venue. A
-    strategy that enters at the open therefore prices ~2 % of its fills off a
-    number the same row contradicts, while the same strategy on `close` is
+    1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. The share
+    falls from 3.45 % of 2011's rows to 1.36 % of 2024's and 0.21 % of 2026's
+    to 2026-09-09. What produces that fall is not identified. A strategy that
+    enters at the open therefore prices ~2 % of its fills off a number the
+    same row contradicts, while the same strategy on `close` is
     unaffected. Screen with `open.between(min, max)` before using it; caveat 6's
     individually corrupt rows are a separate and much smaller set.
 
@@ -2184,6 +2193,7 @@ python -m finmind_data.build_universe        # before the pull, not after
 python download.py --extend --end <YYYY-MM-DD> --sleep 0.4
 # then, in this order — each reads what the one above it wrote
 $EDITOR finmind_data/window.py               # COVERAGE_END = last whole session
+$EDITOR finmind_data/download.py             # --end default = the same session
 python -m finmind_data.tape_universe         # → tape/, tape_universe.parquet
 python -m finmind_data.pit_universe          # → trading_sessions, listing_spans
 python -m finmind_data.consolidate_capred    # → capital_reduction.parquet

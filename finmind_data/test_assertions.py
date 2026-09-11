@@ -191,6 +191,23 @@ def test_taiwan_coverage_does_not_outrun_the_data():
         f"every name listed between the two is dated against a registry that "
         f"had not seen it")
 
+    # `download.py` does not import the window, so its `--end` default is a
+    # copy of this constant, and it is what a fresh clone pulls the trees to.
+    # An extension that moves the constant and not the copy leaves the next
+    # rebuild short of the coverage every figure here is quoted on.
+    end_default = [kw.value.value
+                   for node in ast.walk(ast.parse(
+                       (REPO / "finmind_data/download.py").read_text()))
+                   if isinstance(node, ast.Call)
+                   and getattr(node.func, "attr", None) == "add_argument"
+                   and node.args
+                   and getattr(node.args[0], "value", None) == "--end"
+                   for kw in node.keywords if kw.arg == "default"]
+    assert end_default == [hi], (
+        f"download.py's --end default is {end_default} and COVERAGE_END is "
+        f"{hi}; a fresh clone pulls the trees to the default, so the two must "
+        f"name one session")
+
     # A pull crossing the exchange's close leaves the trees holding that
     # session for the stocks fetched after it and not for the ones fetched
     # before, so the day reads as a market of a few hundred names. The tape says
@@ -216,7 +233,8 @@ def test_taiwan_coverage_does_not_outrun_the_data():
         f"partway through that session, so move COVERAGE_END back to the last "
         f"one it finished")
     return (f"coverage {lo}..{hi} sits on sessions the calendar carries "
-            f"({len(cal):,} of them), the registry was pulled {stamp}, and all "
+            f"({len(cal):,} of them), download.py defaults to it, the "
+            f"registry was pulled {stamp}, and all "
             f"{len(on_last):,} universe names the tape quotes on the last one "
             f"have an ohlcv row for it"), len(cal)
 
@@ -1330,6 +1348,7 @@ def test_taiwan_open_outside_session_range():
     import pyarrow.parquet as pq
 
     bad = tot = stocks = bad_close = 0
+    by_year = pd.DataFrame(columns=["bad", "rows"], dtype=int)
     for sid in _panel_ids():
         p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         # Some files hold no rows and carry no schema, so a column-projected
@@ -1339,7 +1358,10 @@ def test_taiwan_open_outside_session_range():
         r = _tree(p, columns=["date", "open", "max", "min", "close"])
         r = r[r["close"] > 0]
         tot += len(r)
-        n = int(((r["open"] > r["max"]) | (r["open"] < r["min"])).sum())
+        out = (r["open"] > r["max"]) | (r["open"] < r["min"])
+        n = int(out.sum())
+        by_year = by_year.add(out.groupby(r["date"].dt.year).agg(
+            bad="sum", rows="size"), fill_value=0)
         bad += n
         stocks += n > 0
         bad_close += int(((r["close"] > r["max"]) | (r["close"] < r["min"])).sum())
@@ -1353,8 +1375,21 @@ def test_taiwan_open_outside_session_range():
         f"README caveat 11 pins 131,257 rows across 684 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
+    # The README quotes three years of the share, each to its last printed
+    # digit. Pinning all three pins the fall they describe.
+    quoted = {2011: 0.0345, 2024: 0.0136, 2026: 0.0021}
+    share = by_year["bad"] / by_year["rows"]
+    off = {y: f"{share[y]:.2%}" for y, q in quoted.items()
+           if not math.isclose(share[y], q, abs_tol=0.00005)}
+    assert not off, (
+        f"README caveat 11 says the share falls from 3.45 % of 2011's rows "
+        f"to 1.36 % of 2024's and 0.21 % of 2026's to 2026-09-09; the tree "
+        f"gives {off}"
+    )
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
-            f"({100 * bad / tot:.2f} %) in {stocks} stocks; close on 0"), tot
+            f"({100 * bad / tot:.2f} %) in {stocks} stocks, "
+            f"{'/'.join(f'{share[y]:.2%}' for y in quoted)} in "
+            f"{'/'.join(map(str, quoted))}; close on 0"), tot
 
 
 # ---- Taiwan: the biases the delisting table does *not* fix -----------------
@@ -4141,19 +4176,39 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     )
     undated = int(d["first_public"].isna().sum())
     assert not undated, f"{undated} rows carry no 上傳日期 and date nothing"
+
+    # `other` marks the rows the server returns on a company's page under
+    # another code. The README calls the four-digit ones earlier codes, which is
+    # a claim about order: each company filed under them before it first filed
+    # under its own.
+    other = d["filed_as"] != d["stock_id"]
+    six = other & d["filed_as"].str.fullmatch(r"\d{6}")
+    four = other & d["filed_as"].str.fullmatch(r"\d{4}")
+    counts = (int(other.sum()), int(six.sum()), int(four.sum()))
+    assert counts == (1057, 605, 452), (
+        f"README caveat 9 says 1,057 rows are filed under a code other than the "
+        f"company's own, 605 under a six-digit registration number and 452 "
+        f"under an earlier four-digit code; the panel has {counts}")
+    own_first = d[~other].groupby("stock_id")["first_public"].min()
+    four_last = d[four].groupby("stock_id")["first_public"].max()
+    after = sorted(four_last.index[
+        ~(four_last < own_first.reindex(four_last.index))])
+    assert not after, (
+        f"README caveat 9 calls the four-digit codes earlier ones, and {after} "
+        f"filed under another four-digit code after first filing under its own")
     return (f"{len(d):,} company-quarters over {d['stock_id'].nunique():,} "
             f"companies, none undated; {len(holding):,} of {len(trees):,} "
             f"trees carry a statement and every one of them is dated", len(d))
 
 
 # Caveat 9's late-filing figures are quoted on period ends through 2024-12-31,
-# where coverage ended when they were measured, and the end does not follow
-# `COVERAGE_END`. A report enters `filing_dates.parquet` only once it is
-# uploaded, so the newest quarters are short of the late filings the rate
-# counts: FY2025's annual reads 0.85 % late against 6.66-7.68 % for
-# FY2019-FY2023. An end that moved with coverage would lower the rate by that
-# shortfall rather than by any change in when companies file. FY2024 already
-# reads 3.11 %, so the frame's own last year may carry some of it.
+# where coverage ended when they were measured. The end does not follow
+# `COVERAGE_END`: an end that moved with coverage would move every figure
+# quoted on the frame. The move would be large, because the late rate falls
+# from the frame's last year on. Right-censoring biases the newest years down,
+# since a report enters `filing_dates.parquet` only once it is uploaded.
+# `test_taiwan_late_rate_falls_after_the_frame` bounds that bias and finds it
+# small next to the fall.
 _LATE_FRAME_END = pd.Timestamp("2024-12-31")
 
 
@@ -4202,6 +4257,110 @@ def test_taiwan_statements_are_published_after_their_deadline():
     )
     return (f"{n_late:,}/{len(w):,} = {rate:.2%} published late, median "
             f"{med}d; on-time filings land {on_time}d early", len(w))
+
+
+def test_taiwan_late_rate_falls_after_the_frame():
+    """README caveat 9: the late rate falls from the frame's last year on, and
+    right-censoring is a small part of the fall.
+
+    A report enters `filing_dates.parquet` only once it is uploaded, so a
+    period near the pull is short of the late reports still to come. The bound
+    divides a period's late reports by the smallest share of late reports that
+    the same period of any year in the frame had uploaded within as many days
+    of its deadline as the file now reaches past this one's. A year nearer the
+    pull holds no report later than its own reach and so scores a share of
+    one, which lets every year in the frame take part without a special case.
+    """
+    from finmind_data.available_date import available_date
+
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists():
+        raise Skipped("filing_dates.parquet not built")
+    d = pd.read_parquet(path)
+    last = d["first_public"].max().normalize()
+    assert last == pd.Timestamp("2026-08-31"), (
+        f"README caveat 9 puts the file's last upload at 2026-08-31; it is now "
+        f"{last.date()}")
+    d = d[d["period_end"] >= pd.Timestamp("2011-12-31")].reset_index(drop=True)
+    deadline = available_date(d["period_end"])
+    d["late"] = (d["first_public"].dt.normalize() - deadline).dt.days
+    d["reach"] = (last - deadline).dt.days
+    frame = d[d["period_end"] <= _LATE_FRAME_END]
+    late_days = [(p, g.loc[g["late"] > 0, "late"])
+                 for p, g in frame.groupby("period_end")]
+
+    def censored(g):
+        """Observed late reports, and how many more the bound allows."""
+        share = min((l <= g["reach"].iloc[0]).mean()
+                    for p, l in late_days
+                    if p.month == g.name.month and len(l))
+        n_late = int((g["late"] > 0).sum())
+        return pd.Series({"n": len(g), "late": n_late,
+                          "missing": n_late * (1 / share - 1)})
+
+    per = d[(d["period_end"] <= _LATE_FRAME_END)
+            | (d["period_end"] == pd.Timestamp("2025-12-31"))].groupby(
+        "period_end")[["late", "reach"]].apply(censored)
+
+    annual = per[per.index.month == 12]
+    annual.index = annual.index.year
+    rate = annual["late"] / annual["n"]
+    bound = ((annual["late"] + annual["missing"])
+             / (annual["n"] + annual["missing"]))
+    reach = d[d["period_end"].dt.month == 12].groupby(
+        d["period_end"].dt.year)["reach"].first()
+    before = rate.loc[2019:2023]
+    quoted = {"FY2024": 0.0311, "FY2025": 0.0085, "FY2019-FY2023 min": 0.0666,
+              "FY2019-FY2023 max": 0.0768}
+    got = {"FY2024": rate[2024], "FY2025": rate[2025],
+           "FY2019-FY2023 min": before.min(), "FY2019-FY2023 max": before.max()}
+    off = {k: f"{got[k]:.2%}" for k, q in quoted.items()
+           if not math.isclose(got[k], q, abs_tol=0.00005)}
+    assert not off, (
+        f"README caveat 9 says FY2024's annual reports read 3.11 % late and "
+        f"FY2025's 0.85 %, against 6.66-7.68 % for FY2019-FY2023; the file "
+        f"gives {off}")
+    assert (reach[2025], reach[2024]) == (153, 518), (
+        f"README caveat 9 says the last upload is 153 days past FY2025's annual "
+        f"deadline and 518 days past FY2024's; it is {reach[2025]} and "
+        f"{reach[2024]}")
+
+    # A bound is quoted rounded up, since a rounded-down one is false.
+    def ceil(x, places):
+        return math.ceil(x * 10 ** places) / 10 ** places
+
+    fr = per[per.index <= _LATE_FRAME_END]
+    head = fr["late"].sum() / fr["n"].sum()
+    lifted = ((fr["late"].sum() + fr["missing"].sum())
+              / (fr["n"].sum() + fr["missing"].sum()))
+    got = (ceil(bound[2025], 3), ceil(bound[2024], 3), ceil(lifted - head, 4))
+    assert got == (0.015, 0.037, 0.0011), (
+        f"README caveat 9 says FY2025 will read at most 1.5 % late and FY2024 "
+        f"at most 3.7 % on the upload pattern of any year in the frame, and "
+        f"that the same bound lifts the frame's 6.56 % by at most 0.11 points; "
+        f"the bound gives {bound[2025]:.3%}, {bound[2024]:.3%} and "
+        f"{lifted - head:.4%}")
+
+    lag = (d["first_public"].dt.normalize() - d["period_end"]).dt.days
+    med = lag[d["period_end"].dt.month == 12].groupby(
+        d["period_end"].dt.year).median()
+    early = med.loc[2011:2019]
+    assert (early.min(), early.max(), med[2024]) == (87, 89, 72), (
+        f"README caveat 9 says the annual reports' median upload came 87-89 "
+        f"days after year end for FY2011-FY2019 and 72 days after for FY2024; "
+        f"it is {early.min():.0f}-{early.max():.0f} and {med[2024]:.0f}")
+
+    short = d[d["period_end"] <= pd.Timestamp("2023-12-31")]
+    alt = (short["late"] > 0).mean()
+    assert math.isclose(alt, 0.0681, abs_tol=0.00005), (
+        f"README caveat 9 says a frame ending at 2023-12-31 reads 6.81 %; it "
+        f"reads {alt:.2%}")
+    return (f"annual late {before.min():.2%}-{before.max():.2%} FY2019-FY2023, "
+            f"{rate[2024]:.2%} FY2024, {rate[2025]:.2%} FY2025; censoring bounds "
+            f"FY2024 <= {bound[2024]:.3%}, FY2025 <= {bound[2025]:.3%}, frame "
+            f"+{lifted - head:.3%}; median upload {early.min():.0f}-"
+            f"{early.max():.0f}d -> {med[2024]:.0f}d; 2023-12-31 frame "
+            f"{alt:.2%}", int(per["n"].sum()))
 
 
 def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
@@ -4703,6 +4862,7 @@ CHECKS = [
     test_taiwan_reason_frame_is_frozen,
     test_taiwan_filing_dates_cover_the_statement_trees,
     test_taiwan_statements_are_published_after_their_deadline,
+    test_taiwan_late_rate_falls_after_the_frame,
     test_taiwan_filing_deadline_q2_boundary_is_fy2013,
     test_taiwan_observed_date_leaves_the_undatable_undated,
     test_taiwan_observed_date_rolls_past_the_session_close,

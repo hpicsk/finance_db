@@ -316,10 +316,9 @@ def rebuild_tr_factor(stock_id: str, px: pd.DataFrame) -> tuple[np.ndarray, dict
 
 
 if __name__ == '__main__':
-    # Three of the 38 the vendor does not serve: one with a factor chain, one
-    # with no action in window, one whose history sits behind an unpriced
-    # cancellation.
-    for sid in ('2822', '1204', '1207'):
+    # Two of the stocks the vendor serves nothing for inside the window: one
+    # with a factor chain, one with no action in it.
+    for sid in ('8287', '4180'):
         px = pd.read_parquet(OHLCV_DIR / f'{sid}.parquet')
         px['date'] = pd.to_datetime(px['date'])
         px = clip(px.sort_values('date'))

@@ -79,6 +79,10 @@
     "bound": "monotone",
     "n": 412659
   },
+  "test_taiwan_late_rate_falls_after_the_frame": {
+    "bound": "monotone",
+    "n": 95519
+  },
   "test_taiwan_listing_spans_reconcile_with_the_tape": {
     "bound": "exact",
     "n": 6590905

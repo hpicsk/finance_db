@@ -213,7 +213,10 @@ def download_stock(stock_id: str, start: str, end: str, sleep_s: float,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2005-01-01")
-    ap.add_argument("--end", default="2024-12-31")
+    # The session `window.COVERAGE_END` names, so a fresh clone pulls to where
+    # coverage ends; `test_taiwan_coverage_does_not_outrun_the_data` keeps the
+    # two equal.
+    ap.add_argument("--end", default="2026-09-09")
     ap.add_argument("--sleep", type=float, default=6.5,
                     help="seconds to wait *in addition to* the request itself. "
                          "The quota is spent per request, not per sleep, so the "
