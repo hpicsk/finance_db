@@ -4354,6 +4354,9 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     )
     undated = int(d["first_public"].isna().sum())
     assert not undated, f"{undated} rows carry no 上傳日期 and date nothing"
+    assert len(d) == 164029, (
+        f"README caveat 9 consolidates the documents to 164,029 "
+        f"company-quarters; the panel holds {len(d):,}")
 
     # `other` marks the rows the server returns on a company's page under
     # another code. The README calls the four-digit ones earlier codes, which is
@@ -4363,9 +4366,9 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     six = other & d["filed_as"].str.fullmatch(r"\d{6}")
     four = other & d["filed_as"].str.fullmatch(r"\d{4}")
     counts = (int(other.sum()), int(six.sum()), int(four.sum()))
-    assert counts == (1057, 605, 452), (
-        f"README caveat 9 says 1,057 rows are filed under a code other than the "
-        f"company's own, 605 under a six-digit registration number and 452 "
+    assert counts == (1055, 603, 452), (
+        f"README caveat 9 says 1,055 rows are filed under a code other than the "
+        f"company's own, 603 under a six-digit registration number and 452 "
         f"under an earlier four-digit code; the panel has {counts}")
     own_first = d[~other].groupby("stock_id")["first_public"].min()
     four_last = d[four].groupby("stock_id")["first_public"].max()
@@ -4377,6 +4380,84 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     return (f"{len(d):,} company-quarters over {d['stock_id'].nunique():,} "
             f"companies, none undated; {len(holding):,} of {len(trees):,} "
             f"trees carry a statement and every one of them is dated", len(d))
+
+
+def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
+    """README caveat 9: 98 documents from 13 companies were uploaded on or
+    before the last day of the quarter their filename names, and the panel
+    drops them.
+
+    Counted off the collected histories, because the panel no longer holds
+    them, and asserted on the panel as well: a panel consolidated without the
+    drop fails there while the count still holds. That no observed date moved
+    is a claim about the statements, so it ranges over every quarter the three
+    trees hold, not only the window's.
+    """
+    import pyarrow.parquet as pq
+    from finmind_data.filing_dates import documents
+
+    path = REPO / "finmind_data/filing_dates.parquet"
+    if not path.exists() or not any(
+            (REPO / "finmind_data/filing_dates").glob("*.parquet")):
+        raise Skipped("filing_dates.parquet or the filing_dates/ histories "
+                      "not built")
+    d = pd.read_parquet(path)
+    bad = d[d["first_public"].dt.normalize() <= d["period_end"]]
+    assert not len(bad), (
+        f"README caveat 9 says the panel drops every report uploaded on or "
+        f"before the last day of its quarter; {len(bad)} rows are, first "
+        f"{bad[['stock_id', 'period_end']].head(3).values.tolist()}")
+
+    docs = documents()
+    early = docs[docs["upload_ts"].dt.normalize() <= docs["period_end"]]
+    got = (len(early), early["stock_id"].nunique())
+    assert got == (98, 13), (
+        f"README caveat 9 says 98 documents from 13 companies were uploaded on "
+        f"or before the last day of the quarter their filename names; the "
+        f"histories hold {got}")
+    q1 = docs.loc[(docs["stock_id"] == "3087")
+                  & (docs["period_end"].dt.month == 3)
+                  & (docs["period_end"].dt.year >= 2005), "upload_ts"]
+    assert (len(q1) and (q1.dt.month == 2).all()
+            and q1.dt.day.between(22, 27).all()), (
+        f"README caveat 9 says 3087 uploaded every report it numbered as a "
+        f"first quarter from 2005 on between 22 and 27 February; the uploads "
+        f"are {sorted(q1.dt.strftime('%Y-%m-%d'))}")
+    inwin = sorted(early.loc[early["period_end"].between(COVERAGE_START,
+                                                         COVERAGE_END),
+                             "stock_id"].unique())
+    assert inwin == ["3087", "9104"], (
+        f"README caveat 9 says only 3087 and 9104 filed such a report inside "
+        f"the window; {inwin} did")
+
+    lost = set(zip(early["stock_id"], early["period_end"]))
+    held = []
+    for sid in sorted(early["stock_id"].unique()):
+        for tree in ("fin_is", "fin_bs", "fin_cf"):
+            f = REPO / "finmind_data" / tree / f"{sid}.parquet"
+            if not f.exists() or not pq.read_metadata(f).num_rows:
+                continue
+            dates = pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"])
+            held += sorted((tree, sid, str(t.date())) for t in set(dates)
+                           if (sid, t) in lost)
+    assert not held, (
+        f"README caveat 9 says no statement tree holds a quarter one of the 98 "
+        f"was filed under, so no statement's observed date moved; {held[:3]}")
+
+    years = set(zip(early["stock_id"], early["period_end"].dt.year))
+    frame = d[d["period_end"].between(pd.Timestamp("2011-12-31"),
+                                      _LATE_FRAME_END)]
+    stay = sorted((s, str(p.date()))
+                  for s, p in zip(frame["stock_id"], frame["period_end"])
+                  if (s, p.year) in years)
+    assert stay == [("3087", "2011-12-31"), ("3087", "2012-12-31")], (
+        f"README caveat 9 says the frame keeps two reports from the years these "
+        f"were filed in, 3087's under 2011-12-31 and 2012-12-31; it keeps "
+        f"{stay}")
+    return (f"{got[0]} documents from {got[1]} companies dropped, none of "
+            f"their quarters in a statement tree; the panel holds none uploaded "
+            f"by its quarter's end, and the frame keeps {len(stay)} from the "
+            f"same years", len(docs))
 
 
 # Caveat 9's late-filing figures are quoted on period ends through 2024-12-31,
@@ -4418,6 +4499,12 @@ def test_taiwan_statements_are_published_after_their_deadline():
     late = (w["first_public"].dt.normalize() - dl).dt.days
     n_late = int((late > 0).sum())
     rate = n_late / len(w)
+    got = (len(w), n_late, w.loc[late > 0, "stock_id"].nunique(),
+           int(late[late > 0].quantile(0.9)), int(late.max()))
+    assert got == (93520, 6138, 1421, 234, 1665), (
+        f"README caveat 9 says 6,138 of the frame's 93,520 company-quarters, "
+        f"across 1,421 companies, were published late, 234 days late at the "
+        f"90th percentile and 1,665 at the worst; the panel gives {got}")
     assert math.isclose(rate, 0.0656, abs_tol=0.005), (
         f"README caveat 9 says 6.56 % of the frame's company-quarters were "
         f"published after the deadline; the rate is now {rate:.2%} "
@@ -4588,6 +4675,15 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
         f"where the median lag drops to the 45-day rule; FY2013 files at a "
         f"median {lag13}d and is {late13:.1%} late against FY2012's {late12:.1%}"
     )
+    # What the old row scored: FY2012's half-years against the 45-day rule the
+    # table now starts at FY2013.
+    q45 = (available_date(pd.Series([pd.Timestamp("2013-06-30")])).iloc[0]
+           - pd.Timestamp("2013-06-30"))
+    h = d[d["period_end"] == pd.Timestamp("2012-06-30")]
+    old = int(((h["first_public"].dt.normalize() - h["period_end"]) > q45).sum())
+    assert (old, len(h)) == (1592, 1619), (
+        f"README caveat 9 says the 45-day rule scored 1,592 of the 1,619 FY2012 "
+        f"half-years late; it scores {old:,} of {len(h):,}")
     # The lag is the symptom; the report type is the cause the paragraph names.
     was = d[d["period_end"] == pd.Timestamp("2012-06-30")]["class_code"].value_counts().idxmax()
     now = d[d["period_end"] == pd.Timestamp("2013-06-30")]["class_code"].value_counts().idxmax()
@@ -5041,6 +5137,7 @@ CHECKS = [
     test_taiwan_silent_names_keep_their_unknown,
     test_taiwan_reason_frame_is_frozen,
     test_taiwan_filing_dates_cover_the_statement_trees,
+    test_taiwan_filing_dates_drop_reports_filed_before_their_quarter,
     test_taiwan_statements_are_published_after_their_deadline,
     test_taiwan_late_rate_falls_after_the_frame,
     test_taiwan_filing_deadline_q2_boundary_is_fy2013,

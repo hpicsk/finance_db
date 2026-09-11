@@ -1789,7 +1789,7 @@ green result means every check in the suite actually read something.
     deadline cannot bound.** `filing_dates.py` collects TWSE's document server —
     `doc.twse.com.tw/server-java/t57sb01`, which stamps every filed report with
     its 上傳日期 to the second — for all **2,230** companies that carry a
-    statement tree: **255,943 documents**, consolidated to **164,112**
+    statement tree: **255,943 documents**, consolidated to **164,029**
     company-quarters in `filing_dates.parquet`, one row per period with the
     earliest Chinese report that made it public. The server is not 公開資訊觀測站
     and carries none of its registration gate, so it answers for delisted and
@@ -1797,7 +1797,7 @@ green result means every check in the suite actually read something.
     blank `year` returns a company's whole history, so this is one request per
     company rather than one per quarter.
 
-    Of the **93,527** company-quarters with a period end from 2011-12-31 to
+    Of the **93,520** company-quarters with a period end from 2011-12-31 to
     2024-12-31, **6,138 — 6.56 %, across 1,421 companies — were published
     after the deadline this package computes**, a median of 15 days late, 234
     at the 90th percentile and 1,665 at the worst. That is the bias caveat 9
@@ -1870,7 +1870,7 @@ green result means every check in the suite actually read something.
     FY2013 it is `AI1 IFRSs合併財報`. §36 I(2) governs a 第二季財務報告, and for
     these companies that report begins with IFRS adoption at 一百零二會計年度. The
     table is therefore applying a rule to a quarter the rule had not yet
-    reached: 1,592 of the 1,621 FY2012 half-years came back late — 98.2 %, a
+    reached: 1,592 of the 1,619 FY2012 half-years came back late — 98.3 %, a
     table failing rather than a market failing.
 
     **The instrument was in §183 all along, one clause further down.** The row
@@ -1906,15 +1906,28 @@ green result means every check in the suite actually read something.
     the phrase now, and the collector ends non-zero if any company still lands an
     empty history, because twice the empty was the collector and not the company.
 
-    Two smaller things the panel keeps and drops. **1,057 rows are filed under a
-    code other than the company's own.** 605 carry a six-digit 公開發行
+    Three smaller things the panel keeps and drops. **1,055 rows are filed under
+    a code other than the company's own.** 603 carry a six-digit 公開發行
     registration number and 452 an earlier four-digit code. A company publicly
     issued before it listed filed its first reports under that registration
     number. The server returns them on the listed code's page; they are the
     same company, so they are kept under the listed code with the old one
     beside them in `filed_as`. **Thirteen filenames carry a period no calendar
     has** — 192003, 291001, 283102 — and are dropped rather than clipped, all
-    of them pre-2001 documents outside the window.
+    of them pre-2001 documents outside the window. **98 documents from 13
+    companies were uploaded on or before the last day of the quarter their
+    filename names**, which no report of that quarter can be. They are dropped
+    too. The filename numbers a company's fiscal quarters. `filing_dates.py`
+    reads them as calendar quarters. A company whose fiscal year does not end
+    in December therefore has each report filed under a quarter the report
+    does not close. From 2005 on, 3087 uploaded every report it numbered as a
+    first quarter between 22 and 27 February, before a calendar first quarter
+    closes. Inside the window only 3087 and 9104 filed such reports. No
+    statement tree holds a quarter any of the 98 was filed under. The drop
+    therefore moved no statement's observed date. The panel keeps those
+    companies' other reports from the same years, because each was uploaded
+    after its quarter closed and so looks like a December filer's. Two are in
+    the frame above: 3087's reports filed under 2011-12-31 and 2012-12-31.
 
 10. **The statement trees drop old delistings; the exchange's daily trees keep
     them.** The overlay puts every delisted name back in the universe and the

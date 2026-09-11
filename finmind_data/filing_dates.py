@@ -221,16 +221,8 @@ def fetch(stock_id: str, max_retries: int = 5) -> pd.DataFrame | None:
 ENGLISH = "英文版"
 
 
-def consolidate() -> pd.DataFrame:
-    """One row per company-quarter: when its figures first became public.
-
-    A period can carry several documents — a parent report and a consolidated
-    one, an original and a 更(補)正 correction — and the earliest of them is
-    when a reader could first have acted. Corrections are deliberately not
-    preferred over the original: a figure restated in August was still the
-    published figure in May, and dating the period by the restatement would
-    hand a trader the corrected number for months it did not exist.
-    """
+def documents() -> pd.DataFrame:
+    """Every Chinese report collected, one row per document."""
     files = sorted(OUT_DIR.glob("*.parquet"))
     if not files:
         raise FileNotFoundError(f"{OUT_DIR.name}/ is empty — run this module first")
@@ -263,6 +255,34 @@ def consolidate() -> pd.DataFrame:
     if d["upload_ts"].isna().any():
         raise ValueError(f"{int(d['upload_ts'].isna().sum())} filings carry no "
                          f"上傳日期; a row without one cannot date anything")
+    return d
+
+
+def consolidate() -> pd.DataFrame:
+    """One row per company-quarter: when its figures first became public.
+
+    A period can carry several documents — a parent report and a consolidated
+    one, an original and a 更(補)正 correction — and the earliest of them is
+    when a reader could first have acted. Corrections are deliberately not
+    preferred over the original: a figure restated in August was still the
+    published figure in May, and dating the period by the restatement would
+    hand a trader the corrected number for months it did not exist.
+    """
+    d = documents()
+    # A report uploaded on or before the last day of the quarter it is filed
+    # under cannot be that quarter's report. The filename numbers a company's
+    # fiscal quarters and QUARTER_END reads them as calendar ones, so a company
+    # whose fiscal year does not end in December files each report under a
+    # quarter it does not close: 3087's 201201 was uploaded on 2012-02-24.
+    # Those documents are dropped before the earliest is taken, so a quarter
+    # that also carries a report uploaded after it closed is dated by that
+    # report. The same fiscal years' reports uploaded after their quarter
+    # closed look like a December filer's and stay.
+    early = d["upload_ts"].dt.normalize() <= d["period_end"]
+    if early.any():
+        log(f"  filed before its quarter closed, dropped {int(early.sum())} "
+            f"from {d.loc[early, 'stock_id'].nunique()} companies")
+    d = d[~early]
     out = (d.sort_values("upload_ts")
              .groupby(["stock_id", "period_end"], as_index=False)
              .first()[["stock_id", "period_end", "upload_ts", "class_code",

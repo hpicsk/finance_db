@@ -65,11 +65,15 @@
   },
   "test_taiwan_filing_dates_cover_the_statement_trees": {
     "bound": "monotone",
-    "n": 164112
+    "n": 164029
+  },
+  "test_taiwan_filing_dates_drop_reports_filed_before_their_quarter": {
+    "bound": "monotone",
+    "n": 223426
   },
   "test_taiwan_filing_deadline_q2_boundary_is_fy2013": {
     "bound": "monotone",
-    "n": 4841
+    "n": 4836
   },
   "test_taiwan_filing_deadline_table_covers_the_data": {
     "bound": "monotone",
@@ -81,7 +85,7 @@
   },
   "test_taiwan_late_rate_falls_after_the_frame": {
     "bound": "monotone",
-    "n": 95519
+    "n": 95512
   },
   "test_taiwan_listing_spans_reconcile_with_the_tape": {
     "bound": "exact",
@@ -133,7 +137,7 @@
   },
   "test_taiwan_observed_date_rolls_past_the_session_close": {
     "bound": "monotone",
-    "n": 93527
+    "n": 93520
   },
   "test_taiwan_ohlcv_is_raw": {
     "bound": "monotone",
@@ -201,7 +205,7 @@
   },
   "test_taiwan_statements_are_published_after_their_deadline": {
     "bound": "monotone",
-    "n": 93527
+    "n": 93520
   },
   "test_taiwan_substitute_error_splits_by_deal_form": {
     "bound": "monotone",
