@@ -174,10 +174,10 @@ def main() -> int:
     for tree, dataset in TREES.items():
         # A back-adjusted close is anchored at the present, so a row fetched now
         # carries every event since the file was written. A raw print carries no
-        # factor and so has no vintage — measured, not assumed: across four
-        # dates the trees already cover, `ohlcv/` reproduces the endpoint exactly
-        # on every one of ~1,500 closes while `price_adj/` differs on 38 stocks
-        # by up to 32 %.
+        # factor, so its close has no vintage — measured, not assumed: across
+        # four dates the trees already cover, `ohlcv/` reproduces the endpoint
+        # exactly on every one of ~1,500 closes while `price_adj/` differs on 38
+        # stocks by up to 32 %.
         adjusted = dataset.endswith("Adj")
         snaps = {}
         for d in dates:

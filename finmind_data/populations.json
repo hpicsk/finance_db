@@ -91,6 +91,10 @@
     "bound": "monotone",
     "n": 370
   },
+  "test_taiwan_make_up_saturdays_keep_the_first_volume": {
+    "bound": "monotone",
+    "n": 6675769
+  },
   "test_taiwan_month_rev_date_is_the_following_month": {
     "bound": "monotone",
     "n": 320533
@@ -179,6 +183,10 @@
     "bound": "exact",
     "n": 247422
   },
+  "test_taiwan_repull_returns_the_stored_prices": {
+    "bound": "monotone",
+    "n": 159684
+  },
   "test_taiwan_short_sale_series_has_no_regime_gap": {
     "bound": "monotone",
     "n": 5748089
@@ -217,7 +225,7 @@
   },
   "test_taiwan_tree_readers_import_the_window": {
     "bound": "monotone",
-    "n": 11
+    "n": 12
   },
   "test_taiwan_universe_bridges_a_halt_only_when_asked": {
     "bound": "exact",

@@ -1392,6 +1392,67 @@ def test_taiwan_open_outside_session_range():
             f"{'/'.join(map(str, quoted))}; close on 0"), tot
 
 
+def test_taiwan_repull_returns_the_stored_prices():
+    """README Provenance, "Re-pull, 2026-09-11": the vendor has revised no price.
+
+    `ohlcv/` holds each row as `download.py` first pulled it, and nothing asks
+    the vendor for the row again. `ohlcv_repull.parquet` is a second pull of 60
+    stocks, so a revision since the first shows here as a row that differs.
+    After the sponsor tier lapses, the parquet is the only second pull there is.
+
+    The sample is drawn again rather than trusted: `ohlcv_repull.draw` must
+    return the committed 60 from today's strata, so a hand-picked sample fails.
+    """
+    from finmind_data.ohlcv_repull import draw, strata
+
+    fresh = pd.read_parquet(REPO / "finmind_data/ohlcv_repull.parquet")
+    fresh["date"] = pd.to_datetime(fresh["date"])
+    ids = sorted(fresh["stock_id"].unique())
+    anomalous, clean = strata()
+    split = (len(anomalous), len(clean),
+             len(set(ids) & set(anomalous)), len(set(ids) & set(clean)))
+    assert split == (684, 1437, 40, 20), (
+        f"README Provenance says the re-pull drew 40 of the 684 stocks whose "
+        f"open is outside [min, max] on some traded row, and 20 of the 1,437 "
+        f"with traded rows and no such open; (684-set, 1,437-set, drawn from "
+        f"each) now reads {split}")
+    assert sorted(draw(anomalous, clean)) == ids, (
+        "README Provenance says the 60 were drawn at random, and "
+        "ohlcv_repull.draw no longer returns the stocks in "
+        "ohlcv_repull.parquet, so the committed sample is not the seeded draw")
+
+    stored = pd.concat([_tree(REPO / f"finmind_data/ohlcv/{s}.parquet")
+                        for s in ids], ignore_index=True)
+    m = stored.merge(clip(fresh), on=["date", "stock_id"], how="outer",
+                     suffixes=("_s", "_f"), indicator=True)
+    one_side = int((m["_merge"] != "both").sum())
+    assert one_side == 0, (
+        f"README Provenance compares the re-pull with ohlcv/ row by row; "
+        f"{one_side:,} in-window rows are in only one of the two")
+    moved = {c: int(m[f"{c}_s"].ne(m[f"{c}_f"]).sum())
+             for c in ["open", "max", "min", "close", "spread"]}
+    assert len(m) == 159684 and not any(moved.values()), (
+        f"README Provenance says all 159,684 of the 60 stocks' in-window rows "
+        f"came back with the same open, max, min, close and spread; "
+        f"{len(m):,} rows compare, and these moved: {moved}")
+
+    counts = ["Trading_Volume", "Trading_money", "Trading_turnover"]
+    differ = pd.concat({c: m[f"{c}_s"].ne(m[f"{c}_f"]) for c in counts}, axis=1)
+    higher = pd.concat({c: m[f"{c}_f"] > m[f"{c}_s"] for c in counts}, axis=1)
+    rows = differ.any(axis=1)
+    sessions = pd.to_datetime(pd.read_parquet(
+        REPO / "finmind_data/trading_sessions.parquet")["date"])
+    saturdays = sessions[sessions.dt.dayofweek == 5]
+    got = (int(rows.sum()), bool(higher[rows].all().all()),
+           bool(m.loc[rows, "date"].isin(saturdays).all()))
+    assert got == (138, True, True), (
+        f"README Provenance says 138 rows came back with a higher volume, "
+        f"value and trade count, every one on a make-up Saturday; (rows, all "
+        f"three higher on each, all on a Saturday session) now reads {got}")
+    return (f"{len(ids)} stocks, {len(m):,} rows: every price as stored, "
+            f"{got[0]} rows with higher counts, all on Saturday sessions"), len(m)
+
+
 # ---- Taiwan: the biases the delisting table does *not* fix -----------------
 def test_taiwan_delisting_table_has_no_reason():
     """README caveat 8: the delisting table dates the exit and says nothing else.
@@ -3210,6 +3271,98 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
             f"ticker-days; price_adj/ carries none ohlcv/ lacks"), examined
 
 
+def test_taiwan_make_up_saturdays_keep_the_first_volume():
+    """README, "The gap that runs the other way": on 12 of the 14 Saturdays,
+    `ohlcv/` keeps a count the vendor has since raised.
+
+    The tape is the reference: the date-keyed endpoint, read later than the
+    tree. It is a reference only if the per-stock endpoint the tree came from
+    now serves the same count, so the re-pull's Saturday rows are held against
+    it too. `price_adj/` is read for the sponsor-tier table, which quotes where
+    its volume and `ohlcv/`'s differ.
+    """
+    import pyarrow.parquet as pq
+
+    tape_dir = REPO / "finmind_data/tape"
+    if not tape_dir.exists():
+        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+    tape = pd.concat([pd.read_parquet(q) for q in sorted(tape_dir.glob("*.parquet"))],
+                     ignore_index=True)
+    tape["date"] = pd.to_datetime(tape["date"])
+    sessions = pd.to_datetime(pd.read_parquet(
+        REPO / "finmind_data/trading_sessions.parquet")["date"])
+    saturdays = sessions[sessions.dt.dayofweek == 5]
+
+    raw, adj = [], []
+    for sid in _panel_ids():
+        p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        if pq.ParquetFile(p).metadata.num_rows:
+            raw.append(_tree(p, columns=["date", "stock_id", "Trading_Volume",
+                                         "Trading_money"]))
+        q = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        if q.exists() and pq.ParquetFile(q).metadata.num_rows:
+            adj.append(_tree(q, columns=["date", "stock_id", "Trading_Volume"]))
+    raw = pd.concat(raw, ignore_index=True)
+    adj = pd.concat(adj, ignore_index=True)
+
+    m = raw.merge(tape, on=["date", "stock_id"], suffixes=("", "_tape"))
+    s = m[m["Trading_Volume"].ne(m["Trading_Volume_tape"])
+          | m["Trading_money"].ne(m["Trading_money_tape"])]
+    short = bool((s["Trading_Volume"] < s["Trading_Volume_tape"]).all()
+                 and (s["Trading_money"] < s["Trading_money_tape"]).all())
+    got = (len(s), s["stock_id"].nunique(), s["date"].nunique(), len(saturdays),
+           bool(s["date"].isin(saturdays).all()), short)
+    assert got == (5925, 745, 12, 14, True, True), (
+        f"README says that against the tape, ohlcv/'s volume and value fall "
+        f"short on 5,925 rows in 745 stocks, all on 12 of the 14 Saturdays, and "
+        f"that every other in-window row the tape holds matches on both; (rows, "
+        f"stocks, dates, calendar Saturdays, all on a Saturday, short on both) "
+        f"now reads {got}")
+    gap = 1 - s["Trading_Volume"] / s["Trading_Volume_tape"]
+    assert (math.isclose(gap.median(), 0.0042, abs_tol=0.00005)
+            and math.isclose(gap.max(), 0.995, abs_tol=0.0005)), (
+        f"README says the median row is short by 0.42 % of its volume, and the "
+        f"worst by 99.5 %; the tree gives {gap.median():.2%} and {gap.max():.1%}")
+
+    fresh = pd.read_parquet(REPO / "finmind_data/ohlcv_repull.parquet",
+                            columns=["date", "stock_id", "Trading_Volume",
+                                     "Trading_money"])
+    fresh["date"] = pd.to_datetime(fresh["date"])
+    fresh = fresh[fresh["date"].isin(saturdays)]
+    f = fresh.merge(tape, on=["date", "stock_id"], suffixes=("", "_tape"))
+    agree = bool(f["Trading_Volume"].eq(f["Trading_Volume_tape"]).all()
+                 and f["Trading_money"].eq(f["Trading_money_tape"]).all())
+    assert len(f) == len(fresh) > 0 and agree, (
+        f"README says the re-pull under Provenance matches the tape on every "
+        f"Saturday row of its sample; {len(f)} of its {len(fresh)} Saturday "
+        f"rows are in the tape, all matching: {agree}")
+
+    held = s.merge(adj, on=["date", "stock_id"], suffixes=("", "_adj"))
+    carried = int(held["Trading_Volume_adj"].eq(held["Trading_Volume_tape"]).sum())
+    repeated = int(held["Trading_Volume_adj"].eq(held["Trading_Volume"]).sum())
+    assert (len(held), carried, repeated) == (5925, 1943, 3982), (
+        f"README says price_adj/ holds all 5,925 rows, and carries the tape's "
+        f"count on 1,943 of them and ohlcv/'s on the other 3,982; it holds "
+        f"{len(held):,}, {carried:,} with the tape's count and {repeated:,} "
+        f"with ohlcv/'s")
+    shared = raw.merge(adj, on=["date", "stock_id"], suffixes=("", "_adj"))
+    d = shared[shared["Trading_Volume"].ne(shared["Trading_Volume_adj"])]
+    wk = d[~d["date"].isin(saturdays)]
+    others = [(r.stock_id, f"{r.date:%Y-%m-%d}", r.Trading_Volume_adj < r.Trading_Volume)
+              for r in wk.itertuples()]
+    assert (len(shared), len(d), others) == (
+            6611442, 1944, [("3713", "2020-02-27", True)]), (
+        f"README's sponsor-tier table says price_adj/'s Trading_Volume matches "
+        f"ohlcv/'s on all but 1,944 of the 6,611,442 in-window rows the two "
+        f"share: the 1,943 make-up Saturday rows, and 3713 on 2020-02-27, where "
+        f"price_adj/'s count is the lower; {len(d):,} of {len(shared):,} "
+        f"differ, and off the Saturdays: {others}")
+    return (f"ohlcv/ short of the tape on {len(s):,} rows, all on "
+            f"{s['date'].nunique()} Saturdays; the re-pull matches the tape on "
+            f"{len(f)} Saturday rows; price_adj/ carries the tape's count on "
+            f"{carried:,} of them"), len(m)
+
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
@@ -4843,11 +4996,13 @@ CHECKS = [
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,
+    test_taiwan_make_up_saturdays_keep_the_first_volume,
     test_taiwan_survivorship_hole_is_rebuilt,
     test_taiwan_rebuild_matches_vendor,
     test_taiwan_adj_source_partitions_the_panel,
     test_taiwan_adj_covered_survives_concat,
     test_taiwan_open_outside_session_range,
+    test_taiwan_repull_returns_the_stored_prices,
     test_taiwan_short_sale_series_has_no_regime_gap,
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_mops_covers_every_delisted_name,
