@@ -4,7 +4,7 @@ exchange published for it, and write the result as the panel's fixed record.
 Two conventions live in the adjusted panel and this file is where the boundary
 between them is legible. FinMind builds its series by subtracting the *declared*
 distribution from the prior close; ``adjust.py`` rebuilds the holes from the
-exchange's *published reference price*. The two name the same number on 84 % of
+exchange's *published reference price*. The two name the same number on 81 % of
 events and land a cent apart on most of the rest — small, bounded, and not
 cumulative, but a step at a vendor/rebuilt boundary looks like a bug to whoever
 finds it next, and this table is the answer to that.
@@ -47,7 +47,7 @@ are the file's own and neither is a filter that moved. ``checkable`` is the
 column that separates them, and the 194 it excludes are 174 events in the stocks
 the vendor serves nothing for, 19 whose bracketing sessions sit further apart
 than ``_MAX_BRACKET_DAYS``, and 3454's non-positive row. Every rate quoted here
-— 83.7 %, 99.6 %, the defect counts — is over the 21,224; every count of what
+— 81.4 %, 99.6 %, the defect counts — is over the 21,224; every count of what
 was *filed* is over the 21,418.
 
     python -m finmind_data.vendor_event_audit

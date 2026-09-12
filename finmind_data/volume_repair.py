@@ -23,8 +23,14 @@ answers for on 2018-12-22.
 Every value replaced is kept in `volume_repair.parquet`, and the run refuses to
 start while that record exists.
 
+A whole re-pull of `price_adj/` brings the adjusted endpoint's counts back, so
+`--adjusted-only` repeats the copy into `price_adj/` alone after one. It skips
+the record: the counts it replaces are the endpoint's current answer, not a
+first answer that nothing serves any more.
+
     python -m finmind_data.volume_repair --dry-run
     python -m finmind_data.volume_repair
+    python -m finmind_data.volume_repair --adjusted-only
 """
 from __future__ import annotations
 
@@ -78,10 +84,53 @@ def _entries(tree: str, rows: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _adopt_raw_counts(fixed: dict) -> tuple[list[pd.DataFrame], list[Path]]:
+    """Copy `ohlcv/`'s three counts into `price_adj/` wherever an in-window row
+    differs, reading `ohlcv/` from `fixed` where this run has repaired it."""
+    log, written = [], []
+    for p in sorted((HERE / "price_adj").glob("*.parquet")):
+        q = HERE / "ohlcv" / p.name
+        a = _read(p)
+        if a is None or not q.exists():
+            continue
+        o = fixed.get(p.stem)
+        if o is None:
+            o = _read(q)
+        if o is None:
+            continue
+        win = a.index[(a["date"] >= LO) & (a["date"] <= HI)]
+        raw = a.loc[win, ["date"]].merge(o[["date"] + COUNTS], how="left", on="date")
+        raw.index = win
+        raw = raw.dropna(subset=["Trading_Volume"])
+        moved = (a.loc[raw.index, COUNTS] != raw[COUNTS]).any(axis=1)
+        if not moved.any():
+            continue
+        rows = moved.index[moved]
+        log.append(_entries("price_adj", a.loc[rows], raw.loc[rows]))
+        for c in COUNTS:
+            a.loc[rows, c] = raw.loc[rows, c].astype(a[c].dtype)
+        fixed[f"price_adj/{p.stem}"] = a
+        written.append(p)
+    return log, written
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--adjusted-only", action="store_true",
+                    help="repeat the price_adj/ copy after a whole re-pull of it")
     args = ap.parse_args()
+    if args.adjusted_only:
+        fixed = {}
+        log, written = _adopt_raw_counts(fixed)
+        moved = pd.concat(log, ignore_index=True) if log else pd.DataFrame()
+        print(f"price_adj/ rows whose counts are not ohlcv/'s: {len(moved):,} in "
+              f"{len(written)} files")
+        if not args.dry_run:
+            for p in written:
+                fixed[f"price_adj/{p.stem}"].to_parquet(p, index=False)
+            print(f"wrote {len(written)} files")
+        return 0
     if LOG.exists():
         raise SystemExit(f"{LOG.name} exists: the repair has run, and that file "
                          f"is the only record of the values it replaced")
@@ -121,29 +170,9 @@ def main() -> int:
         fixed[p.stem] = f
         written.append(p)
 
-    for p in sorted((HERE / "price_adj").glob("*.parquet")):
-        q = HERE / "ohlcv" / p.name
-        a = _read(p)
-        if a is None or not q.exists():
-            continue
-        o = fixed.get(p.stem)
-        if o is None:
-            o = _read(q)
-        if o is None:
-            continue
-        win = a.index[(a["date"] >= LO) & (a["date"] <= HI)]
-        raw = a.loc[win, ["date"]].merge(o[["date"] + COUNTS], how="left", on="date")
-        raw.index = win
-        raw = raw.dropna(subset=["Trading_Volume"])
-        moved = (a.loc[raw.index, COUNTS] != raw[COUNTS]).any(axis=1)
-        if not moved.any():
-            continue
-        rows = moved.index[moved]
-        log.append(_entries("price_adj", a.loc[rows], raw.loc[rows]))
-        for c in COUNTS:
-            a.loc[rows, c] = raw.loc[rows, c].astype(a[c].dtype)
-        fixed[f"price_adj/{p.stem}"] = a
-        written.append(p)
+    adj_log, adj_written = _adopt_raw_counts(fixed)
+    log += adj_log
+    written += adj_written
 
     log = pd.concat(log, ignore_index=True)
     summary = log.groupby("tree").agg(rows=("date", "size"), stocks=("stock_id", "nunique"),

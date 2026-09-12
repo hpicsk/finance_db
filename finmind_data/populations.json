@@ -15,6 +15,10 @@
     "bound": "monotone",
     "n": 6540520
   },
+  "test_taiwan_adjusted_factor_moves_only_on_events": {
+    "bound": "monotone",
+    "n": 22017
+  },
   "test_taiwan_adjusted_series": {
     "bound": "monotone",
     "n": 117
@@ -245,7 +249,7 @@
   },
   "test_taiwan_vendor_edges_are_carried": {
     "bound": "monotone",
-    "n": 4
+    "n": 3
   },
   "test_taiwan_vendor_event_audit_is_current": {
     "bound": "monotone",

@@ -555,7 +555,9 @@ same way (`adj_open_tr = open * tr_factor`) — and it is re-anchored to
 close. The vendor anchors its own series to the latest session in
 FinMind's database, which moves on every re-download; re-anchoring is
 what makes a repeated download reproduce the same numbers rather than
-merely the same returns.
+merely the same returns. It does so only where the vendor's steps did
+not change between the two downloads. **What the vendor computes** counts
+the steps the last re-pull moved.
 
 **What the vendor computes**, and where it is wrong. Each 除權息 event
 should contribute the exchange's own `before_price / after_price`, and
@@ -567,14 +569,21 @@ it excludes are 174 events in the stocks the vendor serves nothing for,
 19 whose bracketing sessions sit more than ten days apart, and 3454's
 non-positive row. Every
 *rate* below is over the 21,224; every count of what was filed is over
-the 21,418. The step matches to 1e-6 on 83.7 % and to 1e-3 on 99.6 % (p99
-7.3e-4, max 3.0e-2). The residual is FinMind reaching the same number a
+the 21,418. The step matches to 1e-6 on 81.4 % and to 1e-3 on 99.6 % (p99
+7.0e-4, max 3.0e-2). The residual is FinMind reaching the same number a
 different way: it subtracts the *declared* distribution from the prior
 close instead of reading the reference price, and the two land a whole
 cent apart in the per-share amount. 3006's 2011-07-04 event is typical —
 the exchange repriced 38.65 → 37.64 (息值 1.01) and the vendor removed
 1.00. That difference is bounded per event, does not accumulate, and
 lives only on the ex-date session.
+
+Which of the two numbers an event carries can change between pulls. The
+re-pull of 2026-09-12 moved the vendor's step on 749 events in 165 stocks, by
+at most 6.3e-4. 664 of the moved steps now equal the declared distribution to
+1e-6. None of the 664 did in the tree the re-pull replaced. That tree matched
+the exchange to 1e-6 on 83.7 % of events. 155 of the 165 stocks had an event
+filed after 2026-08-18.
 
 One event is not a cent apart but wrong, and `adjusted_loader` replaces
 the vendor's step with the exchange's on it. It is filed twice, so it
@@ -693,12 +702,12 @@ filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
-`price_adj/` reaches 6,477,486 of the 6,540,520 traded sessions in
-`ohlcv/` — 99.04 % — and the 63,034 it misses are not missing at
+`price_adj/` reaches 6,477,647 of the 6,540,520 traded sessions in
+`ohlcv/` — 99.04 % — and the 62,873 it misses are not missing at
 random. They split five ways: **61,505** in the 54 stocks with no adjusted
 series at all, **0** past the end of a vendor series that stopped at a
 delisting, **494** first sessions the vendor opens one day late on,
-**1,033** make-up sessions the raw endpoint serves and the adjusted product
+**872** make-up sessions the raw endpoint serves and the adjusted product
 does not, and **2** weekdays inside a live series the adjusted endpoint is
 simply short of — 3064 on 2026-08-26 and 6236 on 2026-08-12, each a lone
 traded day inside a suspension, and each served short when the endpoint is
@@ -872,17 +881,19 @@ present on all 1,941 where the arithmetic recovery left it NaN, and the volume
 is the raw endpoint's answer.
 
 **What the repair costs, stated plainly.** Of the 1,941 restored rows, only
-**303 have an adjusted counterpart** — 210 traded and 93 no-trade, exactly the
-set the loader used to reconstruct. The other 1,638 are sessions the vendor's
-*adjusted* product does not cover at all, so they enter the panel with
-`adj_close_tr` NaN and `adj_covered` False: **1,101 of them traded** (1,067 in
-universe names) and 537 did not. That is a real change in what a study meets.
-Before the repair those sessions were absent, so a return computed across one
-of them silently spanned two sessions and looked like an ordinary observation;
-after it, the same span is an explicit NaN. The raw calendar is now correct and
-the adjusted series is now visibly incomplete where the vendor is, which is the
-trade this makes: one silently wrong return exchanged for two missing ones. The
-adjusted gap cannot be closed from the endpoint — it does not serve those rows.
+**303 had an adjusted counterpart** when they were restored — 210 traded and 93
+no-trade, exactly the set the loader used to reconstruct. The other 1,638 were
+sessions the vendor's *adjusted* product did not cover then, so they entered
+the panel with `adj_close_tr` NaN and `adj_covered` False: **1,101 of them
+traded** (1,067 in universe names) and 537 did not. That is a real change in
+what a study meets. Before the repair those sessions were absent, so a return
+computed across one of them silently spanned two sessions and looked like an
+ordinary observation; after it, the same span is an explicit NaN. The raw
+calendar is now correct and the adjusted series is now visibly incomplete where
+the vendor is, which is the trade this makes: one silently wrong return
+exchanged for two missing ones. The re-pull under "One pull per adjusted file"
+has since brought 237 make-up-session rows into `price_adj/`. "Why the adjusted
+tree was not repaired the same way" counts the sessions it still lacks.
 
 **The reconstruction is retired and a guard stands where it was.**
 `_recover_make_up_sessions` is now `_require_raw_covers_vendor`, which raises
@@ -907,15 +918,17 @@ re-anchorings, not errors, and inserting one into a file at the older anchor
 would splice two vintages inside a single series.
 
 So the adjusted insert is gated per stock against the dates its file already
-holds, and it refuses **44 rows in 12 stocks** — 1597, 2066, 2496, 3147, 4162,
-4432, 5206, 5222, 6432, 6574, 6691, 8077 — whose committed values disagree
-with the endpoint. Those need the whole file re-downloaded rather than a row
-added, and that is left undone: re-anchoring them would move every adjusted
-value they carry and invalidate the `vendor_event_audit.parquet` rows over
-them. Nothing else is missing from a universe name's `price_adj/` file; the
-1,621 sessions the tape holds and it does not are sessions the adjusted
-endpoint does not serve for those stocks at all, and the 501 rows before a
-file's first session are the documented `vendor_carried` edge.
+holds, and it refused **44 rows in 12 stocks** — 1597, 2066, 2496, 3147, 4162,
+4432, 5206, 5222, 6432, 6574, 6691, 8077 — whose committed values disagreed
+with the endpoint. Those needed the whole file re-downloaded rather than a row
+added. The re-pull under "One pull per adjusted file" brought in all 44, and
+193 more make-up-session rows in 52 stocks: 237 rows, 161 of them traded.
+
+Inside a universe name's `price_adj/` series the tape holds 1,384 sessions the
+file does not: 1,368 on the 14 Saturdays and 16 on weekdays. The file is the
+per-stock endpoint's whole answer, so the endpoint does not serve them for that
+stock. The 501 rows before a file's first session are the documented
+`vendor_carried` edge.
 
 #### The Saturday rows `ohlcv/` already held carried an older count
 
@@ -935,6 +948,45 @@ same first count on 3,982 of the rows, and a lower count than `ohlcv/`'s on
 those 3,983 rows: only its prices are adjusted. `volume_repair.parquet` keeps
 every value the repair replaced. `ohlcv/` now matches the tape on every
 in-window row the tape holds.
+
+The whole re-pull of `price_adj/` on 2026-09-12 brought the adjusted
+endpoint's counts back. They fell short of `ohlcv/`'s on 3,300 rows in 440
+stocks: 3,299 on the 12 Saturdays, and 3713's 2020-02-27. `volume_repair
+--adjusted-only` set them to `ohlcv/`'s again.
+
+### One pull per adjusted file
+
+A back-adjusted close is anchored at the day it is pulled. The factor under it
+moves only on the first session at or after an event: a 除權息, 減資 or 面額變更
+filing, or a share cancellation no filing explains. `download.py --extend` used
+to append to `price_adj/` the way it appends to the other trees. An append
+leaves the rows already in a file at their old anchor, so the factor also steps
+on the first appended session, where nothing was filed.
+
+`price_adj/` was assembled that way from three pulls: 2005..2024 on 2026-08-16,
+2025-01-02..2026-07-31 on 2026-08-18, and 2026-08-03 onward on 2026-09-10. The
+two appends put a factor step with no event under it into 232 of the universe's
+files: on 2025-01-02 in 10, and on 2026-08-03 in 222 (in 3 of them on
+2026-08-04, the first session they traded). 231 of the 232 steps equal the
+inverse product of the exchange's steps for the events filed between the two
+pulls. 4747's step, exactly 0.5, has no filing in the event tables.
+`load_adjusted` passed each step through as a one-day return: median −3.2 %,
+and beyond ±10 % in 24 stocks, from −66.5 % to +61.7 %. `vendor_event_audit`
+graded every event and passed, because on an event's own session both sides of
+the step sit at the later anchor.
+
+All 2,159 universe files were re-pulled whole on 2026-09-12. `download.py
+--extend` now re-pulls a back-adjusted file whole instead of appending to it.
+The 72 files outside the universe were never appended to: none holds a row
+after 2024-12-31.
+
+`test_taiwan_adjusted_factor_moves_only_on_events` reads every factor step in
+the universe's files. It finds 22,017. Every one sits on an event's first
+session except the step into a series' second session, in 116 files. In 115 of
+those the vendor serves the first row at its own anchor, so its adjusted close
+is the raw close. `load_adjusted` passes that step into the second session's
+return. The step is negative in all 115: median −5.6 %, beyond −10 % in 23, and
+−90.6 % on 7780.
 
 ## Load the full panel
 
@@ -994,6 +1046,9 @@ ohlcv_all = pd.concat(
   volume, value and trade count, every one on a make-up Saturday. The repair
   under "The gap that runs the other way" has since written those counts into
   `ohlcv/`.
+- **Adjusted re-pull, 2026-09-12:** `download.py --extend --datasets price_adj`
+  re-pulled all 2,159 universe files whole, 20:14 to 20:48, 0 failures. Log:
+  `nohup.price_adj_whole260912.out`. See "One pull per adjusted file".
 
 ### Frozen baseline
 
@@ -2169,7 +2224,8 @@ existing files, so batches can be run sequentially without overlap.
 That resume fills gaps and cannot move an end date: every file exists, so a
 re-run with a later `--end` downloads nothing and reports a clean pass. Use
 `--extend` for a later end — it resumes each file from its own last date and
-appends. See "Extending the far end".
+appends, except to a `price_adj/` file, which it re-pulls whole. See
+"Extending the far end".
 
 1. **Priority batch** (`--datasets per_pbr margin_short month_rev`).
    3 × 2,111 = 6,333 requests. At ~6.5 s/request under FinMind's
@@ -2251,6 +2307,7 @@ python download.py --extend --end <YYYY-MM-DD> --sleep 0.4
 # then, in this order — each reads what the one above it wrote
 $EDITOR finmind_data/window.py               # COVERAGE_END = last whole session
 $EDITOR finmind_data/download.py             # --end default = the same session
+python -m finmind_data.volume_repair --adjusted-only   # → price_adj/ counts
 python -m finmind_data.tape_universe         # → tape/, tape_universe.parquet
 python -m finmind_data.pit_universe          # → trading_sessions, listing_spans
 python -m finmind_data.consolidate_capred    # → capital_reduction.parquet
@@ -2269,6 +2326,13 @@ been. A column set that differs between the two pulls is refused rather than
 concatenated, since `pd.concat` would widen the frame and leave each pull's
 rows NaN in the other's columns: the stock logs `schema-drift`, counts as a
 failure, and its file is left as it was.
+
+`download.py --extend` re-pulls a `price_adj/` file whole rather than resuming
+it, because an append would splice two anchors into one series (see "One pull
+per adjusted file"). A re-pull that lacks a date the file holds is refused: the
+file is kept at its own anchor and the stock counts as a failure. The re-pull
+brings back the adjusted endpoint's own counts, so `volume_repair
+--adjusted-only` writes `ohlcv/`'s over them.
 
 `tape_universe` sweeps to `COVERAGE_END`, so editing the constant first is what
 lets the tape reach the new sessions; run it before `pit_universe`, which builds

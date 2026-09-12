@@ -63,7 +63,7 @@ refuses to derive one — see ``_require_raw_covers_vendor``.
 **Two conventions therefore live in one panel**, and ``adj_method`` says which.
 FinMind subtracts the *declared* distribution from the prior close; the rebuild
 reads the exchange's *published reference price*. The two name the same number
-to 1e-6 on 83.7 % of 21,224 graded events and to 1e-3 on 99.6 %, and where they
+to 1e-6 on 81.4 % of 21,224 graded events and to 1e-3 on 99.6 %, and where they
 differ it is by a whole cent in the per-share distribution — bounded, not
 cumulative, and confined to the ex-date session. ``vendor_event_audit.parquet``
 is the fixed record of that, so a step found at a vendor/rebuilt boundary is

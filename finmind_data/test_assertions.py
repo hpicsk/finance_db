@@ -821,11 +821,11 @@ def test_taiwan_adjusted_coverage_decomposition():
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
         inner = miss & (tr["date"] <= adj_dates.max())
         # The reverse gap runs both ways, and only one direction was known. The
-        # 303 sessions below are Saturday 補行交易日 the vendor prices and the raw
-        # endpoint has no row for; these 11 are the same Saturdays traded in
-        # `ohlcv/` and absent from the vendor series. One stock, and the panel
-        # marks every one of them `adj_covered=False` rather than carrying a
-        # price across, so they are a disclosed hole and counted as one.
+        # 303 sessions below were Saturday 補行交易日 the vendor prices and the
+        # raw endpoint had no row for; these are the same Saturdays traded in
+        # `ohlcv/` and absent from the vendor series. The panel marks every one
+        # of them `adj_covered=False` rather than carrying a price across, so
+        # they are a disclosed hole and counted as one.
         mk = inner & (tr["date"].dt.dayofweek == 5) & (tr.index > 0)
         makeup += int(mk.sum())
         first += int((inner & ~mk & (tr.index == 0)).sum())
@@ -840,16 +840,16 @@ def test_taiwan_adjusted_coverage_decomposition():
         gap += int(g.sum())
         gaps += [(sid, d.strftime("%Y-%m-%d")) for d in tr.loc[g, "date"]]
 
-    assert (traded, covered) == (6540520, 6477486), (
-        f"README pins adjusted coverage at 6,477,486 of the 6,540,520 traded "
+    assert (traded, covered) == (6540520, 6477647), (
+        f"README pins adjusted coverage at 6,477,647 of the 6,540,520 traded "
         f"sessions in ohlcv/ (99.04 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first, makeup, gap) == (61505, 0, 494, 1033, 2), (
+    assert (hole, tail, first, makeup, gap) == (61505, 0, 494, 872, 2), (
         f"README splits the {traded - covered:,} missing sessions into 61,505 "
         f"in the 54 stocks with no adjusted series, none past the end of a "
         f"vendor series that stopped at a delisting, 494 first sessions, "
-        f"1,033 make-up sessions the vendor's adjusted product does not cover "
+        f"872 make-up sessions the vendor's adjusted product does not cover "
         f"and 2 weekdays inside a live series it is simply short of; this tree "
         f"gives {hole:,} / {tail:,} / {first:,} / {makeup} / {gap}. The first "
         f"number is the survivorship hole — if it moved, so did the bias"
@@ -2770,7 +2770,7 @@ def test_taiwan_adjusted_series():
 def test_taiwan_vendor_event_audit_is_current():
     """README, "Two conventions in one panel": the committed grade is this tree's.
 
-    `vendor_event_audit.parquet` is what the README's 83.7 % / 99.6 % and the
+    `vendor_event_audit.parquet` is what the README's 81.4 % / 99.6 % and the
     one patched event are quoted from, and `adjusted_loader` patches off it.
     A committed copy that no longer matches what the generator produces would
     publish an older run's grade while the loader patches a different set, so
@@ -2816,9 +2816,9 @@ def test_taiwan_vendor_event_audit_is_current():
         f"gives {len(nc)} ungradable of which {unserved} are unserved"
     )
     w6, w3 = float((ck["rel"] < 1e-6).mean()), float((ck["rel"] < 1e-3).mean())
-    assert abs(w6 - 0.8373) < 5e-4 and abs(w3 - 0.9958) < 5e-4, (
+    assert abs(w6 - 0.8138) < 5e-4 and abs(w3 - 0.9961) < 5e-4, (
         f"README claims the vendor step matches the exchange's published "
-        f"before_price/after_price to 1e-6 on 83.7 % of graded events and to "
+        f"before_price/after_price to 1e-6 on 81.4 % of graded events and to "
         f"1e-3 on 99.6 %; this tree gives {100 * w6:.2f} % / {100 * w3:.2f} %. "
         f"A move here changes what the two conventions in the panel differ by"
     )
@@ -2954,9 +2954,11 @@ def test_taiwan_vendor_edges_are_carried():
     # enforced: their last quote is 2005-2008, so the package has no series for
     # them and `load_adjusted` refuses them rather than returning one. 1240
     # replaces the head carry they supplied — it listed inside the window, which
-    # is now the only way a first session comes to be carried.
+    # is now the only way a first session comes to be carried. 1338 holds a
+    # restored make-up Saturday the vendor still does not price; 1240's two
+    # were that until the whole re-pull of `price_adj/` brought them in.
     for sid in ("1580", "3454", "1107", "2381", "2396", "2341", "1240",
-                "4141", "2330"):
+                "1338", "4141", "2330"):
         df = load_adjusted(sid)
         s = df["adj_source"].to_numpy()
         carried = np.nonzero(s == "vendor_carried")[0]
@@ -2987,7 +2989,7 @@ def test_taiwan_vendor_edges_are_carried():
         # conditions land here and only one is the guard: a session *before*
         # the vendor's first served row is an edge it declined to carry, while
         # one *interior* to the series is a session the vendor's adjusted
-        # product does not cover at all. The make-up sessions
+        # product does not cover at all. Most make-up sessions
         # `backfill_make_up_sessions` restored are the second — the raw
         # endpoint serves them and the adjusted endpoint does not — so they
         # reached the panel as traded rows with no adjusted price when the raw
@@ -3003,10 +3005,10 @@ def test_taiwan_vendor_edges_are_carried():
         f"the carry guard should refuse exactly 4141's 2011-04-14 stub print "
         f"among these stocks; it refused {refused}"
     )
-    assert uncovered == [("1240", "2017-09-30"), ("1240", "2018-03-31")], (
-        f"among these stocks the only traded sessions interior to the vendor's "
-        f"series that it prices nothing for are 1240's two restored make-up "
-        f"Saturdays; this tree has {uncovered}"
+    assert uncovered == [("1338", "2012-02-04")], (
+        f"among these stocks the only traded session interior to the vendor's "
+        f"series that it prices nothing for is 1338's restored 2012-02-04 "
+        f"make-up Saturday; this tree has {uncovered}"
     )
     assert (head, tail) == (1, 0), (
         f"these stocks hold 1 of the 493 carried first sessions, and no session "
@@ -3017,6 +3019,85 @@ def test_taiwan_vendor_edges_are_carried():
             f"filing in the gap, {tail} after a delisting; 4141 2011-04-14 "
             f"refused; {len(uncovered)} restored make-up sessions the vendor "
             f"prices nothing for"), head + len(refused) + len(uncovered)
+
+
+def test_taiwan_adjusted_factor_moves_only_on_events():
+    """README, "One pull per adjusted file": the factor steps only where
+    something was filed.
+
+    `price_adj/` over the raw close is the vendor's back-adjustment factor, and
+    a factor moves only on the first session at or after an event: a 除權息, 減資
+    or 面額變更 filing, or a share cancellation no filing explains. That set is
+    the one `adjusted_loader` refuses to carry a factor across. A step is a
+    move past `_VINTAGE_TOL`, the bound `backfill_make_up_sessions` separates
+    the vendor's rounding from a second vintage with.
+
+    A file assembled from two pulls steps once more. Each pull is anchored at
+    its own date, so the earlier pull's rows lack every event filed between the
+    two, and the factor steps on the first session of the later pull, where
+    nothing was filed. `download.py --extend` built the tree that way until it
+    re-pulled back-adjusted files whole: 232 steps, on 2025-01-02 in 10 files
+    and on 2026-08-03 or the session after in 222. `vendor_event_audit` graded
+    every event and passed, because on an event's own session both sides of the
+    step already sit at the later anchor.
+
+    One step off an event is left, found by position rather than by list: the
+    step into a series' second session. On all but one of those series the
+    vendor serves the first row at its own anchor, so its adjusted close is the
+    raw close.
+    """
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+    import pyarrow.parquet as pq
+
+    from finmind_data import adjust
+    from finmind_data.adjusted_loader import _unpriced_dates
+    from finmind_data.backfill_make_up_sessions import _VINTAGE_TOL
+
+    steps = 0
+    second, stray = [], []
+    for sid in _panel_ids():
+        a = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        # A zero-row file is written without a schema, so it has no column to read.
+        if not pq.ParquetFile(a).metadata.num_rows or not pq.ParquetFile(r).metadata.num_rows:
+            continue
+        adj = _tree(a, columns=["date", "close"])
+        raw = _tree(r, columns=["date", "close"])
+        m = raw.merge(adj, on="date", suffixes=("", "_adj")).sort_values("date")
+        m = m[m["close"] > 0]
+        if len(m) < 2:
+            continue
+        f = m["close_adj"].to_numpy(dtype=float) / m["close"].to_numpy(dtype=float)
+        moved = np.flatnonzero(np.abs(f[1:] / f[:-1] - 1.0) > _VINTAGE_TOL) + 1
+        steps += len(moved)
+        dates = m["date"].to_numpy()
+        events = np.concatenate([adjust.filed_event_dates(sid), _unpriced_dates(sid)])
+        seat = np.searchsorted(dates, events, "left")
+        for i in moved[~np.isin(moved, seat)]:
+            if i == 1:
+                second.append((sid, bool(f[0] == 1.0)))
+            else:
+                stray.append((sid, str(pd.Timestamp(dates[i]).date()),
+                              round(float(f[i] / f[i - 1]), 6)))
+
+    assert not stray, (
+        f"README says the adjusted factor steps only on an event's first session "
+        f"or into a series' second session; {len(stray)} steps in "
+        f"{len({s for s, _, _ in stray})} files fall on neither, most on "
+        f"{pd.Series([d for _, d, _ in stray]).value_counts().head(3).to_dict()}. "
+        f"Many files stepping on one date is an append that spliced two pulls; "
+        f"re-pull them whole with `download.py --extend --datasets price_adj`: "
+        f"{stray[:5]}")
+    unadjusted = sum(u for _, u in second)
+    assert (steps, len(second), unadjusted) == (22_017, 116, 115), (
+        f"README counts 22,017 factor steps in the universe's files, 116 of "
+        f"them into a series' second session, and 115 of those after a first "
+        f"row the vendor left at the raw close; this tree gives {steps:,}, "
+        f"{len(second)} and {unadjusted}")
+    return (f"{steps:,} factor steps, all on an event's first session but "
+            f"{len(second)} into a series' second session ({unadjusted} after "
+            f"an unadjusted first row)"), steps
 
 
 def test_taiwan_post_delisting_sessions_are_marked():
@@ -3343,8 +3424,34 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
     assert vendor_only == 0, (
         f"{vendor_only} sessions price_adj/ carries are still absent from "
         f"ohlcv/, so the loader is reconstructing rows the raw tree should hold")
+
+    # The adjusted tree against the same tape, over the universe's files. Each
+    # file is the per-stock endpoint's whole answer, so a session the tape holds
+    # and the file does not is one that endpoint does not serve for the stock.
+    import pyarrow.parquet as pq
+    before = inside = after = 0
+    for sid in _panel_ids():
+        q = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        if sid not in by_code or not pq.ParquetFile(q).metadata.num_rows:
+            continue
+        have = set(pd.read_parquet(q, columns=["date"])["date"].astype(str).str[:10])
+        w = {d for d in have if lo <= d <= hi}
+        if not w:
+            continue
+        first, last = min(w), max(w)
+        miss = by_code[sid] - have
+        before += sum(d < first for d in miss)
+        inside += sum(first < d < last for d in miss)
+        after += sum(d > last for d in miss)
+    assert (before, inside, after) == (501, 1384, 0), (
+        f"README, \"Why the adjusted tree was not repaired the same way\": the "
+        f"tape holds 1,384 sessions inside a universe name's price_adj/ series "
+        f"that the file does not, and 501 before a file's first session; this "
+        f"tree gives {inside:,} inside, {before:,} before and {after:,} after")
     return (f"no interior session gap across {examined:,} vendor-served "
-            f"ticker-days; price_adj/ carries none ohlcv/ lacks"), examined
+            f"ticker-days; price_adj/ carries none ohlcv/ lacks, and lacks "
+            f"{inside:,} tape sessions inside its series and {before} before "
+            f"them"), examined
 
 
 def test_taiwan_volume_repair_matches_the_tape():
@@ -5179,6 +5286,7 @@ CHECKS = [
     test_taiwan_vendor_event_audit_is_current,
     test_taiwan_vendor_defects_are_patched,
     test_taiwan_vendor_edges_are_carried,
+    test_taiwan_adjusted_factor_moves_only_on_events,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

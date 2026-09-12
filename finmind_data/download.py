@@ -11,7 +11,9 @@ Resumable: skips existing files. Retries on 402 rate-limit with backoff.
 it. Skip-existing is per *file*, so it cannot move an end date: every file
 exists, so a plain re-run with a later `--end` downloads nothing and reports a
 clean pass. Under `--extend` a file's own last date is what the next request
-starts from, and the pull is appended to it.
+starts from, and the pull is appended to it. A back-adjusted file is re-pulled
+whole instead: its rows are anchored at the day they were pulled, so an append
+would splice two anchors into one series.
 """
 from __future__ import annotations
 
@@ -75,6 +77,13 @@ DATASETS = {
     # Their ratio is the per-event factor price_adj above is checked against.
     "div_result":        "TaiwanStockDividendResult",
 }
+
+
+# A back-adjusted series is anchored at the day it is pulled: an event after that
+# rescales every row before it. Appending a later pull to one leaves the old rows
+# at the old anchor, and the adjusted return jumps on the first appended session
+# with no event under it. `--extend` re-pulls these whole.
+BACK_ADJUSTED = {"price_adj"}
 
 
 def log(msg: str) -> None:
@@ -154,7 +163,8 @@ def download_stock(stock_id: str, start: str, end: str, sleep_s: float,
     """Download the given datasets for one stock.
 
     Skips existing files, or under `extend` requests only what each one is
-    missing at its far end and appends that. Every dataset here carries a
+    missing at its far end and appends that — except a back-adjusted file,
+    which it re-pulls whole. Every dataset here carries a
     `date` column, so the resume point is read from the file rather than
     tracked separately — a per-dataset key table would be one more thing to
     keep in step with the vendor's schema.
@@ -162,28 +172,46 @@ def download_stock(stock_id: str, start: str, end: str, sleep_s: float,
     result = {subdir: "skip" for subdir in datasets}
     for subdir, dataset in datasets.items():
         path = ROOT / subdir / f"{stock_id}.parquet"
+        whole = subdir in BACK_ADJUSTED
         old = None
         req_start = start
         if path.exists():
             if not extend:
                 continue
             old = pd.read_parquet(path)
-            if len(old):
-                last = pd.to_datetime(old["date"]).max()
-                if last >= pd.Timestamp(end):
-                    continue
-                req_start = (last + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-            else:
+            if not len(old):
                 # An empty file records that the stock had no rows in the range
                 # pulled, which says nothing about a range it did not cover, so
                 # it is re-pulled whole rather than treated as a resume point.
                 old = None
+            elif whole:
+                # From the file's own first row where that is earlier, so a
+                # `--start` chosen to bound the appends cannot cut its history.
+                req_start = min(start, str(old["date"].min())[:10])
+            else:
+                last = pd.to_datetime(old["date"]).max()
+                if last >= pd.Timestamp(end):
+                    continue
+                req_start = (last + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
         df = fetch(dataset, stock_id, req_start, end)
         if df is None:
             result[subdir] = "fail"
             continue
         time.sleep(sleep_s)
-        if old is not None:
+        if whole and old is not None:
+            held = set(old["date"].astype(str).str[:10])
+            got = set(df["date"].astype(str).str[:10]) if len(df) else set()
+            gone = sorted(held - got)
+            if gone:
+                # The vendor dropping some of the stock's history, or an `--end`
+                # short of the file's last row: the file is kept whole at its
+                # own anchor and the stock counts as a failure.
+                log(f"  refused {stock_id} {dataset}: the whole re-pull lacks "
+                    f"{len(gone)} of the {len(held)} dates the file holds, {gone[:3]}")
+                result[subdir] = "fail"
+                continue
+            result[subdir] = f"whole({len(df)})"
+        elif old is not None:
             if set(df.columns) != set(old.columns) and not df.empty:
                 # A column added or dropped between pulls would be concatenated
                 # into a ragged file whose new rows carry NaN for the old
@@ -231,7 +259,8 @@ def main() -> int:
                          "hour and then failing the stock after two of them")
     ap.add_argument("--extend", action="store_true",
                     help="top existing files up to --end instead of skipping "
-                         "them; each file resumes from its own last date")
+                         "them; each file resumes from its own last date, and a "
+                         "back-adjusted one is re-pulled whole")
     ap.add_argument("--limit", type=int, default=0, help="0 = all")
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--stocks", nargs="*", default=None,
