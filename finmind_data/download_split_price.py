@@ -45,7 +45,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .auth import token
+from .auth import headers
 from .window import COVERAGE_START, COVERAGE_END
 
 ROOT = Path(__file__).resolve().parent
@@ -62,7 +62,7 @@ COLUMNS = ["date", "stock_id", "type", "before_price", "after_price"]
 
 def fetch() -> pd.DataFrame:
     """The whole table. It is market-wide and takes no data_id."""
-    r = requests.get(API, params={"dataset": DATASET, "token": token()}, timeout=120)
+    r = requests.get(API, params={"dataset": DATASET}, headers=headers(), timeout=120)
     r.raise_for_status()
     payload = r.json()
     rows = payload.get("data")

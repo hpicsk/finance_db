@@ -57,7 +57,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .auth import token
+from .auth import headers
 from .pit_universe import emerging_boundary
 from .window import COVERAGE_START, COVERAGE_END
 
@@ -94,10 +94,10 @@ def fetch_session(date: str) -> pd.DataFrame:
     the union would not show which day it came from.
     """
     params = {"dataset": "TaiwanStockPrice", "start_date": date,
-              "end_date": date, "token": token()}
+              "end_date": date}
     for attempt in range(6):
         try:
-            r = requests.get(API, params=params, timeout=180)
+            r = requests.get(API, params=params, headers=headers(), timeout=180)
         except requests.RequestException as e:
             if attempt == 5:
                 raise
@@ -174,7 +174,7 @@ def _registry() -> pd.DataFrame:
     whichever classification the response happened to list first.
     """
     raw = pd.DataFrame(requests.get(
-        API, params={"dataset": "TaiwanStockInfo", "token": token()},
+        API, params={"dataset": "TaiwanStockInfo"}, headers=headers(),
         timeout=180).json()["data"])
     excluded = {"ETF", "ETN", "受益證券", "存託憑證", "臺灣存託憑證",
                 "創新版股票", "創新板股票"}

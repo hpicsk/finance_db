@@ -102,12 +102,14 @@ def fetch(dataset: str, stock_id: str, start: str, end: str,
         "start_date": start,
         "end_date": end,
     }
-    params["token"] = token()
+    # In a header rather than the query string, which `requests` writes into
+    # the net-err message logged below (see `auth.py`).
+    headers = {"Authorization": f"Bearer {token()}"}
     backoff = 30.0
     rate_limit_waits = 0
     for attempt in range(max_retries):
         try:
-            r = requests.get(API, params=params, timeout=60)
+            r = requests.get(API, params=params, headers=headers, timeout=60)
         except requests.RequestException as e:
             log(f"  net-err {stock_id} {dataset}: {e}; sleep {backoff:.0f}s")
             time.sleep(backoff)
@@ -123,8 +125,11 @@ def fetch(dataset: str, stock_id: str, start: str, end: str,
             if "Please update" in msg:
                 log(f"  paid-only {stock_id} {dataset}: {msg}")
                 return None
+            # An error the vendor names is not an answer. Returned empty, it
+            # would be written as a zero-row file or appended as nothing, and
+            # both read later as "the stock had no rows in the range".
             log(f"  api-err {stock_id} {dataset}: {msg}")
-            return pd.DataFrame()
+            return None
 
         # HTTP 400 with "Please update" body = paid-tier endpoint; do not retry.
         # HTTP 422 = invalid dataset name; do not retry.

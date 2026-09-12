@@ -12,6 +12,12 @@ that wanted one pure function out of the file.
 skip authentication: the datasets this package downloads are sponsor-tier, so
 the vendor answers a blank one with a tier refusal that reads from the caller's
 side like a dataset that does not exist.
+
+**It travels in a header.** A token in the query string is part of the URL, and
+`requests` writes the URL into the message of the connection error it raises
+once its retries run out, and into every `HTTPError`. A collector that logs or
+re-raises one of those writes the token with it. FinMind documents the
+`Authorization: Bearer` header as the way to send it.
 """
 from __future__ import annotations
 
@@ -29,3 +35,8 @@ def token() -> str:
             f"than served a free-tier subset. Write your token to that file "
             f"(it is gitignored) — see finmind_data/README.md.")
     return TOKEN_FILE.read_text().strip()
+
+
+def headers() -> dict[str, str]:
+    """The request header carrying the token, read at the call like `token`."""
+    return {"Authorization": f"Bearer {token()}"}

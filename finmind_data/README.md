@@ -1011,6 +1011,11 @@ ohlcv_all = pd.concat(
 ## Provenance
 
 - **Source:** FinMind API (`https://api.finmindtrade.com/api/v4/data`)
+- **Authentication:** every collector sends the token from the gitignored
+  `.token` in an `Authorization: Bearer` header, the way FinMind documents.
+  A token in the query string is part of the URL, and `requests` writes the
+  URL into its connection-error and `HTTPError` messages, which the
+  collectors log.
 - **Datasets:** all 13 per-stock endpoints listed in `download.py`
   (`TaiwanStockPrice`, `TaiwanStockPriceAdj`,
   `TaiwanStockInstitutionalInvestorsBuySell`,

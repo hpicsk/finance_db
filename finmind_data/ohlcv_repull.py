@@ -28,7 +28,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 import requests
 
-from .auth import token
+from .auth import headers
 from .window import COVERAGE_START, COVERAGE_END, clip
 
 HERE = Path(__file__).resolve().parent
@@ -74,7 +74,7 @@ def pull(sid: str) -> pd.DataFrame:
     r = requests.get(API, params={
         "dataset": "TaiwanStockPrice", "data_id": sid,
         "start_date": str(COVERAGE_START.date()),
-        "end_date": str(COVERAGE_END.date()), "token": token()}, timeout=180)
+        "end_date": str(COVERAGE_END.date())}, headers=headers(), timeout=180)
     r.raise_for_status()
     payload = r.json()
     if payload.get("status") != 200:

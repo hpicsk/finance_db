@@ -3636,6 +3636,27 @@ def test_taiwan_volume_repair_matches_the_tape():
             f"{len(f)} Saturday rows"), len(m)
 
 
+
+def test_taiwan_token_travels_in_a_header():
+    """README, "Provenance": every collector sends the token in a header.
+
+    The collectors are the modules that name FinMind's endpoint, found by reading
+    the package rather than listed, so one added later is held to the same rule.
+    A `token` key in a request's parameters puts the token in the URL, and
+    `requests` writes the URL into the errors a collector logs.
+    """
+    host = "api.finmindtrade.com"
+    mods = [p for p in sorted((REPO / "finmind_data").glob("*.py"))
+            if p.name != Path(__file__).name and host in p.read_text()]
+    in_url = [p.name for p in mods
+              if re.search(r"""["']token["']\s*(?::|\]\s*=)""", p.read_text())]
+    no_header = [p.name for p in mods if "headers=" not in p.read_text()]
+    assert not in_url and not no_header, (
+        f"README says every collector sends the token in an Authorization: "
+        f"Bearer header; {in_url} put it in a request's parameters and "
+        f"{no_header} send no header")
+    return f"{len(mods)} collectors send the token in a header", len(mods)
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
@@ -5364,6 +5385,7 @@ CHECKS = [
     test_taiwan_vendor_edges_are_carried,
     test_taiwan_adjusted_factor_moves_only_on_events,
     test_taiwan_unadjusted_first_sessions_are_carried,
+    test_taiwan_token_travels_in_a_header,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

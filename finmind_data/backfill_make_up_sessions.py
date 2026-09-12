@@ -49,7 +49,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .auth import token
+from .auth import headers
 from .window import COVERAGE_START, COVERAGE_END
 
 HERE = Path(__file__).resolve().parent
@@ -115,10 +115,9 @@ def _sessions_missing_from(tree: str) -> pd.DataFrame:
 
 
 def fetch(dataset: str, date: str) -> pd.DataFrame:
-    params = {"dataset": dataset, "start_date": date, "end_date": date,
-              "token": token()}
+    params = {"dataset": dataset, "start_date": date, "end_date": date}
     for _ in range(6):
-        r = requests.get(API, params=params, timeout=180)
+        r = requests.get(API, params=params, headers=headers(), timeout=180)
         if r.status_code in (402, 429):
             time.sleep(3600 - (time.time() % 3600) + 60)
             continue

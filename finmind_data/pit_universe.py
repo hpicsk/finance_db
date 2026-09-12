@@ -69,7 +69,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .auth import token
+from .auth import headers
 from .window import COVERAGE_START, COVERAGE_END, clip
 
 HERE = Path(__file__).resolve().parent
@@ -209,8 +209,7 @@ def _emerging_until() -> tuple[pd.Series, str]:
     day it was taken.
     """
     raw = pd.DataFrame(requests.get(
-        API, params={"dataset": "TaiwanStockInfo",
-                     "token": token()},
+        API, params={"dataset": "TaiwanStockInfo"}, headers=headers(),
         timeout=180).json()["data"])
     stamp = pd.to_datetime(raw["date"], errors="coerce").max()
     assert pd.notna(stamp) and stamp >= COVERAGE_END, (
