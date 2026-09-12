@@ -113,12 +113,16 @@ same_company = pd.Series(
      for sid, nm in zip(exits["stock_id"], exits["stock_name"])],
     index=exits.index)
 # A 4-digit code is not by itself a common stock: Taiwan numbers its ETFs
-# 00xx and its depositary receipts 91xx, so the regex above admits both. They
-# are excluded here by the criterion rather than by the accident that
-# `same_company` also catches them today — the endpoint still serves all 11 of
-# them under their own names, and would stop doing so the day one is purged.
+# 00xx and its depositary receipts 91xx, so the regex above admits both. The
+# overlay drops both blocks by code. `excluded_ids` cannot do this, because it
+# reads the instrument type from the endpoint, which no longer serves the
+# companies the overlay re-adds. The endpoint has no row for 0015, a 00xx code
+# that trades on the tape until 2014-02-18. The delisting table lacks 0015 too.
+# Nothing else kept 0015 out of this overlay.
+NON_COMMON_CODE_BLOCK = r"(?:00|91)\d\d"
 missing = exits[~exits["stock_id"].isin(info["stock_id"])
                 & ~exits["stock_id"].isin(excluded_ids)
+                & ~exits["stock_id"].str.fullmatch(NON_COMMON_CODE_BLOCK)
                 & ~same_company].copy()
 missing = pd.DataFrame({
     "industry_category": pd.Series([None] * len(missing), dtype="object"),

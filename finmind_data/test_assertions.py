@@ -624,9 +624,16 @@ def test_taiwan_universe_excludes_the_instruments_it_claims_to():
     live endpoint knows it is now 倚天酷碁-創/創新板股票. The complete test needs
     the source table and therefore lives at the generator, in
     `build_universe.py`, which asserts the exclusion dropped stocks rather than
-    rows. What is checkable offline is the two signatures a leak leaves in the
-    file itself, and both are enumerated over every row rather than looked up
+    rows. What is checkable offline is the signatures a leak leaves in the
+    file itself, and each is enumerated over every row rather than looked up
     for the names this bug happened to involve.
+
+    The first signature reads `industry_category`, which the 57 overlay rows
+    leave empty. The second reads the -創 suffix, which marks only the
+    Innovation Board. The third signature is the code, which every row has. The
+    first two alone passed a copy of the file with 0015 added as an overlay row.
+    The other checks that failed on that copy pinned a count or needed a price
+    file for 0015. A common added to the overlay fails them the same way.
     """
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
     name = u["stock_name"].astype(str)
@@ -646,14 +653,23 @@ def test_taiwan_universe_excludes_the_instruments_it_claims_to():
         f"{sorted(inn['stock_id'].astype(str))}"
     )
 
+    code = u["stock_id"].astype(str)
+    off = u[~code.str.fullmatch(r"\d{4}") | code.str.fullmatch(_NON_COMMON_CODE_BLOCK)]
+    assert off.empty, (
+        f"README 'Universe' counts common stocks by 4-digit ticker code and "
+        f"excludes ETFs and TDRs, whose 4-digit codes are 00xx and 91xx, but "
+        f"{len(off)} ids are not a 4-digit code outside those blocks: "
+        f"{sorted(off['stock_id'].astype(str))[:10]}"
+    )
+
     assert u["stock_id"].is_unique, (
         f"universe.parquet has {len(u) - u['stock_id'].nunique()} duplicate "
         f"stock_id — taiwan_stock_info returns one row per classification, not "
         f"per stock, and a duplicate means the reduction to one row per stock "
         f"did not happen"
     )
-    return (f"{len(u)} ids, none carrying an excluded instrument type or the "
-            f"Innovation Board -創 suffix"), len(u)
+    return (f"{len(u)} ids, all 4-digit codes outside 00xx/91xx, none carrying "
+            f"an excluded instrument type or the Innovation Board -創 suffix"), len(u)
 
 
 def test_taiwan_price_adj_one_per_universe():

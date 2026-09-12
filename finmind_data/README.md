@@ -82,10 +82,10 @@ coverage over 2,159 is measuring 42 empty series. Both counts are checked
 against the tape rather than asserted, in
 `test_taiwan_universe_holds_every_common_the_tape_shows`.
 
-Excludes: ETFs (`00xxx` codes), warrants, TDRs (industry categories
-"存託憑證" / "臺灣存託憑證"), beneficiary certificates ("受益證券"),
-ETNs, and the TWSE Innovation Board relaxed-disclosure tier
-("創新版股票" / "創新板股票") — 375 names in all.
+Excludes: ETFs (codes beginning `00`), warrants, TDRs (codes beginning
+`91`, industry categories "存託憑證" / "臺灣存託憑證"), beneficiary
+certificates ("受益證券"), ETNs, and the TWSE Innovation Board
+relaxed-disclosure tier ("創新版股票" / "創新板股票") — 375 names in all.
 
 The 57 delistings are added on top of FinMind's live `taiwan_stock_info`
 output — they are 4-digit common stocks whose *company* the live endpoint no
@@ -115,8 +115,13 @@ listed and drop it from the overlay.
 
 A 4-digit code is not by itself a common stock, either: Taiwan numbers its
 ETFs `00xx` and its depositary receipts `91xx`, and the refreshed table puts
-11 of them inside the window. They are excluded by instrument type rather
-than by the accident that the endpoint still happens to serve them.
+11 of them inside the window. The overlay drops both blocks by code. An
+instrument-type screen cannot do this, because it reads the type from the
+endpoint, which no longer serves the companies the overlay re-adds. The
+endpoint has no row for 0015, a `00xx` code that trades on the tape until
+2014-02-18. The delisting table lacks 0015 too. Nothing else kept 0015 out of
+the overlay. `test_taiwan_universe_excludes_the_instruments_it_claims_to`
+checks the code of every row, the 57 overlay rows included.
 
 ### The exclusions ran against rows, and admitted 33 names
 
@@ -166,17 +171,17 @@ common stock on a tier with different disclosure obligations:
 | Excluded | Why | Mechanism in `build_universe.py` |
 |---|---|---|
 | A / B / C-suffix preferreds | not common stock — different claim, different price | `stock_id.str.fullmatch(r"\d{4}")` drops non-numeric suffixes |
-| ETF | a fund, not a company | `industry_category == "ETF"` + 5-6-digit `00xxx` codes dropped by the digit filter |
+| ETF | a fund, not a company | `industry_category == "ETF"` + 5-6-digit `00xxx` codes dropped by the digit filter + `00xx` codes dropped from the overlay |
 | ETN | a note, not equity | `industry_category == "ETN"` |
 | 受益證券 (beneficiary certificates), T-suffix codes | REIT and specialty-fund structures | `industry_category == "受益證券"` + digit filter |
-| TDR (存託憑證 / 臺灣存託憑證) | a receipt over a foreign listing, priced off its home market | `industry_category ∈ {"存託憑證", "臺灣存託憑證"}` |
+| TDR (存託憑證 / 臺灣存託憑證) | a receipt over a foreign listing, priced off its home market | `industry_category ∈ {"存託憑證", "臺灣存託憑證"}` + 6-digit `91xxxx` codes dropped by the digit filter + `91xx` codes dropped from the overlay |
 | TWSE Innovation Board (創新版股票 / 創新板股票) | relaxed-disclosure startup tier, opened 2021-07-20 | `industry_category ∈ {"創新版股票", "創新板股票"}` |
 | TPEx 興櫃 (emerging) | pre-listing board, quote-driven rather than order-driven | `type.isin(["twse", "tpex"])` drops `emerging` |
 
 Two *inclusions* are deliberate, and both could be read the other way:
 
 - **F-/-KY foreign-domiciled primary listings** (e.g. 9802 鈺齊-KY,
-  9136 凱羿-KY) are **kept**. The company is incorporated offshore, but the
+  1590 亞德客-KY) are **kept**. The company is incorporated offshore, but the
   shares are a primary listing that price here — not a receipt over a
   listing somewhere else, which is what the TDR row above removes.
 - **Delisted-during-window tickers** are kept — all 179 eligible
@@ -208,7 +213,7 @@ the gate was checked against could not have shown that. Because the gate
 is now a window rather than a retention assumption, there is no residual
 reliance on FinMind's live retention to state: a common delisted inside
 the window is re-added on the evidence of the delisting table, and the
-instrument-type screen is what stops the ETFs and DRs from coming back
+`00xx` / `91xx` code screen is what stops the ETFs and DRs from coming back
 with it as `type=NaN` commons.
 
 Per-stock parquet files for delisted tickers end on their delisting date,
