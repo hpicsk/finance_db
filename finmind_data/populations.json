@@ -83,6 +83,10 @@
     "bound": "monotone",
     "n": 371
   },
+  "test_taiwan_fin_bs_revision_follows_the_filing": {
+    "bound": "monotone",
+    "n": 47084
+  },
   "test_taiwan_fundamentals_are_fiscal_dated": {
     "bound": "monotone",
     "n": 412659

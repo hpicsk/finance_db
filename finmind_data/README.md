@@ -359,6 +359,8 @@ coverage ending early.
 ├── vendor_event_audit.parquet         every 除權息 graded against the exchange  (2011-2026)
 ├── ohlcv_repull.parquet               60 stocks' prices pulled a second time, 2026-09-11 (2011-2026)
 ├── volume_repair.parquet              every count the volume repair replaced, old and new (2012-2020)
+├── fin_bs_vintage_grade.parquet       every revised fin_bs amount graded against its filing (2013-2026)
+├── fin_bs_vintage.parquet             every fin_bs row where the two vintages differ, old and new (2013-2026)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -402,6 +404,7 @@ coverage ending early.
 ├── vendor_event_audit.py              grades price_adj/ per event → vendor_event_audit.parquet
 ├── ohlcv_repull.py                    draws the 60 and pulls them again → ohlcv_repull.parquet
 ├── volume_repair.py                   first-answer counts → the endpoint's, record → volume_repair.parquet
+├── fin_bs_vintage.py                  grades fin_bs/ against MOPS, writes the revision its filing sides with
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
@@ -1059,6 +1062,13 @@ ohlcv_all = pd.concat(
 - **Adjusted re-pull, 2026-09-12:** `download.py --extend --datasets price_adj`
   re-pulled all 2,159 universe files whole, 20:14 to 20:48, 0 failures. Log:
   `nohup.price_adj_whole260912.out`. See "One pull per adjusted file".
+- **Balance-sheet revision, 2026-09-12 to 2026-09-13:** `TaiwanStockBalanceSheet`
+  was pulled again on 2026-09-12, one date-keyed request per period end.
+  `fin_bs_vintage.py grade` graded that pull against MOPS from 23:33 that day
+  to 02:17 on 2026-09-13. `apply` then wrote the 3,498 company-periods the
+  filing sides with into `fin_bs/`. The pull and the MOPS answers are not
+  committed. `fin_bs_vintage_grade.parquet` carries every value the grade
+  compared. See caveat 13.
 
 ### Frozen baseline
 
@@ -2074,6 +2084,43 @@ green result means every check in the suite actually read something.
     counts each pair twice. `drop_duplicates()` keeps one row of each, and it
     would also merge a genuine identical pair, of which the rest of the window
     has none.
+13. **`fin_bs/` takes FinMind's revision of a balance sheet only where the
+    filing sides with it.** A date-keyed pull of `TaiwanStockBalanceSheet` on
+    2026-09-12 differs from `fin_bs/` in at least one amount of 7,326
+    company-periods from 2013 Q1 on, in 41 quarters. The `_per` shares of total
+    assets are left out of that comparison. The pull's values are called the
+    revision below. `fin_bs_vintage.py` graded each of the 7,326 against the
+    balance sheet the company filed, as MOPS serves it (`t164sb03`). The filing
+    sides with the tree in 3,697 and with the revision in 3,498: one vintage
+    agrees with every graded amount, and the other misses at least one. In 32
+    more, neither vintage agrees with every graded amount, and in 7 of those
+    neither agrees with any. The other 99 are ungraded. In 91 of them, no
+    revised amount matches exactly one line of the filing by its label. 6 have
+    no filing, and MOPS refuses 2 as no longer registered. The filing decides
+    whole quarters in 24 of the 41. It sides with the revision in every
+    company-period it decides in 13 of them: 2014, 2019, 2024 Q1–Q3 and
+    2026 Q1–Q2. It sides with the tree in every one in the other 11:
+    2013 Q1–Q3, 2016 Q1–Q3, 2020 Q3, 2022 Q1–Q3 and 2025 Q2. In the remaining
+    17 quarters it splits the company-periods between the vintages.
+    `fin_bs_vintage.py` therefore takes the revision per company-period. In the
+    3,498, `fin_bs/` now holds the revision's value and label on every row the
+    revision carries, and 7 of those rows are new to `fin_bs/`. 122 revised
+    amounts, in 117 of the 3,498, match no single filing line. They take the
+    revision's value because the company-period's other amounts side with it.
+    A row the revision does not carry keeps the tree's value, because the grade
+    never compared it with the filing. 2,875 rows, in 869 of the 3,498, are kept
+    that way. Every other company-period keeps the tree's rows.
+    `fin_bs_vintage.parquet` records each row of the 3,498 on which the
+    vintages differ, with both values: 31,514 changed, 2,875 kept and 7 added.
+    `fin_bs_vintage_grade.parquet` holds every graded amount with the tree's
+    value, the revision's and the filing's. The grade also drew four
+    company-periods per quarter on whose amounts both vintages agree, 216 in
+    all. The filing agrees with every graded amount in 193 of them. In 16, both
+    vintages disagree with the filing on some amounts, 64 in all, and 7 are
+    ungraded. Balance sheets before 2013 Q1 are not graded, because `t164sb03`
+    serves no statement before the first IFRS quarter. `fin_is/` and `fin_cf/`
+    are not graded either. Those two trees, and `fin_bs/` before 2013 Q1, hold
+    the values they were pulled with.
 
 ## Two regime facts about the window
 

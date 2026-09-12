@@ -3699,6 +3699,127 @@ def test_taiwan_sec_lending_pairs_are_disclosed():
     return (f"{sizes.get(2, 0):,} identical pairs in {stocks} stocks, "
             f"{span[0]}..{span[1]}, none larger"), rows
 
+
+def test_taiwan_fin_bs_revision_follows_the_filing():
+    """README caveat 13: `fin_bs/` takes FinMind's revision of a balance sheet
+    only where the filing sides with it.
+
+    The company-periods written are derived from the committed grade, not
+    listed, and held against the record in both directions. A record entry the
+    grade does not call for is a revision taken without the filing behind it.
+    A company-period the filing sides with and the record lacks is a statement
+    left at a vintage its filing contradicts. Each row the record names is then
+    read back from the tree: a changed or added row holds the revision's value
+    and label, and a kept row, one the revision does not carry, holds the
+    tree's. Every amount graded in a revised company-period the filing does not
+    side with is read back as well, and holds the value the grade read.
+    """
+    sys.path.insert(0, str(REPO))
+    from finmind_data.fin_bs_vintage import GRADE, KEY, RECORD, verdicts
+
+    g = pd.read_parquet(GRADE)
+    v = verdicts(g)
+    rec = pd.read_parquet(RECORD)
+    rev = v[v["kind"] == "revised"]
+    take = rev[rev["verdict"] == "revision"]
+    want = set(zip(take["period"], take["stock_id"]))
+    got = set(zip(rec["date"], rec["stock_id"]))
+    assert got == want, (
+        f"README caveat 13 says fin_bs/ takes the revision in exactly the "
+        f"company-periods whose filing sides with it; the grade calls for "
+        f"{len(want):,} and the record holds {len(got):,}. Not taken: "
+        f"{sorted(want - got)[:5]}; taken without the filing: {sorted(got - want)[:5]}")
+
+    stay = (g[(g["kind"] == "revised") & g["type"].notna()]
+            .merge(rev.loc[rev["verdict"] != "revision", ["period", "stock_id"]],
+                   on=["period", "stock_id"])
+            .rename(columns={"period": "date"}))
+    stay["date"] = pd.to_datetime(stay["date"])
+    rec["date"] = pd.to_datetime(rec["date"])
+    kept = rec["change"] == "kept"
+    rec["value_want"] = rec["value_old"].where(kept, rec["value_new"])
+    rec["name_want"] = rec["origin_name_old"].where(kept, rec["origin_name_new"])
+    wrong, moved = [], []
+    for sid in sorted(set(rec["stock_id"]) | set(stay["stock_id"])):
+        f = _tree(REPO / f"finmind_data/fin_bs/{sid}.parquet")
+        m = rec[rec["stock_id"] == sid].merge(f, on=KEY, how="left")
+        ok = (((m["value"] == m["value_want"]) | (m["value"].isna() & m["value_want"].isna()))
+              & (m["origin_name"] == m["name_want"]))
+        wrong += [(sid, str(d.date()), t) for d, t in zip(m.loc[~ok, "date"], m.loc[~ok, "type"])]
+        k = stay[stay["stock_id"] == sid].merge(f, on=KEY, how="left")
+        off = ~((k["value"] == k["ours"]) | (k["value"].isna() & k["ours"].isna()))
+        moved += [(sid, str(d.date()), t) for d, t in zip(k.loc[off, "date"], k.loc[off, "type"])]
+    assert not wrong, (
+        f"README caveat 13 says fin_bs/ holds the revision's value and label on "
+        f"every row the revision carries in those company-periods, and the "
+        f"tree's value on every row it does not; {len(wrong):,} rows of "
+        f"fin_bs_vintage.parquet read back otherwise: {wrong[:5]}")
+    assert not moved, (
+        f"README caveat 13 says every other company-period keeps the tree's "
+        f"rows; {len(moved):,} graded amounts there no longer hold the value "
+        f"the grade read: {moved[:5]}")
+
+    sides = rev["verdict"].value_counts().to_dict()
+    ungraded = rev.loc[rev["verdict"] == "ungraded", "status"].value_counts().to_dict()
+    assert (g["period"].min(), rev["period"].nunique(), sides, ungraded) == (
+            "2013-03-31", 41,
+            {"tree": 3_697, "revision": 3_498, "mixed": 25, "neither": 7, "ungraded": 99},
+            {"no_label": 91, "no_report": 6, "refused": 2}), (
+        f"README caveat 13 grades 7,326 company-periods in 41 quarters from "
+        f"2013 Q1: the filing sides with the tree in 3,697 and with the "
+        f"revision in 3,498, neither vintage agrees with every graded amount "
+        f"in 32 more (with none in 7), and 99 are ungraded (91 matching no "
+        f"line, 6 without a filing, 2 refused); this grade starts at "
+        f"{g['period'].min()}, spans {rev['period'].nunique()} quarters and "
+        f"gives {sides}, ungraded {ungraded}")
+
+    by_q = (rev[rev["verdict"].isin(["tree", "revision"])]
+            .groupby("period")["verdict"].agg(lambda s: "/".join(sorted(set(s)))))
+    whole = {k: sorted(by_q.index[by_q == k]) for k in ("revision", "tree")}
+    split = int((by_q == "revision/tree").sum())
+    assert (whole, split) == ({
+            "revision": ["2014-03-31", "2014-06-30", "2014-09-30", "2014-12-31",
+                         "2019-03-31", "2019-06-30", "2019-09-30", "2019-12-31",
+                         "2024-03-31", "2024-06-30", "2024-09-30",
+                         "2026-03-31", "2026-06-30"],
+            "tree": ["2013-03-31", "2013-06-30", "2013-09-30",
+                     "2016-03-31", "2016-06-30", "2016-09-30", "2020-09-30",
+                     "2022-03-31", "2022-06-30", "2022-09-30", "2025-06-30"]}, 17), (
+        f"README caveat 13 says the filing sides with the revision in every "
+        f"company-period it decides in 2014, 2019, 2024 Q1-Q3 and 2026 Q1-Q2, "
+        f"with the tree in every one in 2013 Q1-Q3, 2016 Q1-Q3, 2020 Q3, 2022 "
+        f"Q1-Q3 and 2025 Q2, and splits the other 17 quarters; this grade "
+        f"gives {whole} and {split} split")
+
+    blind = g.merge(take[["period", "stock_id"]], on=["period", "stock_id"])
+    blind = blind[blind["status"] == "no_label"]
+    changes = rec["change"].value_counts().to_dict()
+    kept_in = rec.loc[kept, ["date", "stock_id"]].drop_duplicates()
+    assert (len(blind), blind[["period", "stock_id"]].drop_duplicates().shape[0],
+            changes, len(kept_in)) == (
+            122, 117, {"changed": 31_514, "kept": 2_875, "added": 7}, 869), (
+        f"README caveat 13 says 122 revised amounts in 117 of the company-periods "
+        f"taken match no single filing line, and fin_bs_vintage.parquet records 31,514 "
+        f"rows changed, 2,875 kept in 869 company-periods and 7 added; there are "
+        f"{len(blind)} in {blind[['period', 'stock_id']].drop_duplicates().shape[0]}, "
+        f"and the record gives {changes}, kept in {len(kept_in)}")
+
+    ctl = v[v["kind"] == "control"]
+    per = ctl.groupby("period").size()
+    ctrl = ctl["verdict"].value_counts().to_dict()
+    off = int((ctl["items"] - ctl["tree"]).sum())
+    assert (len(per), set(per), ctrl, off) == (
+            54, {4}, {"both": 193, "mixed": 16, "ungraded": 7}, 64), (
+        f"README caveat 13 draws four agreeing company-periods per quarter, 216 "
+        f"in all: the filing agrees with every graded amount in 193, both pulls "
+        f"disagree with it on 64 amounts in 16, and 7 are ungraded; the grade "
+        f"holds {len(per)} quarters of {sorted(set(per))} and gives {ctrl}, "
+        f"{off} amounts off")
+    return (f"{len(got):,} company-periods take the revision the filing sides "
+            f"with, {len(rec):,} rows recorded; {len(stay):,} graded amounts "
+            f"elsewhere keep the tree's value"), len(rec) + len(stay)
+
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
@@ -5429,6 +5550,7 @@ CHECKS = [
     test_taiwan_unadjusted_first_sessions_are_carried,
     test_taiwan_token_travels_in_a_header,
     test_taiwan_sec_lending_pairs_are_disclosed,
+    test_taiwan_fin_bs_revision_follows_the_filing,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,
