@@ -3657,6 +3657,48 @@ def test_taiwan_token_travels_in_a_header():
         f"{no_header} send no header")
     return f"{len(mods)} collectors send the token in a header", len(mods)
 
+
+def test_taiwan_sec_lending_pairs_are_disclosed():
+    """README caveat 12: `sec_lending` carries 86,002 rows twice, all between
+    2017-12-18 and 2020-10-27.
+
+    The pairs stay in the tree, because nothing here can tell a repeated load
+    from two identical transactions. What makes `drop_duplicates()` safe is
+    their shape, so the shape is what is pinned: every group is a pair, the span
+    is closed, and no row outside it has a twin.
+    """
+    import pyarrow.parquet as pq
+
+    rows = paired = stocks = 0
+    sizes: dict[int, int] = {}
+    days = set()
+    for sid in _panel_ids():
+        p = REPO / f"finmind_data/sec_lending/{sid}.parquet"
+        # A zero-row file is written without a schema, so it has no column to read.
+        if not pq.ParquetFile(p).metadata.num_rows:
+            continue
+        d = _tree(p)
+        rows += len(d)
+        twin = d.duplicated(keep=False)
+        if not twin.any():
+            continue
+        stocks += 1
+        paired += int(twin.sum())
+        for k, c in d[twin].groupby(list(d.columns), dropna=False).size().value_counts().items():
+            sizes[int(k)] = sizes.get(int(k), 0) + int(c)
+        days |= set(pd.to_datetime(d.loc[twin, "date"]).dt.date.astype(str))
+
+    span = (min(days), max(days)) if days else None
+    assert (rows, paired, stocks, sizes) == (1_541_802, 172_004, 989, {2: 86_002}), (
+        f"README caveat 12 counts 172,004 of the 1,541,802 in-window sec_lending "
+        f"rows in 86,002 identical pairs, across 989 stocks; this tree gives "
+        f"{paired:,} of {rows:,} in {stocks} stocks, groups by size {sizes}")
+    assert span == ("2017-12-18", "2020-10-27"), (
+        f"README caveat 12 says every pair falls between 2017-12-18 and "
+        f"2020-10-27; this tree's pairs span {span}")
+    return (f"{sizes.get(2, 0):,} identical pairs in {stocks} stocks, "
+            f"{span[0]}..{span[1]}, none larger"), rows
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
@@ -5386,6 +5428,7 @@ CHECKS = [
     test_taiwan_adjusted_factor_moves_only_on_events,
     test_taiwan_unadjusted_first_sessions_are_carried,
     test_taiwan_token_travels_in_a_header,
+    test_taiwan_sec_lending_pairs_are_disclosed,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

@@ -191,6 +191,10 @@
     "bound": "monotone",
     "n": 159684
   },
+  "test_taiwan_sec_lending_pairs_are_disclosed": {
+    "bound": "monotone",
+    "n": 1541802
+  },
   "test_taiwan_short_sale_series_has_no_regime_gap": {
     "bound": "monotone",
     "n": 5748089

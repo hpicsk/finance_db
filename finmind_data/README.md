@@ -2061,6 +2061,19 @@ green result means every check in the suite actually read something.
     the same row contradicts, while the same strategy on `close` is unaffected.
     Screen with `open.between(min, max)` before using it; caveat 6's
     individually corrupt rows are a separate and much smaller set.
+12. **`sec_lending` carries 86,002 rows twice, all between 2017-12-18 and
+    2020-10-27.** 172,004 of the 1,541,802 in-window rows in the universe's
+    files sit in pairs identical in every column, across 989 stocks. They are
+    53-58 % of the rows in each of 2018, 2019 and 2020. 660 of the span's 830
+    sessions carry pairs, and on none of them is every row paired. No row
+    appears three times, and none of the 1.37 million rows outside the span has
+    a twin. That shape points at the vendor's load rather than at identical
+    transactions, but the pairs are not checked against the exchange's own
+    table. FinMind still served them on 2026-09-12: a re-pull of 2303 returned
+    the same 1,392 paired rows for 2018. A daily sum of `volume` over the span
+    counts each pair twice. `drop_duplicates()` keeps one row of each, and it
+    would also merge a genuine identical pair, of which the rest of the window
+    has none.
 
 ## Two regime facts about the window
 
