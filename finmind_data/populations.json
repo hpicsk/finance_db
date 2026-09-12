@@ -231,6 +231,10 @@
     "bound": "monotone",
     "n": 13
   },
+  "test_taiwan_unadjusted_first_sessions_are_carried": {
+    "bound": "monotone",
+    "n": 612
+  },
   "test_taiwan_universe_bridges_a_halt_only_when_asked": {
     "bound": "exact",
     "n": 609

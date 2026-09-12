@@ -664,7 +664,7 @@ before comparing anything across the boundary:
 |---|---|---|
 | `vendor` | `declared_dividend` | FinMind's series as served |
 | `vendor_patched` | `declared_dividend` | behind the one replaced event (120 rows) |
-| `vendor_carried` | `declared_dividend` | the first traded session, ahead of where the vendor series starts — factor carried from the adjacent session (497: 493 first sessions, and in four of those stocks the Saturday make-up session right after it) |
+| `vendor_carried` | `declared_dividend` | the first traded session, where the vendor series starts late or serves it at the raw close — factor carried from the adjacent session (612: 493 first sessions ahead of the vendor series, the Saturday make-up session right after it in four of those stocks, and 115 first sessions the vendor serves unadjusted) |
 | `rebuilt_factored` | `exchange_reference` | 37 of the 54 holes, with a factor chain (50,064 rows) |
 | `rebuilt_noevent` | `none` | 17 of the 54, no corporate action in window — factor is 1.0 (11,441 rows) |
 | `""` | `""` | no price: the stock did not trade, or nothing covers the session |
@@ -794,12 +794,13 @@ moved.
 
 ### The edge of the vendor series, and the edge that left with the window
 
-The other 497 carried sessions are not whole stocks but one end of a
+The other 612 carried sessions are not whole stocks but one end of a
 series the vendor serves. 494 stocks are short their first traded session,
 one per stock, verified as that and nothing else. 493 of them are carried and
 the 494th is refused, below. In four of the 493 the series opens on a Friday
 and the Saturday make-up session after it is missing too; the carry covers
-both.
+both. The remaining 115 are first sessions the vendor serves at the raw
+close, described under "One pull per adjusted file".
 
 The window has **one** edge, not two. A vendor series that stops at a
 delisting while `ohlcv/` keeps printing used to be the other, and inside
@@ -984,9 +985,13 @@ after 2024-12-31.
 the universe's files. It finds 22,017. Every one sits on an event's first
 session except the step into a series' second session, in 116 files. In 115 of
 those the vendor serves the first row at its own anchor, so its adjusted close
-is the raw close. `load_adjusted` passes that step into the second session's
-return. The step is negative in all 115: median −5.6 %, beyond −10 % in 23, and
-−90.6 % on 7780.
+is the raw close. Kept, the step would be the second session's return: negative
+in all 115, median −5.6 %, beyond −10 % in 23, and −90.6 % on 7780.
+`load_adjusted` drops the first row's factor and carries the second session's
+onto it, under the guard the edge carry uses. The row is then `vendor_carried`,
+and `adj_covered` stays True because the vendor did serve it.
+`test_taiwan_unadjusted_first_sessions_are_carried` holds the 115 sessions the
+trees show against the 115 the loader carries.
 
 ## Load the full panel
 

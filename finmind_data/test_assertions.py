@@ -3100,6 +3100,82 @@ def test_taiwan_adjusted_factor_moves_only_on_events():
             f"an unadjusted first row)"), steps
 
 
+
+def test_taiwan_unadjusted_first_sessions_are_carried():
+    """README, "One pull per adjusted file": a first session the vendor serves at
+    the raw close takes the second session's factor.
+
+    The vendor's factor on such a session is exactly 1.0 and steps into the
+    second session with no filing under it, so kept, the step would be the
+    second session's return. `load_adjusted` drops that factor and the edge carry
+    replaces it: the row is `vendor_carried`, and `adj_covered` stays True
+    because the vendor did serve it. The sessions are read off the trees and held
+    against the loader's carries in both directions. A carry the trees do not
+    call for overwrote a price the vendor served, and a first row they call for
+    that the loader kept puts the step back into a return.
+
+    The same pass counts every carried row in the panel, which the README's
+    `adj_source` table quotes.
+    """
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+    import pyarrow.parquet as pq
+
+    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.backfill_make_up_sessions import _VINTAGE_TOL
+
+    want, got = set(), set()
+    edge = 0
+    for sid in _panel_ids():
+        a = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        # A zero-row file is written without a schema, so it has no column to read.
+        if not pq.ParquetFile(r).metadata.num_rows:
+            continue
+        if pq.ParquetFile(a).metadata.num_rows:
+            adj = _tree(a, columns=["date", "close"])
+            raw = _tree(r, columns=["date", "close"])
+            m = raw.merge(adj, on="date", suffixes=("", "_adj")).sort_values("date")
+            m = m[m["close"] > 0]
+            if len(m) > 1:
+                f = m["close_adj"].to_numpy(dtype=float) / m["close"].to_numpy(dtype=float)
+                if f[0] == 1.0 and abs(f[1] - 1.0) > _VINTAGE_TOL:
+                    want.add((sid, str(pd.Timestamp(m["date"].iloc[0]).date())))
+        try:
+            df = load_adjusted(sid)
+        except ValueError:
+            # No in-window session to load: the 38 names
+            # test_taiwan_no_trade_rows_are_not_holdable counts.
+            continue
+        carried = df["adj_source"].to_numpy() == "vendor_carried"
+        served = df["adj_covered"].to_numpy()
+        edge += int((carried & ~served).sum())
+        f = df["tr_factor"].to_numpy()
+        priced = np.flatnonzero(np.isfinite(f))
+        for i in np.flatnonzero(carried & served):
+            day = str(pd.Timestamp(df["date"].iloc[i]).date())
+            got.add((sid, day))
+            nxt = priced[priced > i]
+            assert i == priced[0] and len(nxt) and abs(f[i] / f[nxt[0]] - 1.0) < 1e-12, (
+                f"{sid} {day}: a vendor-served session was carried, and it is not "
+                f"the first priced session taking the next one's factor")
+
+    assert got == want, (
+        f"README says load_adjusted carries the second session's factor onto "
+        f"each first session the vendor serves at the raw close; the trees show "
+        f"{len(want)} such sessions and the loader carried {len(got)}. Not "
+        f"carried: {sorted(want - got)[:5]}; carried without the shape: "
+        f"{sorted(got - want)[:5]}")
+    assert (edge, len(got)) == (497, 115), (
+        f"README's adj_source table counts 612 vendor_carried rows: 493 first "
+        f"sessions ahead of the vendor series, the Saturday make-up session "
+        f"right after it in four of those stocks, and 115 first sessions the "
+        f"vendor serves unadjusted. That is 497 the vendor does not serve and "
+        f"115 it does; this panel gives {edge} and {len(got)}")
+    return (f"{len(got)} unadjusted first sessions carried from the second, "
+            f"exactly the {len(want)} the trees show; {edge} carried ahead of "
+            f"the vendor series"), edge + len(got)
+
 def test_taiwan_post_delisting_sessions_are_marked():
     """README, "Which rows to trust": no session after a delisting is holdable.
 
@@ -5287,6 +5363,7 @@ CHECKS = [
     test_taiwan_vendor_defects_are_patched,
     test_taiwan_vendor_edges_are_carried,
     test_taiwan_adjusted_factor_moves_only_on_events,
+    test_taiwan_unadjusted_first_sessions_are_carried,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

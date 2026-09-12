@@ -43,7 +43,10 @@ splice. That recovers 493 **first returns** — the price was never the loss; th
 session-1-to-session-2 return was. The condition is tested per row against every
 filed 除權息 and 減資 plus the cancellations no filing explains, and it refuses
 the 494th: 4141's first print sits 376 days before the vendor's first session,
-with a cancellation on that session. Those rows are ``vendor_carried``. The
+with a cancellation on that session. Those rows are ``vendor_carried``. So are
+the first sessions of 115 stocks the vendor serves at the raw close. The factor
+there reads 1.0 and steps into the second session with no filing under it, so
+``_refuse_unadjusted_first`` drops it and the carry replaces it. The
 other edge — a vendor series stopping at a delisting while ``ohlcv/`` keeps
 printing — has no in-window instance: every name it applies to delisted before
 the window, which is what makes those four a hole for the rebuild rather than an
@@ -150,6 +153,7 @@ import numpy as np
 import pandas as pd
 
 from . import adjust
+from .backfill_make_up_sessions import _VINTAGE_TOL
 from .vendor_event_audit import defective_events
 from .window import COVERAGE_START, COVERAGE_END, clip
 
@@ -244,8 +248,8 @@ def load_adjusted(stock_id: str,
       ``adj_method``     which convention produced its ex-date steps:
                          ``declared_dividend``, ``exchange_reference``, ``none``
       ``adj_covered``    the *vendor* served this date — False across a rebuilt
-                         stock and on a carried edge, so the survivorship hole
-                         stays countable after it is filled
+                         stock and on an edge it does not serve, so the
+                         survivorship hole stays countable after it is filled
       ``is_valid``       this row is a position a study could have held
       ``invalid_reason`` why not: ``unpriced_cancellation`` or ``series_break``
                          behind the last break, ``post_delisting_emerging``
@@ -339,6 +343,9 @@ def load_adjusted(stock_id: str,
     traded = close > 0.0
     out.loc[~traded, 'adj_close_tr'] = np.nan
     factor = out['adj_close_tr'].to_numpy(dtype=float) / np.where(traded, close, np.nan)
+    # Before coverage is read, so the patch and the carry both see the dropped
+    # session as one the vendor did not price.
+    factor = _refuse_unadjusted_first(factor)
 
     covered = np.isfinite(factor)
     n_patched = 0
@@ -522,6 +529,30 @@ def _patch(stock_id: str, dates: np.ndarray, covered: np.ndarray,
     return factor, n
 
 
+def _refuse_unadjusted_first(factor: np.ndarray) -> np.ndarray:
+    """Drop the vendor's factor on the first priced session where it reads 1.0
+    and the next one does not.
+
+    The vendor serves the first session of some series at the raw close, so the
+    factor there is exactly 1.0 and steps into the second session with no filing
+    under it. Kept, that step is the second session's return: in the window it
+    reaches 115 stocks, negative on every one and −90.6 % on 7780. Dropped, the
+    session is an edge like any other, and ``_carry_edges`` carries the next
+    session's factor onto it or leaves it NaN where a filing sits between them.
+
+    A step is a move past ``_VINTAGE_TOL``, the vendor's rounding. The rule reads
+    the frame's first priced session, and that is the file's own first row
+    wherever it fires: ``test_taiwan_adjusted_factor_moves_only_on_events`` finds
+    no step off an event anywhere else.
+    """
+    seat = np.nonzero(np.isfinite(factor))[0]
+    if (len(seat) > 1 and factor[seat[0]] == 1.0
+            and abs(factor[seat[1]] - 1.0) > _VINTAGE_TOL):
+        factor = factor.copy()
+        factor[seat[0]] = np.nan
+    return factor
+
+
 def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
                  factor: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Extend the vendor's factor onto the traded sessions at either edge of it.
@@ -538,6 +569,8 @@ def _carry_edges(stock_id: str, dates: np.ndarray, traded: np.ndarray,
     raw one, at a delisting ``ohlcv/`` kept printing through — has no in-window
     instance: every such name delisted before the window, so the rebuild supplies
     the whole of it and there is no covered session next to it to carry from.
+    The edge also moves one session in on the 115 stocks whose first session
+    ``_refuse_unadjusted_first`` drops.
 
     The condition is checked per row rather than assumed: every date the stock
     filed a 除權息 or a 減資 on, plus the share cancellations no filing explains,
