@@ -23,7 +23,7 @@ refresh runbook, and the ignore policy.
 | `kr_marcap/` | KR OHLCV layer over marcap, plus the open-source reconstruction of FnGuide's 수정주가 and the unified PIT status panel | [`README.md`](kr_marcap/README.md), [`CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md), [`VERIFICATION.md`](kr_marcap/VERIFICATION.md) |
 | `kr_status/` | Per-source PIT collectors for KRX status flags (admin / halt / alert / audit / insincere), one parquet each | [`README.md`](kr_status/README.md) |
 | `krx_supplement/` | KRX/KOSPI200 panel reconstruction — index membership history, sector, foreign ownership | [`README.md`](krx_supplement/README.md), [`RECONSTRUCT.md`](krx_supplement/RECONSTRUCT.md) |
-| `finmind_data/` | Taiwan equity data via the FinMind API (TWSE + TPEx, **2011-01-25**–2024 — the first date the capital-reduction reference prices are published), raw and back-adjusted | [`README.md`](finmind_data/README.md) |
+| `finmind_data/` | Taiwan equity data via the FinMind API (TWSE + TPEx from **2011-01-25**, the first date the capital-reduction reference prices are published), raw and back-adjusted | [`README.md`](finmind_data/README.md) |
 | `marcap/` | External clone of [`FinanceData/marcap`](https://github.com/FinanceData/marcap) — gitignored entirely, re-clone when setting up | delisted-coverage notes in [`kr_delisted/README.md`](kr_delisted/README.md) |
 
 Two files at this level, and nothing else: [`refresh.sh`](refresh.sh) (the
