@@ -364,6 +364,7 @@ coverage ending early.
 ├── date_keyed_fill/<tree>.parquet     every row date_keyed_fill.py added to that tree   (2011-2026)
 ├── repull_fill/<tree>.parquet         同, for the whole re-pull of the daily trees       (2011-2026)
 ├── repull_fill/unserved.parquet       the stock-dates that re-pull no longer serves      (2011-2026)
+├── short_sale_repair.parquet          every crossed short-sale flow pair, as the tree held it (2011-2024)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -410,6 +411,7 @@ coverage ending early.
 ├── fin_bs_vintage.py                  grades fin_bs/ against MOPS, writes the revision its filing sides with
 ├── date_keyed_fill.py                 adds what FinMind serves date-keyed and fin_*/, month_rev/ lack
 ├── repull_fill.py                     adds what a whole re-pull serves and the daily trees lack
+├── short_sale_repair.py               exchanges the short-sale flows the balances call crossed
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
@@ -2228,6 +2230,29 @@ green result means every check in the suite actually read something.
     dropped. Where the two pulls disagree on a row both carry, the tree keeps
     its own values, on caveat 13's finding that a revision is not a correction.
 
+16. **`margin_short`'s two short-sale flows were crossed in the rows the first
+    pull wrote.** A short sale raises the short balance and buying the position
+    back lowers it, so a row's flows and its balances are one identity:
+    `ShortSaleTodayBalance == ShortSaleYesterdayBalance + ShortSaleSell −
+    ShortSaleBuy − ShortSaleCashRepayment`. It failed on 761,472 of the tree's
+    5,748,771 in-window rows, across 750 names, every one dated 2011 to 2024 —
+    the rows `download.py` wrote in the 2026-04-27 build — and held on every row
+    it appended on 2026-09-10. Exchanging the two values repairs all 761,472.
+    The margin flows carry the same identity with the buy and the sell the other
+    way round, and that one holds on every row of both pulls, which is what
+    fixes the direction rather than assuming it. The whole re-pull of 2026-09-13
+    serves the two exchanged on each of the 759,918 it carries, and contradicts
+    no balance on any of its 5,743,035 in-window rows. That pull is not
+    committed, so the record below is where a check reads its answer.
+
+    `short_sale_repair.py` wrote the exchange into the tree, and
+    `short_sale_repair.parquet` keeps every row it touched with the values as
+    the tree held them: 759,918 the re-pull confirms, 1,554 it no longer serves,
+    and none it serves the way the tree had them. A study that read
+    `ShortSaleSell` on one of those rows before 2026-09-13 read the volume
+    bought back instead, and the short-sale figures under "Two regime facts"
+    below are measured after the repair.
+
 ## Two regime facts about the window
 
 Both are easy to miss when pooling across the whole of it.
@@ -2240,7 +2265,7 @@ regime dummy or a split sample is required, not one pooled estimate.
 short-sale suspension over these years, and the data says so rather than the
 statute: across the 189 in-window months, on 2,082 names, not one month has
 zero short-sale volume and not one has zero short balance. March 2020 — when
-several markets suspended shorting outright — carries **1.66×** the 2019
+several markets suspended shorting outright — carries **1.59×** the 2019
 monthly mean, not a hole. The consequence for a caller is the useful part: a
 missing stretch in `margin_short/` is a download that failed, never a rule
 that changed, so it should be refetched rather than modelled around.

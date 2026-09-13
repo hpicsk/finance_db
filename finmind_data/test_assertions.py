@@ -5806,13 +5806,99 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
         f"balance'; {len(m):,} months on {len(frames):,} names, {dead} with no "
         f"volume and {flat} with no balance")
     ratio = m.loc["2020-03", "sell"] / m.loc["2019", "sell"].mean()
-    assert math.isclose(ratio, 1.66, abs_tol=0.02), (
-        f"README claims March 2020 carries '1.66x' the 2019 monthly mean of "
+    assert math.isclose(ratio, 1.59, abs_tol=0.02), (
+        f"README claims March 2020 carries '1.59x' the 2019 monthly mean of "
         f"short-sale volume; it carries {ratio:.2f}x")
     return (f"{len(m)} in-window months on {len(frames):,} names, none with "
             f"zero short-sale volume or zero balance; 2020-03 at "
             f"{ratio:.2f}x the 2019 mean"), len(d)
 
+
+def test_taiwan_short_sale_flows_match_the_balances():
+    """README caveat 16: `margin_short`'s two short-sale flows were crossed in
+    the rows the first pull wrote, and `short_sale_repair.parquet` records every
+    row exchanged.
+
+    A short sale raises the short balance and buying the position back lowers
+    it, so a row's flows and its balances are one identity. That identity is
+    what convicts the pair, rather than a second pull disagreeing with the
+    first, and it is read back in both directions: no in-window row contradicts
+    its balances now, and putting each recorded row's values back the way the
+    tree held them contradicts them on every one. That is what makes the record
+    the set that was wrong rather than a list of rows someone picked.
+
+    The margin flows carry the same identity with the buy and the sell the other
+    way round, and it held before the repair, so asserting it here fails a
+    repair that wrote into the wrong pair of columns. The rows the re-pull no
+    longer serves are repaired on the balances alone, so the record keeps which
+    of the two answers each row had.
+
+    Both identities are read over every file the tree holds rather than over the
+    universe: they are a property of a row, not a panel figure, and the 72 files
+    outside the universe carry rows a caller can still open.
+    """
+    import pyarrow.parquet as pq
+
+    sys.path.insert(0, str(REPO))
+    from finmind_data.short_sale_repair import BUY, RECORD, SELL, crossed
+
+    names = set(_panel_ids())
+    rec = pd.read_parquet(RECORD)
+    lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
+    loose = rec[~rec["stock_id"].isin(names) | ~rec["date"].between(lo, hi)]
+    rows = bad = margin = 0
+    unrepaired = []
+    by_stock = dict(tuple(rec.groupby("stock_id")))
+    for p in sorted((REPO / "finmind_data/margin_short").glob("*.parquet")):
+        sid = p.stem
+        if not pq.ParquetFile(p).metadata.num_rows:
+            continue
+        f = pd.read_parquet(p)
+        f = f[f["date"].between(lo, hi)]
+        rows += len(f)
+        bad += int(crossed(f).sum())
+        margin += int((f["MarginPurchaseTodayBalance"]
+                       != f["MarginPurchaseYesterdayBalance"] + f["MarginPurchaseBuy"]
+                       - f["MarginPurchaseSell"] - f["MarginPurchaseCashRepayment"]).sum())
+        x = by_stock.get(sid)
+        if x is None:
+            continue
+        m = f.merge(x[["date", BUY, SELL]], on="date", how="right", suffixes=("", "_was"))
+        was = m.assign(**{BUY: m[f"{BUY}_was"], SELL: m[f"{SELL}_was"]})
+        undone = (m[BUY] == m[f"{SELL}_was"]) & (m[SELL] == m[f"{BUY}_was"]) & crossed(was)
+        if not undone.all():
+            unrepaired.append((sid, int((~undone).sum())))
+    assert bad == 0, (
+        f"README caveat 16 says every in-window row's short-sale flows agree "
+        f"with the balances beside them after the repair; {bad:,} of {rows:,} "
+        f"contradict them")
+    assert margin == 0, (
+        f"README caveat 16 rests on the margin flows carrying the same identity "
+        f"the other way round, which is what fixes the direction; {margin:,} "
+        f"in-window rows now break the margin identity")
+    assert loose.empty, (
+        f"README caveat 16 says the repair touched universe names inside the "
+        f"window only; {len(loose)} recorded rows are not: "
+        f"{list(zip(loose['stock_id'], loose['date']))[:5]}")
+    assert not unrepaired, (
+        f"README caveat 16 says each recorded row now holds the two values the "
+        f"other way round and contradicted its balances before; "
+        f"{len(unrepaired)} names hold rows that do not: {unrepaired[:5]}")
+    span = (rec["date"].min(), rec["date"].max())
+    assert (len(rec), rec["stock_id"].nunique(), rec["repull"].value_counts().to_dict()) == (
+        761_472, 750, {"exchanged": 759_918, "absent": 1_554}), (
+        f"README caveat 16 says the repair exchanged 761,472 rows in 750 names, "
+        f"759,918 of them confirmed by the re-pull and 1,554 rows it no longer "
+        f"serves, none served the way the tree had them; the record gives "
+        f"{len(rec):,} rows in {rec['stock_id'].nunique()} names, "
+        f"{rec['repull'].value_counts().to_dict()}")
+    assert span[0][:4] == "2011" and span[1][:4] == "2024", (
+        f"README caveat 16 says every crossed row is dated 2011 to 2024, the "
+        f"rows the 2026-04-27 build wrote, against none of those appended on "
+        f"2026-09-10; the record spans {span[0]}..{span[1]}")
+    return (f"{len(rec):,} crossed short-sale pairs exchanged in "
+            f"{rec['stock_id'].nunique()} names, {span[0]}..{span[1]}; "
+            f"{rows:,} in-window rows agree with their balances"), rows
 
 def test_taiwan_par_value_changes_are_priced():
     """README caveat 5: the rebuild steps across a 面額變更 rather than through it.
@@ -5917,6 +6003,7 @@ CHECKS = [
     test_taiwan_open_outside_session_range,
     test_taiwan_repull_returns_the_stored_prices,
     test_taiwan_short_sale_series_has_no_regime_gap,
+    test_taiwan_short_sale_flows_match_the_balances,
     test_taiwan_delisting_table_has_no_reason,
     test_taiwan_mops_covers_every_delisted_name,
     test_taiwan_mops_detail_gate_is_registration_not_filing,
