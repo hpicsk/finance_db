@@ -36,20 +36,38 @@ fi
 
 # A check the runner never calls reports nothing and fails nothing, which reads
 # from the outside exactly like a check that passes. Every `def test_*` in a
-# package must therefore appear in that package's CHECKS list; the omission is
-# invisible in the per-package output, which is why it is caught here.
+# package must therefore appear in a CHECKS list; the omission is invisible in
+# the per-package output, which is why it is caught here. A package may keep its
+# checks in `<pkg>/checks/<topic>.py` modules, each with its own CHECKS, which
+# `test_assertions.py` concatenates as `*<topic>.CHECKS`: then every check
+# module has to be concatenated too, or a whole module's checks never run.
 unregistered=$(python - "${files[@]}" <<'EOF'
 import ast, sys
+from pathlib import Path
 bad = []
 for path in sys.argv[1:]:
-    tree = ast.parse(open(path).read())
-    defined = [n.name for n in tree.body
-               if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
-    registered = {e.id for n in tree.body if isinstance(n, ast.Assign)
-                  and any(getattr(t, 'id', '') == 'CHECKS' for t in n.targets)
-                  for e in n.value.elts if isinstance(e, ast.Name)}
-    bad += [f'{path}: {d}' for d in defined if d not in registered]
-print('\n'.join(bad))
+    runner = Path(path)
+    modules = sorted(p for p in (runner.parent / "checks").glob("*.py")
+                     if not p.name.startswith("_"))
+    defined, registered = [], set()
+    for f in [runner, *modules]:
+        tree = ast.parse(f.read_text())
+        defined += [f"{f}: {n.name}" for n in tree.body
+                    if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")]
+        registered |= {e.id for n in tree.body if isinstance(n, ast.Assign)
+                       and any(getattr(t, "id", "") == "CHECKS" for t in n.targets)
+                       for e in n.value.elts if isinstance(e, ast.Name)}
+    bad += [d for d in defined if d.split(": ")[1] not in registered]
+    if modules:
+        tree = ast.parse(runner.read_text())
+        spliced = {e.value.value.id for n in tree.body if isinstance(n, ast.Assign)
+                   and any(getattr(t, "id", "") == "CHECKS" for t in n.targets)
+                   for e in n.value.elts if isinstance(e, ast.Starred)
+                   and isinstance(e.value, ast.Attribute) and e.value.attr == "CHECKS"
+                   and isinstance(e.value.value, ast.Name)}
+        bad += [f"{path}: checks/{m.stem}.py is not spliced into CHECKS"
+                for m in modules if m.stem not in spliced]
+print("\n".join(bad))
 EOF
 )
 if [ -n "$unregistered" ]; then
