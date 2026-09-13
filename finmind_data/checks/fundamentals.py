@@ -10,7 +10,7 @@ from ._common import Skipped, _LATE_FRAME_END, _PER_STOCK_BREAK, _STAMP_SPLIT, _
 
 
 def test_taiwan_fundamentals_are_fiscal_dated():
-    """README caveat 9: fiscal period end, no announcement date.
+    """CAVEATS.md 9: fiscal period end, no announcement date.
 
     A look-ahead limit rather than a survivorship one, and invisible in the
     schema unless someone states what `date` means. `dividend/` carries
@@ -20,13 +20,13 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     fin = _tree(TREES / "fin_is/2330.parquet")
     ends = set(pd.to_datetime(fin["date"]).dt.strftime("%m-%d"))
     assert ends <= {"03-31", "06-30", "09-30", "12-31"}, (
-        f"README caveat 9 says fin_is dates are fiscal quarter ends; 2330 also "
+        f"CAVEATS.md 9 says fin_is dates are fiscal quarter ends; 2330 also "
         f"carries {sorted(ends - {'03-31', '06-30', '09-30', '12-31'})}"
     )
     for dset in ("fin_is", "fin_bs", "fin_cf"):
         c = set(pd.read_parquet(TREES / f"{dset}/2330.parquet").columns)
         assert not {"AnnouncementDate", "create_time", "announcement_date"} & c, (
-            f"README caveat 9 says {dset}/ carries no announcement date; it now "
+            f"CAVEATS.md 9 says {dset}/ carries no announcement date; it now "
             f"has one, so the look-ahead caveat is obsolete and signals built "
             f"on it can be aligned point-in-time"
         )
@@ -69,7 +69,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
             backfill_lag += list(lag.dropna())
     per = pd.concat(months, ignore_index=True).groupby("date")["hit"].mean()
     assert stamped, (
-        "README caveat 9 argues from where create_time's values fall that it is "
+        "CAVEATS.md 9 argues from where create_time's values fall that it is "
         "not a release date for this window; no row in the tree carries one at "
         "all, so the argument has no population and the caveat is unsupported "
         "rather than confirmed"
@@ -82,7 +82,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     # the same month and this one is not a tuned boundary.
     above = per.index[per > _STAMP_SPLIT]
     assert len(above), (
-        f"README caveat 9 says the vendor stamps monthly revenue at publication "
+        f"CAVEATS.md 9 says the vendor stamps monthly revenue at publication "
         f"from a reporting month inside the window; no month has {_STAMP_SPLIT:.0%} "
         f"of its rows stamped, so the point-in-time stretch the caveat offers "
         f"does not exist"
@@ -90,14 +90,14 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     frontier = above.min()
     stragglers = sorted(per.index[(per.index > frontier) & (per <= _STAMP_SPLIT)])
     assert not stragglers, (
-        f"README caveat 9 dates the point-in-time stretch from {frontier.date()} "
+        f"CAVEATS.md 9 dates the point-in-time stretch from {frontier.date()} "
         f"onward, which requires every later reporting month to be stamped; "
         f"{len(stragglers)} are not ({[str(d.date()) for d in stragglers[:4]]}), "
         f"so the stretch is not contiguous and a study aligning on the stamp "
         f"would drop those months silently"
     )
     assert backfill_lag and min(backfill_lag) > 365, (
-        f"README caveat 9 reads the pre-window stamps as the vendor's ingest "
+        f"CAVEATS.md 9 reads the pre-window stamps as the vendor's ingest "
         f"time because they post-date their own periods by years; the smallest "
         f"such lag is now {min(backfill_lag) if backfill_lag else None} days, "
         f"which is a release date's distance, not an ingest one"
@@ -115,7 +115,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
                (len(pre), int(pre["lag"].min()), int(pre["lag"].max())))
     assert figures == (416_142, 15_934, "2026-03-01", (13_574, 1_944, 0, 79, 9.0),
                        (2_010, 122, 5_161.0), (350, 5_617, 7_808)), (
-        f"README caveat 9 says 15,934 of month_rev's 416,142 rows carry a "
+        f"CAVEATS.md 9 says 15,934 of month_rev's 416,142 rows carry a "
         f"create_time; that the vendor stamps at publication from reporting "
         f"month 2026-03, on 13,574 rows across 1,944 stocks lagging their "
         f"reporting date by 0 to 79 days with a median of 9; and that before "
@@ -126,7 +126,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
 
     div = _tree(TREES / "dividend/1101.parquet")
     assert "AnnouncementDate" in div.columns, (
-        "README caveat 9 names dividend/ as the one dataset carrying "
+        "CAVEATS.md 9 names dividend/ as the one dataset carrying "
         "AnnouncementDate; it no longer does"
     )
     return (f"fin_* dated on quarter ends with no announcement column; "
@@ -137,7 +137,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
 
 
 def test_taiwan_statement_trees_drop_old_delistings():
-    """README caveat 10: prices keep the delisted names, statements do not.
+    """CAVEATS.md 10: prices keep the delisted names, statements do not.
 
     The universe overlay and the rebuild together make the *price* panel
     survivorship-complete, and a reader who stops there will assume the whole
@@ -169,7 +169,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
               & d["sid"].isin(uid)]
     delist = dict(zip(inwin["sid"], inwin["date"]))
     assert len(delist) == 179, (
-        f"README caveat 10 reports the statement coverage against 179 commons "
+        f"CAVEATS.md 10 reports the statement coverage against 179 commons "
         f"delisted inside the window; the table now dates {len(delist)}"
     )
 
@@ -185,17 +185,17 @@ def test_taiwan_statement_trees_drop_old_delistings():
         else:
             empty_file += 1
     assert len(have) == 84, (
-        f"README caveat 10 says fin_is/ carries rows for 84 of the 179; it "
+        f"CAVEATS.md 10 says fin_is/ carries rows for 84 of the 179; it "
         f"now carries them for {len(have)}"
     )
     assert not stale_only, (
-        f"README caveat 10 says the missing files are empty rather than "
+        f"CAVEATS.md 10 says the missing files are empty rather than "
         f"out-of-window, which is what makes this absence at the source and "
         f"not a window artifact; {len(stale_only)} now hold rows the window "
         f"excludes, so the caveat's argument no longer holds: {stale_only[:5]}"
     )
     assert empty_file == 95, (
-        f"README caveat 10 pins 95 empty fin_is files; there are {empty_file}"
+        f"CAVEATS.md 10 pins 95 empty fin_is files; there are {empty_file}"
     )
 
     def traded_quarters(sid):
@@ -205,7 +205,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     missing = [s for s in delist if s not in last_row]
     long_lived = sum(traded_quarters(s) >= 8 for s in missing)
     assert long_lived == 85, (
-        f"README caveat 10 says 85 of the 95 missing names traded in eight or "
+        f"CAVEATS.md 10 says 85 of the 95 missing names traded in eight or "
         f"more in-window quarters; {long_lived} of {len(missing)} did"
     )
 
@@ -215,7 +215,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     filled = set(pd.read_parquet(RECORD / "fin_is.parquet")["stock_id"])
     per_stock = max(delist[s] for s in delist if s not in set(have) - filled)
     assert (brk, per_stock) == (_STATEMENT_BREAK, _PER_STOCK_BREAK), (
-        f"README caveat 10 puts the break on {_STATEMENT_BREAK.date()}, the "
+        f"CAVEATS.md 10 puts the break on {_STATEMENT_BREAK.date()}, the "
         f"latest delisting whose income statement the trees lack, and on "
         f"{_PER_STOCK_BREAK.date()} for the per-stock query alone; they are "
         f"now {brk.date()} and {per_stock.date()}"
@@ -225,13 +225,13 @@ def test_taiwan_statement_trees_drop_old_delistings():
     kept_after = [s for s in after if s in last_row]
     kept_before = [s for s in before if s in last_row]
     assert len(after) == 70 and len(kept_after) == 70, (
-        f"README caveat 10 rests on the break being one-sided — all "
+        f"CAVEATS.md 10 rests on the break being one-sided — all "
         f"{len(after)} names delisted after {_STATEMENT_BREAK.date()} carry a "
         f"statement — and {len(after) - len(kept_after)} no longer do, so the "
         f"date is not where the retention ends any more"
     )
     assert (len(before), len(kept_before)) == (109, 14), (
-        f"README caveat 10 says 14 of the 109 delisted on or before "
+        f"CAVEATS.md 10 says 14 of the 109 delisted on or before "
         f"{_STATEMENT_BREAK.date()} keep a statement; now "
         f"{len(kept_before)} of {len(before)}"
     )
@@ -244,7 +244,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     stopped = {s: (last_row[s] - delist[s]).days
                for s in kept_before if s not in still_filing}
     assert len(still_filing) == 13 and stopped == {"2475": 48}, (
-        f"README caveat 10 explains the 14 as the vendor keeping the company "
+        f"CAVEATS.md 10 explains the 14 as the vendor keeping the company "
         f"rather than the listing — 13 of them still filing long after they "
         f"left the board, and 2475 filing until 48 days after it left — and "
         f"{len(still_filing)} now are, with {stopped} stopping, so the "
@@ -262,7 +262,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     assert {k: cover[k] for k in ("fin_cf", "fin_bs", "shares", "month_rev")} == {
             "fin_cf": (91, "2019-08-05"), "fin_bs": (97, "2019-03-29"),
             "shares": (122, "2020-11-17"), "month_rev": (155, "2019-10-14")}, (
-        f"README caveat 10 says fin_cf/ carries rows for 91 of the 179, fin_bs/ "
+        f"CAVEATS.md 10 says fin_cf/ carries rows for 91 of the 179, fin_bs/ "
         f"for 97, shares/ for 122 and month_rev/ for 155, breaking on "
         f"2019-08-05, 2019-03-29, 2020-11-17 and 2019-10-14; the trees give "
         f"(names, break) {cover}"
@@ -279,14 +279,14 @@ def test_taiwan_statement_trees_drop_old_delistings():
 
     whole_rev = (sum(map(every_month, before)), sum(map(every_month, after)))
     assert whole_rev == (10, 38), (
-        f"README caveat 10 says 10 of the 109 pre-break names carry every "
+        f"CAVEATS.md 10 says 10 of the 109 pre-break names carry every "
         f"revenue month from their first in the window to the one before their "
         f"delisting, against 38 of the 70 after it; the tree gives {whole_rev}"
     )
 
     daily = (cover["per_pbr"][0], cover["instflow"][0])
     assert daily == (177, 171), (
-        f"README caveat 10 localises the loss to the filing endpoints by "
+        f"CAVEATS.md 10 localises the loss to the filing endpoints by "
         f"contrast with the exchange's daily series, per_pbr/ covering 177 of "
         f"the 179 and instflow/ 171; they now cover {daily}, and without the "
         f"contrast the loss could be a property of the delisted names themselves"
@@ -301,7 +301,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
 
 # ---- Taiwan: when a fundamental could first have been read ------------------
 def test_taiwan_filing_deadline_table_covers_the_data():
-    """README caveat 9: every period end in the tree resolves to a deadline.
+    """CAVEATS.md 9: every period end in the tree resolves to a deadline.
 
     `available_date` raises rather than returning NaT for a period end no rule
     covers, which is only a safeguard if something exercises it against the
@@ -416,7 +416,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
 
 
 def test_taiwan_filing_dates_cover_the_statement_trees():
-    """README caveat 9: every company holding a statement is dated.
+    """CAVEATS.md 9: every company holding a statement is dated.
 
     The panel exists to say when a figure became public, so a company missing
     from it silently falls back on the deadline — the very bound the caveat says
@@ -453,7 +453,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
             holding.add(f.stem)
     missing = sorted(holding - set(d["stock_id"]))
     assert not missing, (
-        f"README caveat 9 dates all {len(holding)} companies whose statement "
+        f"CAVEATS.md 9 dates all {len(holding)} companies whose statement "
         f"tree carries rows; {len(missing)} have no filing dates "
         f"({missing[:5]}), so their statements would be dated by the deadline "
         f"the caveat says is a bound and not a date"
@@ -467,7 +467,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     undated = int(d["first_public"].isna().sum())
     assert not undated, f"{undated} rows carry no 上傳日期 and date nothing"
     assert len(d) == 164029, (
-        f"README caveat 9 consolidates the documents to 164,029 "
+        f"CAVEATS.md 9 consolidates the documents to 164,029 "
         f"company-quarters; the panel holds {len(d):,}")
 
     # `other` marks the rows the server returns on a company's page under
@@ -479,7 +479,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     four = other & d["filed_as"].str.fullmatch(r"\d{4}")
     counts = (int(other.sum()), int(six.sum()), int(four.sum()))
     assert counts == (1055, 603, 452), (
-        f"README caveat 9 says 1,055 rows are filed under a code other than the "
+        f"CAVEATS.md 9 says 1,055 rows are filed under a code other than the "
         f"company's own, 603 under a six-digit registration number and 452 "
         f"under an earlier four-digit code; the panel has {counts}")
     own_first = d[~other].groupby("stock_id")["first_public"].min()
@@ -487,7 +487,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     after = sorted(four_last.index[
         ~(four_last < own_first.reindex(four_last.index))])
     assert not after, (
-        f"README caveat 9 calls the four-digit codes earlier ones, and {after} "
+        f"CAVEATS.md 9 calls the four-digit codes earlier ones, and {after} "
         f"filed under another four-digit code after first filing under its own")
     return (f"{len(d):,} company-quarters over {d['stock_id'].nunique():,} "
             f"companies, none undated; {len(holding):,} of {len(trees):,} "
@@ -495,7 +495,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
 
 
 def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
-    """README caveat 9: 98 documents from 13 companies were uploaded on or
+    """CAVEATS.md 9: 98 documents from 13 companies were uploaded on or
     before the last day of the quarter their filename names, and the panel
     drops them.
 
@@ -516,7 +516,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
     d = pd.read_parquet(path)
     bad = d[d["first_public"].dt.normalize() <= d["period_end"]]
     assert not len(bad), (
-        f"README caveat 9 says the panel drops every report uploaded on or "
+        f"CAVEATS.md 9 says the panel drops every report uploaded on or "
         f"before the last day of its quarter; {len(bad)} rows are, first "
         f"{bad[['stock_id', 'period_end']].head(3).values.tolist()}")
 
@@ -524,7 +524,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
     early = docs[docs["upload_ts"].dt.normalize() <= docs["period_end"]]
     got = (len(early), early["stock_id"].nunique())
     assert got == (98, 13), (
-        f"README caveat 9 says 98 documents from 13 companies were uploaded on "
+        f"CAVEATS.md 9 says 98 documents from 13 companies were uploaded on "
         f"or before the last day of the quarter their filename names; the "
         f"histories hold {got}")
     q1 = docs.loc[(docs["stock_id"] == "3087")
@@ -532,14 +532,14 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
                   & (docs["period_end"].dt.year >= 2005), "upload_ts"]
     assert (len(q1) and (q1.dt.month == 2).all()
             and q1.dt.day.between(22, 27).all()), (
-        f"README caveat 9 says 3087 uploaded every report it numbered as a "
+        f"CAVEATS.md 9 says 3087 uploaded every report it numbered as a "
         f"first quarter from 2005 on between 22 and 27 February; the uploads "
         f"are {sorted(q1.dt.strftime('%Y-%m-%d'))}")
     inwin = sorted(early.loc[early["period_end"].between(COVERAGE_START,
                                                          COVERAGE_END),
                              "stock_id"].unique())
     assert inwin == ["3087", "9104"], (
-        f"README caveat 9 says only 3087 and 9104 filed such a report inside "
+        f"CAVEATS.md 9 says only 3087 and 9104 filed such a report inside "
         f"the window; {inwin} did")
 
     lost = set(zip(early["stock_id"], early["period_end"]))
@@ -553,7 +553,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
             held += sorted((tree, sid, str(t.date())) for t in set(dates)
                            if (sid, t) in lost)
     assert not held, (
-        f"README caveat 9 says no statement tree holds a quarter one of the 98 "
+        f"CAVEATS.md 9 says no statement tree holds a quarter one of the 98 "
         f"was filed under, so no statement's observed date moved; {held[:3]}")
 
     years = set(zip(early["stock_id"], early["period_end"].dt.year))
@@ -563,7 +563,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
                   for s, p in zip(frame["stock_id"], frame["period_end"])
                   if (s, p.year) in years)
     assert stay == [("3087", "2011-12-31"), ("3087", "2012-12-31")], (
-        f"README caveat 9 says the frame keeps two reports from the years these "
+        f"CAVEATS.md 9 says the frame keeps two reports from the years these "
         f"were filed in, 3087's under 2011-12-31 and 2012-12-31; it keeps "
         f"{stay}")
     return (f"{got[0]} documents from {got[1]} companies dropped, none of "
@@ -573,7 +573,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
 
 
 def test_taiwan_statements_are_published_after_their_deadline():
-    """README caveat 9: 6.56 % of the frame's quarters were published late.
+    """CAVEATS.md 9: 6.56 % of the frame's quarters were published late.
 
     This is the number the caveat's claim rests on — that joining `fin_is` on
     `available_date` hands a trader one figure in fifteen before it existed. It
@@ -603,21 +603,21 @@ def test_taiwan_statements_are_published_after_their_deadline():
     got = (len(w), n_late, w.loc[late > 0, "stock_id"].nunique(),
            int(late[late > 0].quantile(0.9)), int(late.max()))
     assert got == (93520, 6138, 1421, 234, 1665), (
-        f"README caveat 9 says 6,138 of the frame's 93,520 company-quarters, "
+        f"CAVEATS.md 9 says 6,138 of the frame's 93,520 company-quarters, "
         f"across 1,421 companies, were published late, 234 days late at the "
         f"90th percentile and 1,665 at the worst; the panel gives {got}")
     assert math.isclose(rate, 0.0656, abs_tol=0.005), (
-        f"README caveat 9 says 6.56 % of the frame's company-quarters were "
+        f"CAVEATS.md 9 says 6.56 % of the frame's company-quarters were "
         f"published after the deadline; the rate is now {rate:.2%} "
         f"({n_late:,} of {len(w):,})"
     )
     med = int(late[late > 0].median())
     assert med == 15, (
-        f"README caveat 9 puts the median lateness at 15 days; it is now {med}"
+        f"CAVEATS.md 9 puts the median lateness at 15 days; it is now {med}"
     )
     on_time = int(-late[late <= 0].median())
     assert on_time == 3, (
-        f"README caveat 9 says an on-time filing lands a median 3 days ahead "
+        f"CAVEATS.md 9 says an on-time filing lands a median 3 days ahead "
         f"of the deadline, which is what makes the deadline a tight bound; "
         f"it is now {on_time}"
     )
@@ -626,7 +626,7 @@ def test_taiwan_statements_are_published_after_their_deadline():
 
 
 def test_taiwan_late_rate_falls_after_the_frame():
-    """README caveat 9: the late rate falls from the frame's last year on, and
+    """CAVEATS.md 9: the late rate falls from the frame's last year on, and
     right-censoring is a small part of the fall.
 
     A report enters `filing_dates.parquet` only once it is uploaded, so a
@@ -645,7 +645,7 @@ def test_taiwan_late_rate_falls_after_the_frame():
     d = pd.read_parquet(path)
     last = d["first_public"].max().normalize()
     assert last == pd.Timestamp("2026-08-31"), (
-        f"README caveat 9 puts the file's last upload at 2026-08-31; it is now "
+        f"CAVEATS.md 9 puts the file's last upload at 2026-08-31; it is now "
         f"{last.date()}")
     d = d[d["period_end"] >= pd.Timestamp("2011-12-31")].reset_index(drop=True)
     deadline = available_date(d["period_end"])
@@ -683,11 +683,11 @@ def test_taiwan_late_rate_falls_after_the_frame():
     off = {k: f"{got[k]:.2%}" for k, q in quoted.items()
            if not math.isclose(got[k], q, abs_tol=0.00005)}
     assert not off, (
-        f"README caveat 9 says FY2024's annual reports read 3.11 % late and "
+        f"CAVEATS.md 9 says FY2024's annual reports read 3.11 % late and "
         f"FY2025's 0.85 %, against 6.66-7.68 % for FY2019-FY2023; the file "
         f"gives {off}")
     assert (reach[2025], reach[2024]) == (153, 518), (
-        f"README caveat 9 says the last upload is 153 days past FY2025's annual "
+        f"CAVEATS.md 9 says the last upload is 153 days past FY2025's annual "
         f"deadline and 518 days past FY2024's; it is {reach[2025]} and "
         f"{reach[2024]}")
 
@@ -701,7 +701,7 @@ def test_taiwan_late_rate_falls_after_the_frame():
               / (fr["n"].sum() + fr["missing"].sum()))
     got = (ceil(bound[2025], 3), ceil(bound[2024], 3), ceil(lifted - head, 4))
     assert got == (0.015, 0.037, 0.0011), (
-        f"README caveat 9 says FY2025 will read at most 1.5 % late and FY2024 "
+        f"CAVEATS.md 9 says FY2025 will read at most 1.5 % late and FY2024 "
         f"at most 3.7 % on the upload pattern of any year in the frame, and "
         f"that the same bound lifts the frame's 6.56 % by at most 0.11 points; "
         f"the bound gives {bound[2025]:.3%}, {bound[2024]:.3%} and "
@@ -712,14 +712,14 @@ def test_taiwan_late_rate_falls_after_the_frame():
         d["period_end"].dt.year).median()
     early = med.loc[2011:2019]
     assert (early.min(), early.max(), med[2024]) == (87, 89, 72), (
-        f"README caveat 9 says the annual reports' median upload came 87-89 "
+        f"CAVEATS.md 9 says the annual reports' median upload came 87-89 "
         f"days after year end for FY2011-FY2019 and 72 days after for FY2024; "
         f"it is {early.min():.0f}-{early.max():.0f} and {med[2024]:.0f}")
 
     short = d[d["period_end"] <= pd.Timestamp("2023-12-31")]
     alt = (short["late"] > 0).mean()
     assert math.isclose(alt, 0.0681, abs_tol=0.00005), (
-        f"README caveat 9 says a frame ending at 2023-12-31 reads 6.81 %; it "
+        f"CAVEATS.md 9 says a frame ending at 2023-12-31 reads 6.81 %; it "
         f"reads {alt:.2%}")
     return (f"annual late {before.min():.2%}-{before.max():.2%} FY2019-FY2023, "
             f"{rate[2024]:.2%} FY2024, {rate[2025]:.2%} FY2025; censoring bounds "
@@ -730,7 +730,7 @@ def test_taiwan_late_rate_falls_after_the_frame():
 
 
 def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
-    """README caveat 9: the 第二季 rule starts a year after the rest of §36.
+    """CAVEATS.md 9: the 第二季 rule starts a year after the rest of §36.
 
     The 2010-06-02 amendment to 證交法 §36 is in force 一百零一年一月一日 and the
     annual rule bites exactly there. The 第二季 rule does not, and §183 is where
@@ -766,13 +766,13 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
     n12, late12, lag12 = half(2012)
     n13, late13, lag13 = half(2013)
     assert late11 < 0.05 and late12 < 0.05 and lag11 == lag12 == 61, (
-        f"README caveat 9 puts the FY2012 half-year under the same 75-day rule "
+        f"CAVEATS.md 9 puts the FY2012 half-year under the same 75-day rule "
         f"as FY2011 — §183 defers §36 I(2) to 一百零二會計年度 — so the two should "
         f"score alike; FY2011 is {late11:.1%} late at a median {lag11}d and "
         f"FY2012 is {late12:.1%} at {lag12}d"
     )
     assert lag13 == 44 and late13 > 2 * max(late11, late12), (
-        f"README caveat 9 reads the regime break off the filings at FY2013, "
+        f"CAVEATS.md 9 reads the regime break off the filings at FY2013, "
         f"where the median lag drops to the 45-day rule; FY2013 files at a "
         f"median {lag13}d and is {late13:.1%} late against FY2012's {late12:.1%}"
     )
@@ -783,13 +783,13 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
     h = d[d["period_end"] == pd.Timestamp("2012-06-30")]
     old = int(((h["first_public"].dt.normalize() - h["period_end"]) > q45).sum())
     assert (old, len(h)) == (1592, 1619), (
-        f"README caveat 9 says the 45-day rule scored 1,592 of the 1,619 FY2012 "
+        f"CAVEATS.md 9 says the 45-day rule scored 1,592 of the 1,619 FY2012 "
         f"half-years late; it scores {old:,} of {len(h):,}")
     # The lag is the symptom; the report type is the cause the paragraph names.
     was = d[d["period_end"] == pd.Timestamp("2012-06-30")]["class_code"].value_counts().idxmax()
     now = d[d["period_end"] == pd.Timestamp("2013-06-30")]["class_code"].value_counts().idxmax()
     assert was != CLASS_CONSOLIDATED and now == CLASS_CONSOLIDATED, (
-        f"README caveat 9 reads the FY2012 boundary off the document as well as "
+        f"CAVEATS.md 9 reads the FY2012 boundary off the document as well as "
         f"the statute: the mid-year filing is a 我國GAAP 半年度財務報告 through "
         f"FY2012 and the IFRSs consolidated report ({CLASS_CONSOLIDATED}) from "
         f"FY2013. The modal class is {was} then {now}, so that corroboration is "
@@ -802,7 +802,7 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
 
 
 def test_taiwan_observed_date_leaves_the_undatable_undated():
-    """README caveat 9: the observed date covers `fin_is` bar 20 quarters.
+    """CAVEATS.md 9: the observed date covers `fin_is` bar 20 quarters.
 
     `observed_date` is only usable as a default if what it cannot date is both
     small and known, and the caveat claims it is: 20 of the window's 106,671
@@ -831,14 +831,14 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     obs = observed_date(p["stock_id"], p["period_end"])
     undated = p[obs.isna()]
     assert (len(p), len(undated)) == (106_671, 20), (
-        f"README caveat 9 says 20 of the window's 106,671 fin_is "
+        f"CAVEATS.md 9 says 20 of the window's 106,671 fin_is "
         f"company-quarters have no observed filing date; {len(undated)} of "
         f"{len(p):,} do. "
         f"A drop means the panel gained coverage and the caveat undersells it; "
         f"a rise means it lost some, and the rows it lost leave a join silently"
     )
     assert undated["stock_id"].nunique() == 19, (
-        f"README caveat 9 spreads the 20 over 19 companies; they now fall on "
+        f"CAVEATS.md 9 spreads the 20 over 19 companies; they now fall on "
         f"{undated['stock_id'].nunique()}"
     )
 
@@ -851,7 +851,7 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     outside = int(((j["period_end"] < j["min"])
                    | (j["period_end"] > j["max"])).sum())
     assert outside == 15, (
-        f"README caveat 9 puts 15 of the 20 outside the span the document "
+        f"CAVEATS.md 9 puts 15 of the 20 outside the span the document "
         f"server holds for their company — a pre-listing or post-delisting "
         f"report the vendor kept and the server never carried; {outside} are "
         f"now. The rest sit inside the span and are absent from it, which is a "
@@ -863,7 +863,7 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
 
 
 def test_taiwan_observed_date_rolls_past_the_session_close():
-    """README caveat 9: 14.66 % are untradable by the deadline, not 6.56 %.
+    """CAVEATS.md 9: 14.66 % are untradable by the deadline, not 6.56 %.
 
     Three quarters of reports are uploaded after TWSE's 13:30 close, so a
     filing that lands *on* its deadline is not tradable until the next session
@@ -886,7 +886,7 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
           & (d["period_end"] <= _LATE_FRAME_END)].reset_index(drop=True)
     rolled = (w["first_public"] - w["first_public"].dt.normalize()) > SESSION_CLOSE
     assert math.isclose(rolled.mean(), 0.749, abs_tol=0.02), (
-        f"README caveat 9 says three quarters of filings land after the 13:30 "
+        f"CAVEATS.md 9 says three quarters of filings land after the 13:30 "
         f"close, which is what makes the roll worth doing; the share is now "
         f"{rolled.mean():.1%} ({int(rolled.sum()):,} of {len(w):,})"
     )
@@ -896,12 +896,12 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
     late = ((w["first_public"].dt.normalize() - dl).dt.days > 0)
     rate = untradable.mean()
     assert math.isclose(rate, 0.1466, abs_tol=0.005), (
-        f"README caveat 9 says 14.66 % of the frame's company-quarters could "
+        f"CAVEATS.md 9 says 14.66 % of the frame's company-quarters could "
         f"not be traded on by their deadline; the rate is now {rate:.2%} "
         f"({int(untradable.sum()):,} of {len(w):,})"
     )
     assert untradable.sum() > 2 * late.sum(), (
-        f"README caveat 9 says the untradable share is more than double the "
+        f"CAVEATS.md 9 says the untradable share is more than double the "
         f"{late.mean():.2%} filed late, which is the whole reason the observed "
         f"date rolls; it is now {untradable.sum():,} against {late.sum():,}. If "
         f"the two have converged, the close-time roll is no longer load-bearing"

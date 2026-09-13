@@ -11,7 +11,7 @@ from ._common import Skipped, _NORMAL_START_GAP_DAYS, _PRE_LISTING_DAY, _panel_i
 
 # ---- Taiwan: the open field disagrees with its own session bar -------------
 def test_taiwan_open_outside_session_range():
-    """README caveat 11: `open` sits outside [min, max] on 2.0 % of rows.
+    """CAVEATS.md 11: `open` sits outside [min, max] on 2.0 % of rows.
 
     `close` never does, which is what makes this a property of the `open` field
     rather than of the sessions. Asserted because the caveat is the only thing
@@ -58,18 +58,18 @@ def test_taiwan_open_outside_session_range():
         gone_emerging += int((out & ~keep & (r["date"] <= until.get(sid, pd.NaT))).sum())
 
     assert bad_close == 0, (
-        f"README caveat 11 rests on close being consistent with its own session "
+        f"CAVEATS.md 11 rests on close being consistent with its own session "
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
     assert (bad, stocks) == (131261, 684), (
-        f"README caveat 11 pins 131,261 rows across 684 stocks with open "
+        f"CAVEATS.md 11 pins 131,261 rows across 684 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     # The rows `pit_universe.py` removes, each on or before the day its name
     # left 興櫃.
     assert (gone, gone_emerging) == (29651, 29651), (
-        f"README caveat 11 says 29,651 of the 131,261 fall on 興櫃 sessions, "
+        f"CAVEATS.md 11 says 29,651 of the 131,261 fall on 興櫃 sessions, "
         f"which pit_universe.py removes; it removes {gone:,} of them, "
         f"{gone_emerging:,} on or before their name left 興櫃")
 
@@ -87,7 +87,7 @@ def test_taiwan_open_outside_session_range():
     off = {key: f"{share[key]:.2%}" for key, q in quoted.items()
            if not math.isclose(share[key], q, abs_tol=0.00005)}
     assert not off, (
-        f"README caveat 11 says the share on the sessions pit_universe.py keeps "
+        f"CAVEATS.md 11 says the share on the sessions pit_universe.py keeps "
         f"is 1.57 %, 2.18 % for the names the Universe table counts under TPEx "
         f"against 1.12 % for those under TWSE, and falls from 3.33 % of 2011's "
         f"rows to 0.06 % of 2024's; the tree gives {off}")
@@ -95,7 +95,7 @@ def test_taiwan_open_outside_session_range():
     window = list(range(COVERAGE_START.year, COVERAGE_END.year + 1))
     last = int(by_year.index[by_year["bad"] > 0].max())
     assert list(by_year.index) == window and last == 2024, (
-        f"README caveat 11 says no session pit_universe.py keeps from 2025 on "
+        f"CAVEATS.md 11 says no session pit_universe.py keeps from 2025 on "
         f"carries such an open; kept sessions fall in {list(by_year.index)} "
         f"and the last such open is in {last}")
     g = k.groupby(["year", "board"])[["bad", "rows"]].sum()
@@ -103,7 +103,7 @@ def test_taiwan_open_outside_session_range():
     lower = [y for y in range(COVERAGE_START.year, last + 1)
              if not yearly.loc[y, "tpex"] > yearly.loc[y, "twse"]]
     assert not lower, (
-        f"README caveat 11 says the TPEx share is the higher of the two in every "
+        f"CAVEATS.md 11 says the TPEx share is the higher of the two in every "
         f"year to 2024; it is not in {lower}")
     return (f"open outside [min,max] on {bad:,}/{tot:,} rows "
             f"({100 * bad / tot:.2f} %) in {stocks} stocks, {gone:,} on "
@@ -242,7 +242,7 @@ def test_taiwan_ohlcv_is_raw():
 
 
 def test_taiwan_pre_listing_sessions_are_one_vendor_day():
-    """README caveat 6: twelve series open on one day and then stop for months.
+    """CAVEATS.md 6: twelve series open on one day and then stop for months.
 
     A series that trades once and does not trade again for a year has not
     started trading, but no single row says so — the OHLCV is internally
@@ -286,7 +286,7 @@ def test_taiwan_pre_listing_sessions_are_one_vendor_day():
 
     assert sorted(cohort) == ["1337", "3665", "4141", "4144", "4935", "4984",
                               "5215", "5871", "5880", "5906", "5907", "8427"], (
-        f"README caveat 6 names the twelve series that open on "
+        f"CAVEATS.md 6 names the twelve series that open on "
         f"{_PRE_LISTING_DAY}; they are now {sorted(cohort)}"
     )
     assert (min(cohort.values()), max(cohort.values())) == (7, 419), (
@@ -313,7 +313,7 @@ def test_taiwan_pre_listing_sessions_are_one_vendor_day():
 
 
 def test_taiwan_repull_fill_is_in_the_trees():
-    """README caveat 15: some rows of the daily trees come from the whole re-pull
+    """CAVEATS.md 15: some rows of the daily trees come from the whole re-pull
     of 2026-09-13, and `repull_fill/` records what it found in both directions.
 
     The fill adds a row only where the tree held none under its key, so the
@@ -379,17 +379,17 @@ def test_taiwan_repull_fill_is_in_the_trees():
                     misplaced.append((tree, sid, d, place))
         got[tree] = (len(r), r["stock_id"].nunique(), r["place"].value_counts().to_dict())
     assert not loose, (
-        f"README caveat 15 says the fill added rows for universe names inside "
+        f"CAVEATS.md 15 says the fill added rows for universe names inside "
         f"the window only; {len(loose)} recorded rows are not: {loose[:5]}")
     assert not merged, (
-        f"README caveat 15 says a row the tree held keeps its own values and "
+        f"CAVEATS.md 15 says a row the tree held keeps its own values and "
         f"each added key holds the pull's row alone; in {len(merged)} files the "
         f"recorded keys read back otherwise: {merged[:5]}")
     assert not misplaced, (
-        f"README caveat 15 counts the added rows by where each sat against the "
+        f"CAVEATS.md 15 counts the added rows by where each sat against the "
         f"span its file held; {len(misplaced)} sit elsewhere: {misplaced[:5]}")
     assert not off_session, (
-        f"README caveat 15 says every added row falls on a session the exchange "
+        f"CAVEATS.md 15 says every added row falls on a session the exchange "
         f"held; {len(off_session)} do not: {off_session[:5]}")
     assert got == {
         "instflow": (111_056, 805, {"before": 105_528, "interior": 5_513, "same-day": 15}),
@@ -398,16 +398,16 @@ def test_taiwan_repull_fill_is_in_the_trees():
         "per_pbr": (8_399, 757, {"interior": 8_399}),
         "sec_lending": (0, 0, {}),
         "shares": (0, 0, {})}, (
-        f"README caveat 15 says the fill added 111,056 rows to instflow/ for 805 "
+        f"CAVEATS.md 15 says the fill added 111,056 rows to instflow/ for 805 "
         f"names, 8,399 to per_pbr/ for 757, 682 to margin_short/ for 311 and 4 to "
         f"ohlcv/ for 4, none to shares/ or sec_lending/, and 105,528 of the "
         f"instflow/ rows before their file's first row; repull_fill/ gives "
         f"(rows, names, places) {got}")
     assert nonzero == 40_162, (
-        f"README caveat 15 says 40,162 of the instflow/ rows carry a buy or a "
+        f"CAVEATS.md 15 says 40,162 of the instflow/ rows carry a buy or a "
         f"sell that is not zero; {nonzero:,} do")
     assert (on_saturday["per_pbr"], on_saturday["ohlcv"]) == (8_399, 4), (
-        f"README caveat 15 says all 8,399 per_pbr/ rows and all 4 ohlcv/ rows "
+        f"CAVEATS.md 15 says all 8,399 per_pbr/ rows and all 4 ohlcv/ rows "
         f"sit on a make-up Saturday; "
         f"{on_saturday['per_pbr']:,} and {on_saturday['ohlcv']} do")
     priced = sum(len(d & set(pd.read_parquet(
@@ -415,7 +415,7 @@ def test_taiwan_repull_fill_is_in_the_trees():
         for s, d in flow.items())
     want = sum(len(d) for d in flow.values())
     assert priced == want, (
-        f"README caveat 15 says ohlcv/ carries a price on every one of the "
+        f"CAVEATS.md 15 says ohlcv/ carries a price on every one of the "
         f"{want:,} stock-dates the instflow/ fill reached; it carries one on "
         f"{priced:,}")
 
@@ -427,14 +427,14 @@ def test_taiwan_repull_fill_is_in_the_trees():
         dropped += [(tree, sid, d) for d, rows in zip(x["date"], x["rows"])
                     if n.get(d, 0) != rows]
     assert not dropped, (
-        f"README caveat 15 says a row the re-pull no longer serves is kept; "
+        f"CAVEATS.md 15 says a row the re-pull no longer serves is kept; "
         f"{len(dropped)} recorded ones are gone or hold another count now: "
         f"{dropped[:5]}")
     by_tree = left.groupby("tree").size().to_dict()
     assert (by_tree, len(left), int(left["rows"].sum())) == (
         {"instflow": 3_179, "margin_short": 3_807, "ohlcv": 1_135, "per_pbr": 872,
          "sec_lending": 3_463, "shares": 44_271}, 56_727, 68_135), (
-        f"README caveat 15 says the re-pull carries no row for 56,727 stock-dates "
+        f"CAVEATS.md 15 says the re-pull carries no row for 56,727 stock-dates "
         f"the trees hold 68,135 rows on — 44,271 in shares/, 3,807 in "
         f"margin_short/, 3,463 in sec_lending/, 3,179 in instflow/, 1,135 in "
         f"ohlcv/ and 872 in per_pbr/; unserved.parquet gives {by_tree}, "
@@ -442,13 +442,13 @@ def test_taiwan_repull_fill_is_in_the_trees():
     on_session = left[left["date"].isin(sessions)]
     assert (len(on_session), on_session.groupby("tree").size().to_dict()) == (
         1_914, {"instflow": 779, "ohlcv": 1_135}), (
-        f"README caveat 15 says 1,914 of the unserved stock-dates fall on a "
+        f"CAVEATS.md 15 says 1,914 of the unserved stock-dates fall on a "
         f"session the exchange held, 1,135 of them in ohlcv/ and 779 in "
         f"instflow/; {len(on_session):,} do, "
         f"{on_session.groupby('tree').size().to_dict()}")
     quotes = set(on_session.loc[on_session["tree"] == "ohlcv", "stock_id"])
     assert quotes == {"1107", "2341", "2381", "2396", "2910"}, (
-        f"README caveat 15 says the ohlcv/ rows on a session belong to 1107, "
+        f"CAVEATS.md 15 says the ohlcv/ rows on a session belong to 1107, "
         f"2341, 2381 and 2396, which left the board before the window, and to "
         f"2910's one all-zero row; they belong to {sorted(quotes)}")
     return (f"{sum(n for n, _, _ in got.values()):,} rows added from the re-pull, "
@@ -672,7 +672,7 @@ def test_taiwan_volume_repair_matches_the_tape():
 
 
 def test_taiwan_sec_lending_pairs_are_disclosed():
-    """README caveat 12: `sec_lending` carries 86,002 rows twice, all between
+    """CAVEATS.md 12: `sec_lending` carries 86,002 rows twice, all between
     2017-12-18 and 2020-10-27.
 
     The pairs stay in the tree, because nothing here can tell a repeated load
@@ -703,18 +703,18 @@ def test_taiwan_sec_lending_pairs_are_disclosed():
 
     span = (min(days), max(days)) if days else None
     assert (rows, paired, stocks, sizes) == (1_541_802, 172_004, 989, {2: 86_002}), (
-        f"README caveat 12 counts 172,004 of the 1,541,802 in-window sec_lending "
+        f"CAVEATS.md 12 counts 172,004 of the 1,541,802 in-window sec_lending "
         f"rows in 86,002 identical pairs, across 989 stocks; this tree gives "
         f"{paired:,} of {rows:,} in {stocks} stocks, groups by size {sizes}")
     assert span == ("2017-12-18", "2020-10-27"), (
-        f"README caveat 12 says every pair falls between 2017-12-18 and "
+        f"CAVEATS.md 12 says every pair falls between 2017-12-18 and "
         f"2020-10-27; this tree's pairs span {span}")
     return (f"{sizes.get(2, 0):,} identical pairs in {stocks} stocks, "
             f"{span[0]}..{span[1]}, none larger"), rows
 
 
 def test_taiwan_fin_bs_revision_follows_the_filing():
-    """README caveat 13: `fin_bs/` takes FinMind's revision of a balance sheet
+    """CAVEATS.md 13: `fin_bs/` takes FinMind's revision of a balance sheet
     only where the filing sides with it.
 
     The company-periods written are derived from the committed grade, not
@@ -737,7 +737,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
     want = set(zip(take["period"], take["stock_id"]))
     got = set(zip(rec["date"], rec["stock_id"]))
     assert got == want, (
-        f"README caveat 13 says fin_bs/ takes the revision in exactly the "
+        f"CAVEATS.md 13 says fin_bs/ takes the revision in exactly the "
         f"company-periods whose filing sides with it; the grade calls for "
         f"{len(want):,} and the record holds {len(got):,}. Not taken: "
         f"{sorted(want - got)[:5]}; taken without the filing: {sorted(got - want)[:5]}")
@@ -762,12 +762,12 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
         off = ~((k["value"] == k["ours"]) | (k["value"].isna() & k["ours"].isna()))
         moved += [(sid, str(d.date()), t) for d, t in zip(k.loc[off, "date"], k.loc[off, "type"])]
     assert not wrong, (
-        f"README caveat 13 says fin_bs/ holds the revision's value and label on "
+        f"CAVEATS.md 13 says fin_bs/ holds the revision's value and label on "
         f"every row the revision carries in those company-periods, and the "
         f"tree's value on every row it does not; {len(wrong):,} rows of "
         f"fin_bs_vintage.parquet read back otherwise: {wrong[:5]}")
     assert not moved, (
-        f"README caveat 13 says every other company-period keeps the tree's "
+        f"CAVEATS.md 13 says every other company-period keeps the tree's "
         f"rows; {len(moved):,} graded amounts there no longer hold the value "
         f"the grade read: {moved[:5]}")
 
@@ -777,7 +777,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
             "2013-03-31", 41,
             {"tree": 3_697, "revision": 3_498, "mixed": 25, "neither": 7, "ungraded": 99},
             {"no_label": 91, "no_report": 6, "refused": 2}), (
-        f"README caveat 13 grades 7,326 company-periods in 41 quarters from "
+        f"CAVEATS.md 13 grades 7,326 company-periods in 41 quarters from "
         f"2013 Q1: the filing sides with the tree in 3,697 and with the "
         f"revision in 3,498, neither vintage agrees with every graded amount "
         f"in 32 more (with none in 7), and 99 are ungraded (91 matching no "
@@ -797,7 +797,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
             "tree": ["2013-03-31", "2013-06-30", "2013-09-30",
                      "2016-03-31", "2016-06-30", "2016-09-30", "2020-09-30",
                      "2022-03-31", "2022-06-30", "2022-09-30", "2025-06-30"]}, 17), (
-        f"README caveat 13 says the filing sides with the revision in every "
+        f"CAVEATS.md 13 says the filing sides with the revision in every "
         f"company-period it decides in 2014, 2019, 2024 Q1-Q3 and 2026 Q1-Q2, "
         f"with the tree in every one in 2013 Q1-Q3, 2016 Q1-Q3, 2020 Q3, 2022 "
         f"Q1-Q3 and 2025 Q2, and splits the other 17 quarters; this grade "
@@ -810,7 +810,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
     assert (len(blind), blind[["period", "stock_id"]].drop_duplicates().shape[0],
             changes, len(kept_in)) == (
             122, 117, {"changed": 31_514, "kept": 2_875, "added": 7}, 869), (
-        f"README caveat 13 says 122 revised amounts in 117 of the company-periods "
+        f"CAVEATS.md 13 says 122 revised amounts in 117 of the company-periods "
         f"taken match no single filing line, and fin_bs_vintage.parquet records 31,514 "
         f"rows changed, 2,875 kept in 869 company-periods and 7 added; there are "
         f"{len(blind)} in {blind[['period', 'stock_id']].drop_duplicates().shape[0]}, "
@@ -822,7 +822,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
     off = int((ctl["items"] - ctl["tree"]).sum())
     assert (len(per), set(per), ctrl, off) == (
             54, {4}, {"both": 193, "mixed": 16, "ungraded": 7}, 64), (
-        f"README caveat 13 draws four agreeing company-periods per quarter, 216 "
+        f"CAVEATS.md 13 draws four agreeing company-periods per quarter, 216 "
         f"in all: the filing agrees with every graded amount in 193, both pulls "
         f"disagree with it on 64 amounts in 16, and 7 are ungraded; the grade "
         f"holds {len(per)} quarters of {sorted(set(per))} and gives {ctrl}, "
@@ -833,7 +833,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
 
 
 def test_taiwan_date_keyed_fill_is_in_the_trees():
-    """README caveat 14: some company-periods come from FinMind's date-keyed
+    """CAVEATS.md 14: some company-periods come from FinMind's date-keyed
     query, and `date_keyed_fill/` records every row added.
 
     The fill adds a company-period only where the tree held no row of it, so
@@ -875,22 +875,22 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
         cps = r[["stock_id", "date"]].drop_duplicates()
         got[tree] = (len(cps), cps["stock_id"].nunique(), len(r))
     assert not loose, (
-        f"README caveat 14 says the fill added rows for universe names inside "
+        f"CAVEATS.md 14 says the fill added rows for universe names inside "
         f"the window only; {len(loose)} recorded rows are not: {loose[:5]}")
     assert not merged, (
-        f"README caveat 14 says a company-period the tree held keeps its rows "
+        f"CAVEATS.md 14 says a company-period the tree held keeps its rows "
         f"and each added one holds the pull's rows alone; in {len(merged)} "
         f"files the recorded company-periods read back otherwise: {merged[:5]}")
     assert got == {"fin_is": (199, 6, 3_338), "fin_bs": (7, 4, 525),
                    "fin_cf": (467, 15, 9_761), "month_rev": (3_483, 719, 3_483)}, (
-        f"README caveat 14 says the fill added 199 company-periods to fin_is/ "
+        f"CAVEATS.md 14 says the fill added 199 company-periods to fin_is/ "
         f"for 6 names, 467 to fin_cf/ for 15, 7 to fin_bs/ for 4 and 3,483 "
         f"company-months to month_rev/ for 719; date_keyed_fill/ gives "
         f"(company-periods, names, rows) {got}")
     for tree in ("fin_is", "fin_cf"):
         ids = set(rec[tree]["stock_id"])
         assert ids <= gone and ids == only[tree], (
-            f"README caveat 14 says every {tree}/ row added belongs to a name "
+            f"CAVEATS.md 14 says every {tree}/ row added belongs to a name "
             f"delisted inside the window whose file was empty; "
             f"{sorted(ids - gone)} were not delisted inside it and "
             f"{sorted(ids - only[tree])} hold rows the fill did not add")
@@ -909,7 +909,7 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
     assert kinds == {"unstamped": (1_454, 20, 18),
                      "stamped": (1_409, 104, ["2026-05-19"], "2011-02-01", "2013-01-01"),
                      "edge": ("2026-09-01", 620, "2026-09-10", "2026-09-12")}, (
-        f"README caveat 14 splits the month_rev/ rows three ways: 1,454 for 20 "
+        f"CAVEATS.md 14 splits the month_rev/ rows three ways: 1,454 for 20 "
         f"names, 18 of them delisted inside the window, that the per-stock "
         f"query does not return; 1,409 for 104 names, dated 2011-02-01 to "
         f"2013-01-01 and stamped 2026-05-19, that the vendor added after the "
@@ -923,7 +923,7 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
     month = pd.concat(month, ignore_index=True).astype(str).str.strip().str[:10]
     counts = (len(month) - int(edge.sum()), len(month), int((month > hi).sum()))
     assert counts == (1_306, 1_926, 858), (
-        f"README caveat 14 says the {last} month held 1,306 companies before "
+        f"CAVEATS.md 14 says the {last} month held 1,306 companies before "
         f"the fill and holds 1,926 after it, 858 of them stamped after "
         f"COVERAGE_END; month_rev/ gives {counts}")
     return (f"{sum(len(r) for r in rec.values()):,} recorded rows read back "
@@ -970,7 +970,7 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
 
 
 def test_taiwan_short_sale_flows_match_the_balances():
-    """README caveat 16: `margin_short`'s two short-sale flows were crossed in
+    """CAVEATS.md 16: `margin_short`'s two short-sale flows were crossed in
     the rows the first pull wrote, and `short_sale_repair.parquet` records every
     row exchanged.
 
@@ -1023,31 +1023,31 @@ def test_taiwan_short_sale_flows_match_the_balances():
         if not undone.all():
             unrepaired.append((sid, int((~undone).sum())))
     assert bad == 0, (
-        f"README caveat 16 says every in-window row's short-sale flows agree "
+        f"CAVEATS.md 16 says every in-window row's short-sale flows agree "
         f"with the balances beside them after the repair; {bad:,} of {rows:,} "
         f"contradict them")
     assert margin == 0, (
-        f"README caveat 16 rests on the margin flows carrying the same identity "
+        f"CAVEATS.md 16 rests on the margin flows carrying the same identity "
         f"the other way round, which is what fixes the direction; {margin:,} "
         f"in-window rows now break the margin identity")
     assert loose.empty, (
-        f"README caveat 16 says the repair touched universe names inside the "
+        f"CAVEATS.md 16 says the repair touched universe names inside the "
         f"window only; {len(loose)} recorded rows are not: "
         f"{list(zip(loose['stock_id'], loose['date']))[:5]}")
     assert not unrepaired, (
-        f"README caveat 16 says each recorded row now holds the two values the "
+        f"CAVEATS.md 16 says each recorded row now holds the two values the "
         f"other way round and contradicted its balances before; "
         f"{len(unrepaired)} names hold rows that do not: {unrepaired[:5]}")
     span = (rec["date"].min(), rec["date"].max())
     assert (len(rec), rec["stock_id"].nunique(), rec["repull"].value_counts().to_dict()) == (
         761_472, 750, {"exchanged": 759_918, "absent": 1_554}), (
-        f"README caveat 16 says the repair exchanged 761,472 rows in 750 names, "
+        f"CAVEATS.md 16 says the repair exchanged 761,472 rows in 750 names, "
         f"759,918 of them confirmed by the re-pull and 1,554 rows it no longer "
         f"serves, none served the way the tree had them; the record gives "
         f"{len(rec):,} rows in {rec['stock_id'].nunique()} names, "
         f"{rec['repull'].value_counts().to_dict()}")
     assert span[0][:4] == "2011" and span[1][:4] == "2024", (
-        f"README caveat 16 says every crossed row is dated 2011 to 2024, the "
+        f"CAVEATS.md 16 says every crossed row is dated 2011 to 2024, the "
         f"rows the 2026-04-27 build wrote, against none of those appended on "
         f"2026-09-10; the record spans {span[0]}..{span[1]}")
     return (f"{len(rec):,} crossed short-sale pairs exchanged in "

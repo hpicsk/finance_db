@@ -32,7 +32,7 @@ _EXCLUDED_INSTRUMENTS = {
     "創新版股票", "創新板股票",
 }
 
-# Where `create_time` goes from a trickle to the rule (README caveat 9). Not a
+# Where `create_time` goes from a trickle to the rule (CAVEATS.md 9). Not a
 # tuned cut: the reporting month before the frontier carries the stamp on under
 # a hundredth of its rows and every month after on essentially all of them, so
 # any value between the two clusters names the same month.

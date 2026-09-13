@@ -339,7 +339,7 @@ def test_capital_reduction_artifact_exists():
 
 
 def test_taiwan_adjusted_series():
-    """README "Adjusted prices", on the three things it claims.
+    """ADJUSTED_PRICES.md, on the three things it claims.
 
     That the vendor series carries the exchange's own total-return factor; that
     a session the stock did not trade holds no adjusted price even though the
@@ -1291,7 +1291,7 @@ def test_taiwan_adj_source_partitions_the_panel():
 
 
 def test_taiwan_par_value_changes_are_priced():
-    """README caveat 5: the rebuild steps across a 面額變更 rather than through it.
+    """CAVEATS.md 5: the rebuild steps across a 面額變更 rather than through it.
 
     A 面額變更 divides the quoted price and multiplies the share count by the
     same factor, so it moves a price as mechanically as a 減資 — and it sat in
@@ -1339,13 +1339,13 @@ def test_taiwan_par_value_changes_are_priced():
     # `continue` above.
     n = len(ev)
     assert n and raw_drop == n, (
-        f"README caveat 5 claims every in-window 面額變更 is a raw drop past "
+        f"CAVEATS.md 5 claims every in-window 面額變更 is a raw drop past "
         f"-30 %; {n - raw_drop} of the {n} in split_reference.parquet are not — "
         f"either the event is not the mechanical reprice the caveat describes, "
         f"or the price tree does not hold the session it fell on"
     )
     assert matched == n, (
-        f"README caveat 5 claims the rebuild reproduces the vendor on every "
+        f"CAVEATS.md 5 claims the rebuild reproduces the vendor on every "
         f"in-window 面額變更; it does on {matched} of {n}. A shortfall means the "
         f"chain in split_reference.parquet is no longer reaching the factor, "
         f"and the rebuilt names carry the whole par change as a return"

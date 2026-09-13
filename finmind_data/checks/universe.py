@@ -187,7 +187,7 @@ def test_taiwan_overlay_covers_the_window():
 
 
 def test_taiwan_universe_holds_every_common_the_tape_shows():
-    """README, "Survivorship bias": the universe checked against the trade record.
+    """README, "Survivorship": the universe checked against the trade record.
 
     Every other check on the universe compares it to a registry — the live
     `taiwan_stock_info`, or `delisted_universe.parquet` — and a registry is the
