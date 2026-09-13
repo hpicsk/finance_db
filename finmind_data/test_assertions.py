@@ -2248,7 +2248,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     # in-window monthly revenue has no announcement date to align to.
     tot = stamped = inwin_stamped = 0
     backfill_lag = []
-    months = []
+    months, stamps = [], []
     for p in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet"))):
         m = pd.read_parquet(p)
         if not len(m):
@@ -2261,6 +2261,9 @@ def test_taiwan_fundamentals_are_fiscal_dated():
         inw = d.between(COVERAGE_START, COVERAGE_END)
         inwin_stamped += int((hit & inw).sum())
         months.append(pd.DataFrame({"date": d[inw], "hit": hit[inw]}))
+        stamps.append(pd.DataFrame({
+            "date": d[hit], "stock_id": m.loc[hit, "stock_id"],
+            "lag": (pd.to_datetime(st[hit], errors="coerce") - d[hit]).dt.days}))
         back = hit & (d < COVERAGE_START)
         if back.any():
             lag = (pd.to_datetime(st[back], errors="coerce") - d[back]).dt.days
@@ -2301,6 +2304,27 @@ def test_taiwan_fundamentals_are_fiscal_dated():
         f"which is a release date's distance, not an ingest one"
     )
 
+    # The figures the caveat quotes on each side of the frontier.
+    s = pd.concat(stamps, ignore_index=True)
+    pub = s[s["date"] >= frontier]
+    early = s[(s["date"] >= COVERAGE_START) & (s["date"] < frontier)]
+    pre = s[s["date"] < COVERAGE_START]
+    figures = (tot, stamped, str(frontier.date()),
+               (len(pub), pub["stock_id"].nunique(), int(pub["lag"].min()),
+                int(pub["lag"].max()), float(pub["lag"].median())),
+               (len(early), early["stock_id"].nunique(), float(early["lag"].median())),
+               (len(pre), int(pre["lag"].min()), int(pre["lag"].max())))
+    assert figures == (416_142, 15_934, "2026-03-01", (13_574, 1_944, 0, 79, 9.0),
+                       (2_010, 122, 5_161.0), (350, 5_617, 7_808)), (
+        f"README caveat 9 says 15,934 of month_rev's 416,142 rows carry a "
+        f"create_time; that the vendor stamps at publication from reporting "
+        f"month 2026-03, on 13,574 rows across 1,944 stocks lagging their "
+        f"reporting date by 0 to 79 days with a median of 9; and that before "
+        f"it the stamps fall on 2,010 in-window rows in 122 stocks at a median "
+        f"lag of 5,161 days and on 350 pre-window rows at 5,617 to 7,808. The "
+        f"tree gives {figures}"
+    )
+
     div = _tree(REPO / "finmind_data/dividend/1101.parquet")
     assert "AnnouncementDate" in div.columns, (
         "README caveat 9 names dividend/ as the one dataset carrying "
@@ -2315,11 +2339,15 @@ def test_taiwan_fundamentals_are_fiscal_dated():
 
 # ---- Taiwan: the statement trees are survivorship-incomplete ---------------
 # Measured, not chosen: the latest delisting date whose income statement the
-# vendor no longer serves. Every name that left after it has one, so the value
-# is a property of the pull rather than a cut this file picked, and a refresh
-# that moves it is the evidence that the retention rolls forward with the pull
-# date (README caveat 10).
-_STATEMENT_BREAK = pd.Timestamp("2020-11-20")
+# trees do not hold. Every name that left after it has one, so the value is a
+# property of the pulls rather than a cut this file picked, and the check
+# derives it again rather than trusting this line. A refresh that moves it is
+# the evidence that the retention rolls forward with the pull date (README
+# caveat 10). `_PER_STOCK_BREAK` is the same date for the rows the per-stock
+# query returned, and the rows `date_keyed_fill.py` added are what separate
+# the two.
+_STATEMENT_BREAK = pd.Timestamp("2020-06-19")
+_PER_STOCK_BREAK = pd.Timestamp("2020-11-20")
 
 
 def test_taiwan_statement_trees_drop_old_delistings():
@@ -2335,11 +2363,17 @@ def test_taiwan_statement_trees_drop_old_delistings():
     Every number below is checked the way the caveat states it. The gap is
     absence at the source rather than clipping, so the file is read unclipped
     too and asserted empty. The break is one-sided, so the assertion is on the
-    later side being whole rather than on a rate. And the contrast that
+    later side being whole rather than on a rate, and each tree's break date is
+    derived as its latest delisting without a row. And the contrast that
     localises it to the filing endpoints — the exchange's own daily series
-    keeping the same names — is read from `per_pbr/`, which no part of the
-    statement path touches.
+    keeping the same names — is read from `per_pbr/` and `instflow/`, which no
+    part of the statement path touches.
     """
+    import pyarrow.parquet as pq
+
+    sys.path.insert(0, str(REPO))
+    from finmind_data.date_keyed_fill import RECORD
+
     u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
     d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
     uid = set(u["stock_id"].astype(str))
@@ -2365,8 +2399,8 @@ def test_taiwan_statement_trees_drop_old_delistings():
             stale_only.append(sid)
         else:
             empty_file += 1
-    assert len(have) == 78, (
-        f"README caveat 10 says fin_is/ carries rows for 78 of the 179; it "
+    assert len(have) == 84, (
+        f"README caveat 10 says fin_is/ carries rows for 84 of the 179; it "
         f"now carries them for {len(have)}"
     )
     assert not stale_only, (
@@ -2375,51 +2409,109 @@ def test_taiwan_statement_trees_drop_old_delistings():
         f"not a window artifact; {len(stale_only)} now hold rows the window "
         f"excludes, so the caveat's argument no longer holds: {stale_only[:5]}"
     )
-    assert empty_file == 101, (
-        f"README caveat 10 pins 101 empty fin_is files; there are {empty_file}"
+    assert empty_file == 95, (
+        f"README caveat 10 pins 95 empty fin_is files; there are {empty_file}"
     )
 
+    def traded_quarters(sid):
+        o = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
+        return o.loc[o["Trading_Volume"] > 0, "date"].dt.to_period("Q").nunique() if len(o) else 0
+
+    missing = [s for s in delist if s not in last_row]
+    long_lived = sum(traded_quarters(s) >= 8 for s in missing)
+    assert long_lived == 85, (
+        f"README caveat 10 says 85 of the 95 missing names traded in eight or "
+        f"more in-window quarters; {long_lived} of {len(missing)} did"
+    )
+
+    brk = max(delist[s] for s in missing)
+    # The rows the date-keyed fill added are recorded, and every fin_is/ file
+    # it touched was empty, so what the per-stock query returned is the rest.
+    filled = set(pd.read_parquet(RECORD / "fin_is.parquet")["stock_id"])
+    per_stock = max(delist[s] for s in delist if s not in set(have) - filled)
+    assert (brk, per_stock) == (_STATEMENT_BREAK, _PER_STOCK_BREAK), (
+        f"README caveat 10 puts the break on {_STATEMENT_BREAK.date()}, the "
+        f"latest delisting whose income statement the trees lack, and on "
+        f"{_PER_STOCK_BREAK.date()} for the per-stock query alone; they are "
+        f"now {brk.date()} and {per_stock.date()}"
+    )
     after = [s for s in delist if delist[s] > _STATEMENT_BREAK]
     before = [s for s in delist if delist[s] <= _STATEMENT_BREAK]
     kept_after = [s for s in after if s in last_row]
     kept_before = [s for s in before if s in last_row]
-    assert len(after) == 62 and len(kept_after) == 62, (
+    assert len(after) == 70 and len(kept_after) == 70, (
         f"README caveat 10 rests on the break being one-sided — all "
         f"{len(after)} names delisted after {_STATEMENT_BREAK.date()} carry a "
         f"statement — and {len(after) - len(kept_after)} no longer do, so the "
         f"date is not where the retention ends any more"
     )
-    assert (len(before), len(kept_before)) == (117, 16), (
-        f"README caveat 10 says 16 of the 117 delisted on or before "
+    assert (len(before), len(kept_before)) == (109, 14), (
+        f"README caveat 10 says 14 of the 109 delisted on or before "
         f"{_STATEMENT_BREAK.date()} keep a statement; now "
         f"{len(kept_before)} of {len(before)}"
     )
 
     # The cut is a year and does no work: the names that kept filing after
-    # leaving the board run 2,071 days past their delisting at the shortest,
-    # and the ones that stopped run 48 days past it at the longest.
+    # leaving the board run 1,511 days past their delisting at the shortest,
+    # and the one that stopped runs 48 days past it.
     still_filing = [s for s in kept_before
                     if (last_row[s] - delist[s]).days > 365]
-    assert len(still_filing) == 12, (
-        f"README caveat 10 explains the 16 as the vendor keeping the company "
-        f"rather than the listing — 12 of them still filing long after they "
-        f"left the board — and {len(still_filing)} now are, so the "
+    stopped = {s: (last_row[s] - delist[s]).days
+               for s in kept_before if s not in still_filing}
+    assert len(still_filing) == 13 and stopped == {"2475": 48}, (
+        f"README caveat 10 explains the 14 as the vendor keeping the company "
+        f"rather than the listing — 13 of them still filing long after they "
+        f"left the board, and 2475 filing until 48 days after it left — and "
+        f"{len(still_filing)} now are, with {stopped} stopping, so the "
         f"explanation has lost the evidence it was read off"
     )
 
-    daily = sum(bool(len(_tree(REPO / f"finmind_data/per_pbr/{s}.parquet")))
-                for s in delist)
-    assert daily == 177, (
+    # Every other tree the caveat compares, each with its own break: the
+    # latest delisting it holds no in-window row for.
+    cover = {}
+    for sub in ("fin_cf", "fin_bs", "shares", "month_rev", "per_pbr", "instflow"):
+        held = {s for s in delist
+                if pq.ParquetFile(REPO / f"finmind_data/{sub}/{s}.parquet").metadata.num_rows
+                and len(_tree(REPO / f"finmind_data/{sub}/{s}.parquet", columns=["date"]))}
+        cover[sub] = (len(held), str(max(delist[s] for s in delist if s not in held).date()))
+    assert {k: cover[k] for k in ("fin_cf", "fin_bs", "shares", "month_rev")} == {
+            "fin_cf": (91, "2019-08-05"), "fin_bs": (97, "2019-03-29"),
+            "shares": (122, "2020-11-17"), "month_rev": (155, "2019-10-14")}, (
+        f"README caveat 10 says fin_cf/ carries rows for 91 of the 179, fin_bs/ "
+        f"for 97, shares/ for 122 and month_rev/ for 155, breaking on "
+        f"2019-08-05, 2019-03-29, 2020-11-17 and 2019-10-14; the trees give "
+        f"(names, break) {cover}"
+    )
+
+    def every_month(sid):
+        p = REPO / f"finmind_data/month_rev/{sid}.parquet"
+        if not pq.ParquetFile(p).metadata.num_rows:
+            return False
+        got = set(_tree(p, columns=["date"])["date"])
+        want = pd.date_range(min(got), delist[sid].to_period("M").to_timestamp(),
+                             freq="MS") if got else []
+        return bool(got) and set(want) <= got
+
+    whole_rev = (sum(map(every_month, before)), sum(map(every_month, after)))
+    assert whole_rev == (10, 38), (
+        f"README caveat 10 says 10 of the 109 pre-break names carry every "
+        f"revenue month from their first in the window to the one before their "
+        f"delisting, against 38 of the 70 after it; the tree gives {whole_rev}"
+    )
+
+    daily = (cover["per_pbr"][0], cover["instflow"][0])
+    assert daily == (177, 171), (
         f"README caveat 10 localises the loss to the filing endpoints by "
-        f"contrast with the exchange's daily series, which covers 177 of the "
-        f"179; per_pbr/ now covers {daily}, and without the contrast the loss "
-        f"could be a property of the delisted names themselves"
+        f"contrast with the exchange's daily series, per_pbr/ covering 177 of "
+        f"the 179 and instflow/ 171; they now cover {daily}, and without the "
+        f"contrast the loss could be a property of the delisted names themselves"
     )
     return (f"fin_is/ covers {len(have)}/{len(delist)} in-window delistings, "
             f"{empty_file} files empty at the source; all {len(kept_after)} "
             f"delisted after {_STATEMENT_BREAK.date()} kept against "
             f"{len(kept_before)}/{len(before)} before it ({len(still_filing)} "
-            f"still filing); per_pbr/ keeps {daily}"), len(delist)
+            f"still filing), per-stock alone breaking on {per_stock.date()}; "
+            f"other trees {cover}; revenue whole {whole_rev}"), len(delist)
 
 
 # ---- Taiwan: the holes with no event are checked against more than one source
@@ -3820,6 +3912,106 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
             f"elsewhere keep the tree's value"), len(rec) + len(stay)
 
 
+def test_taiwan_date_keyed_fill_is_in_the_trees():
+    """README caveat 14: some company-periods come from FinMind's date-keyed
+    query, and `date_keyed_fill/` records every row added.
+
+    The fill adds a company-period only where the tree held no row of it, so
+    each recorded company-period is read back whole: its rows in the tree are
+    the recorded rows and no others, value for value. A tree row inside one
+    that the record lacks means the fill merged into a company-period the tree
+    held, which caveat 13 found is a revision and not a correction. A `fin_is/`
+    or `fin_cf/` file that holds nothing but recorded rows was empty before.
+
+    The record carries no per-stock answer, so the kinds are read off the
+    vendor's stamp on `month_rev`. It splits them the way the per-stock query
+    of 2026-09-13 did: no stamp on each row that query did not return, one
+    stamp on each row it did, and September stamps on the edge month.
+    """
+    sys.path.insert(0, str(REPO))
+    from finmind_data.date_keyed_fill import RECORD, TREES
+
+    names = set(_panel_ids())
+    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    gone = names & set(d.loc[pd.to_datetime(d["date"]).between(
+        COVERAGE_START, COVERAGE_END), "stock_id"].astype(str))
+    lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
+    rec, got, only, loose, merged = {}, {}, {}, [], []
+    for tree in TREES:
+        r = pd.read_parquet(RECORD / f"{tree}.parquet")
+        rec[tree] = r
+        out = r[~r["stock_id"].isin(names) | ~r["date"].between(lo, hi)]
+        loose += [(tree, s, x) for s, x in zip(out["stock_id"], out["date"])]
+        only[tree] = set()
+        for sid, x in r.groupby("stock_id"):
+            # Read as written rather than through `_tree`: the claim is that the
+            # file holds exactly these rows, and each of them is in the window.
+            f = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet")
+            # A zero-row file is written without a schema, so it has no column to read.
+            held = f[f["date"].isin(set(x["date"]))].reset_index(drop=True) if len(f) else f
+            if not held.equals(x.reset_index(drop=True)):
+                merged.append((tree, sid))
+            if len(f) == len(x):
+                only[tree].add(sid)
+        cps = r[["stock_id", "date"]].drop_duplicates()
+        got[tree] = (len(cps), cps["stock_id"].nunique(), len(r))
+    assert not loose, (
+        f"README caveat 14 says the fill added rows for universe names inside "
+        f"the window only; {len(loose)} recorded rows are not: {loose[:5]}")
+    assert not merged, (
+        f"README caveat 14 says a company-period the tree held keeps its rows "
+        f"and each added one holds the pull's rows alone; in {len(merged)} "
+        f"files the recorded company-periods read back otherwise: {merged[:5]}")
+    assert got == {"fin_is": (199, 6, 3_338), "fin_bs": (7, 4, 525),
+                   "fin_cf": (467, 15, 9_761), "month_rev": (3_483, 719, 3_483)}, (
+        f"README caveat 14 says the fill added 199 company-periods to fin_is/ "
+        f"for 6 names, 467 to fin_cf/ for 15, 7 to fin_bs/ for 4 and 3,483 "
+        f"company-months to month_rev/ for 719; date_keyed_fill/ gives "
+        f"(company-periods, names, rows) {got}")
+    for tree in ("fin_is", "fin_cf"):
+        ids = set(rec[tree]["stock_id"])
+        assert ids <= gone and ids == only[tree], (
+            f"README caveat 14 says every {tree}/ row added belongs to a name "
+            f"delisted inside the window whose file was empty; "
+            f"{sorted(ids - gone)} were not delisted inside it and "
+            f"{sorted(ids - only[tree])} hold rows the fill did not add")
+
+    m = rec["month_rev"]
+    stamp = m["create_time"].astype(str).str.strip().str[:10]
+    edge = m["date"] == m["date"].max()
+    none, some = (stamp == "") & ~edge, (stamp != "") & ~edge
+    kinds = {"unstamped": (int(none.sum()), m.loc[none, "stock_id"].nunique(),
+                           len(set(m.loc[none, "stock_id"]) & gone)),
+             "stamped": (int(some.sum()), m.loc[some, "stock_id"].nunique(),
+                         sorted(set(stamp[some])), m.loc[some, "date"].min(),
+                         m.loc[some, "date"].max()),
+             "edge": (m["date"].max(), int(edge.sum()), stamp[edge].min(),
+                      stamp[edge].max())}
+    assert kinds == {"unstamped": (1_454, 20, 18),
+                     "stamped": (1_409, 104, ["2026-05-19"], "2011-02-01", "2013-01-01"),
+                     "edge": ("2026-09-01", 620, "2026-09-10", "2026-09-12")}, (
+        f"README caveat 14 splits the month_rev/ rows three ways: 1,454 for 20 "
+        f"names, 18 of them delisted inside the window, that the per-stock "
+        f"query does not return; 1,409 for 104 names, dated 2011-02-01 to "
+        f"2013-01-01 and stamped 2026-05-19, that the vendor added after the "
+        f"tree was pulled; and 620 dated 2026-09-01, stamped 2026-09-10 to "
+        f"2026-09-12. The record gives {kinds}")
+
+    last = m["date"].max()
+    month = [f.loc[f["date"] == last, "create_time"] for f in (
+        pd.read_parquet(REPO / f"finmind_data/month_rev/{sid}.parquet")
+        for sid in sorted(names)) if len(f)]
+    month = pd.concat(month, ignore_index=True).astype(str).str.strip().str[:10]
+    counts = (len(month) - int(edge.sum()), len(month), int((month > hi).sum()))
+    assert counts == (1_306, 1_926, 858), (
+        f"README caveat 14 says the {last} month held 1,306 companies before "
+        f"the fill and holds 1,926 after it, 858 of them stamped after "
+        f"COVERAGE_END; month_rev/ gives {counts}")
+    return (f"{sum(len(r) for r in rec.values()):,} recorded rows read back "
+            f"whole from their trees: {got}; month_rev kinds {kinds}"), \
+        sum(len(r) for r in rec.values())
+
+
 # ---- Taiwan: the survivorship hole is filled, and says so -------------------
 def test_taiwan_survivorship_hole_is_rebuilt():
     """README, "The survivorship hole is filled": 50 stocks, 60,371 sessions.
@@ -4108,10 +4300,11 @@ def test_taiwan_month_rev_date_is_the_following_month():
         first += int((dt.dt.day == 1).sum())
         off += int((((dt.dt.year * 12 + dt.dt.month)
                      - (per.dt.year * 12 + per.dt.month)) == 1).sum())
-    assert rows and off == rows and first == rows, (
+    assert rows == 324_016 and off == rows and first == rows, (
         f"README claims month_rev.date is the first of the month after the "
-        f"revenue month on every row; {rows - off:,} of {rows:,} are a "
-        f"different offset and {rows - first:,} are not the first of a month"
+        f"revenue month on all 324,016 rows; the tree holds {rows:,}, "
+        f"{rows - off:,} of them a different offset and {rows - first:,} not "
+        f"the first of a month"
     )
     return (f"month_rev.date is the 1st of the month after revenue_month on "
             f"all {rows:,} rows"), rows
@@ -4745,10 +4938,10 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
 
     The first assertion ranges over the companies whose tree carries rows, not
     over the tree files. A file is written for every name in the universe and
-    182 of them are empty, so the two sets differ by whether the vendor served
+    176 of them are empty, so the two sets differ by whether the vendor served
     a statement — and a company with no statement has nothing that could fall
-    back on a deadline, which is the whole failure this looks for. 181 of the
-    182 are dated anyway, because the document server carries filings FinMind
+    back on a deadline, which is the whole failure this looks for. 175 of the
+    176 are dated anyway, because the document server carries filings FinMind
     does not serve; the exception is 3718, a holding company listed on
     2026-09-10 whose page is empty on both the plain and the holdco route while
     its delisted predecessor's carries 382 documents. Requiring a filing date
@@ -4757,7 +4950,7 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
 
     The second assertion still ranges over every tree file, because it asks the
     opposite question: a dated code with no tree at all is a page answered for
-    someone else, and narrowing that set would turn the 181 into failures.
+    someone else, and narrowing that set would turn the 175 into failures.
     """
     import pyarrow.parquet as pq
 
@@ -5133,10 +5326,10 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
 
 
 def test_taiwan_observed_date_leaves_the_undatable_undated():
-    """README caveat 9: the observed date covers `fin_is` bar 19 quarters.
+    """README caveat 9: the observed date covers `fin_is` bar 20 quarters.
 
     `observed_date` is only usable as a default if what it cannot date is both
-    small and known, and the caveat claims it is: 19 of the window's 106,472
+    small and known, and the caveat claims it is: 20 of the window's 106,671
     `fin_is` company-quarters carry no filing, 15 of them an annual report from
     outside the span the document server holds for that company — filed before
     it listed, or after it stopped filing. Pinning the count means a panel that
@@ -5161,14 +5354,15 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     p = pd.concat(frames, ignore_index=True)
     obs = observed_date(p["stock_id"], p["period_end"])
     undated = p[obs.isna()]
-    assert len(undated) == 19, (
-        f"README caveat 9 says 19 of the window's {len(p):,} fin_is "
-        f"company-quarters have no observed filing date; {len(undated)} do. "
+    assert (len(p), len(undated)) == (106_671, 20), (
+        f"README caveat 9 says 20 of the window's 106,671 fin_is "
+        f"company-quarters have no observed filing date; {len(undated)} of "
+        f"{len(p):,} do. "
         f"A drop means the panel gained coverage and the caveat undersells it; "
         f"a rise means it lost some, and the rows it lost leave a join silently"
     )
-    assert undated["stock_id"].nunique() == 18, (
-        f"README caveat 9 spreads the 19 over 18 companies; they now fall on "
+    assert undated["stock_id"].nunique() == 19, (
+        f"README caveat 9 spreads the 20 over 19 companies; they now fall on "
         f"{undated['stock_id'].nunique()}"
     )
 
@@ -5181,7 +5375,7 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     outside = int(((j["period_end"] < j["min"])
                    | (j["period_end"] > j["max"])).sum())
     assert outside == 15, (
-        f"README caveat 9 puts 15 of the 19 outside the span the document "
+        f"README caveat 9 puts 15 of the 20 outside the span the document "
         f"server holds for their company — a pre-listing or post-delisting "
         f"report the vendor kept and the server never carried; {outside} are "
         f"now. The rest sit inside the span and are absent from it, which is a "
@@ -5551,6 +5745,7 @@ CHECKS = [
     test_taiwan_token_travels_in_a_header,
     test_taiwan_sec_lending_pairs_are_disclosed,
     test_taiwan_fin_bs_revision_follows_the_filing,
+    test_taiwan_date_keyed_fill_is_in_the_trees,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

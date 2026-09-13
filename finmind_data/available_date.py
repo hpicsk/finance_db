@@ -44,7 +44,7 @@ which is the direction this module errs in on purpose.
 
 **Monthly revenue is already offset.** ``month_rev.date`` is the first of the
 month *after* the revenue month — 2011-02-01 carries ``revenue_month`` 1 of
-2011, on all 320,533 in-window rows — so the deadline is the 10th of that same
+2011, on all 324,016 in-window rows — so the deadline is the 10th of that same
 month, nine days later, not a month and nine days.
 
 **Two ways this bound stays loose**, both left in rather than closed:
@@ -249,8 +249,8 @@ def observed_date(stock_id, period_end) -> pd.Series:
     ``SESSION_CLOSE`` is dated to the next day, because the first close its
     figures can be traded at is the following session's.
 
-    ``NaT`` where the panel carries no filing for that company-quarter — 19 of
-    the 106,472 in-window quarters ``fin_is`` holds, almost all of them an annual
+    ``NaT`` where the panel carries no filing for that company-quarter — 20 of
+    the 106,671 in-window quarters ``fin_is`` holds, 15 of them an annual
     report from before the company listed or after it left, which the vendor
     kept and the document server never carried. They are left undated rather
     than dated by the deadline: substituting the bound there would put back

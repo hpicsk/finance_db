@@ -47,6 +47,10 @@
     "bound": "monotone",
     "n": 20
   },
+  "test_taiwan_date_keyed_fill_is_in_the_trees": {
+    "bound": "monotone",
+    "n": 17107
+  },
   "test_taiwan_delisting_frame_does_not_follow_coverage": {
     "bound": "monotone",
     "n": 164
@@ -89,7 +93,7 @@
   },
   "test_taiwan_fundamentals_are_fiscal_dated": {
     "bound": "monotone",
-    "n": 412659
+    "n": 416142
   },
   "test_taiwan_late_rate_falls_after_the_frame": {
     "bound": "monotone",
@@ -105,7 +109,7 @@
   },
   "test_taiwan_month_rev_date_is_the_following_month": {
     "bound": "monotone",
-    "n": 320533
+    "n": 324016
   },
   "test_taiwan_mops_covers_every_delisted_name": {
     "bound": "monotone",
@@ -141,7 +145,7 @@
   },
   "test_taiwan_observed_date_leaves_the_undatable_undated": {
     "bound": "monotone",
-    "n": 106472
+    "n": 106671
   },
   "test_taiwan_observed_date_rolls_past_the_session_close": {
     "bound": "monotone",

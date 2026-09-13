@@ -221,7 +221,7 @@ so you should filter by `date` rather than assume uniform coverage.
 
 **This completeness is about prices, and does not reach the filings.** The
 179 names are all here with a return series, but `fin_is/` carries a
-statement for 78 of them and `fin_bs/` for 97, because the endpoints serving
+statement for 84 of them and `fin_bs/` for 97, because the endpoints serving
 company filings answer for a company that still reports rather than for a
 code that once listed. A fundamentals study on this panel is therefore still
 survivorship-biased where a price study is not; caveat 10 measures it.
@@ -361,6 +361,7 @@ coverage ending early.
 ├── volume_repair.parquet              every count the volume repair replaced, old and new (2012-2020)
 ├── fin_bs_vintage_grade.parquet       every revised fin_bs amount graded against its filing (2013-2026)
 ├── fin_bs_vintage.parquet             every fin_bs row where the two vintages differ, old and new (2013-2026)
+├── date_keyed_fill/<tree>.parquet     every row date_keyed_fill.py added to that tree   (2011-2026)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -405,6 +406,7 @@ coverage ending early.
 ├── ohlcv_repull.py                    draws the 60 and pulls them again → ohlcv_repull.parquet
 ├── volume_repair.py                   first-answer counts → the endpoint's, record → volume_repair.parquet
 ├── fin_bs_vintage.py                  grades fin_bs/ against MOPS, writes the revision its filing sides with
+├── date_keyed_fill.py                 adds what FinMind serves date-keyed and fin_*/, month_rev/ lack
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
@@ -1069,6 +1071,13 @@ ohlcv_all = pd.concat(
   filing sides with into `fin_bs/`. The pull and the MOPS answers are not
   committed. `fin_bs_vintage_grade.parquet` carries every value the grade
   compared. See caveat 13.
+- **Date-keyed fill, 2026-09-12 to 2026-09-13:** `TaiwanStockFinancialStatements`,
+  `TaiwanStockBalanceSheet`, `TaiwanStockCashFlowsStatement` and
+  `TaiwanStockMonthRevenue` were pulled date-keyed, one request per period
+  end from 2005. `date_keyed_fill.py` added the company-periods caveat 14
+  describes on 2026-09-13. A per-stock query that day, for every name behind
+  the first two of its kinds, is what sorts them. The pulls and the per-stock
+  answers are not committed.
 
 ### Frozen baseline
 
@@ -1794,16 +1803,17 @@ green result means every check in the suite actually read something.
    figures weeks before they existed, which is look-ahead bias, not
    survivorship, and it reaches every fundamental signal built here.
    `month_rev/` has a `create_time` field carrying the disclosure stamp, and
-   it holds one for the end of the window and nothing for the rest. 13,905 of
-   the 412,659 rows carry a value and 398,754 are blank, and where the values
+   it holds one for the end of the window and nothing for the rest. 15,934 of
+   the 416,142 rows carry a value and 400,208 are blank, and where the values
    fall is what says which rows can be aligned point-in-time. **From reporting
-   month 2026-03 the vendor stamps at publication**: 12,954 rows across 1,944
+   month 2026-03 the vendor stamps at publication**: 13,574 rows across 1,944
    stocks, lagging their own reporting date by 0 to 79 days with a median of 9,
    which is what a release date looks like under Taiwan's 10th-of-the-month
-   revenue deadline. Before that month the column is a trickle of rewrites —
-   601 in-window rows in 18 stocks at a median lag of 1,964 days, and 350
-   pre-window rows at 5,617 to 7,808 — which is the vendor's ingest time for
-   rows it rewrote rather than a release date. So the look-ahead limit holds
+   revenue deadline. Before that month the column is a trickle of rewrites
+   and additions — 2,010 in-window rows in 122 stocks at a median lag of
+   5,161 days, and 350 pre-window rows at 5,617 to 7,808 — which is the
+   vendor's ingest time for rows it rewrote or added rather than a release
+   date. So the look-ahead limit holds
    from 2011-01-25 to 2026-02 and lifts from 2026-03 on. It was always a fact
    about the window rather than about the column, which is why it moved when
    the window did: the earlier revenue months were ingested years after the
@@ -1844,7 +1854,7 @@ green result means every check in the suite actually read something.
     the back-stop is both the binding and the later date.
 
     `month_rev.date` is already the first of the month **after** the revenue
-    month — 2011-02-01 carries `revenue_month` 1 of 2011, on all 320,533 rows
+    month — 2011-02-01 carries `revenue_month` 1 of 2011, on all 324,016 rows
     — so its deadline is nine days on, not a month and nine.
 
     Two ways the bound stays loose, both deliberate. Shortened deadlines are
@@ -1923,12 +1933,12 @@ green result means every check in the suite actually read something.
     case in miniature: it filed after its deadline on **none** of its 53
     quarters in that frame and is still a session late on **13** of them.
 
-    **19 quarters come back `NaT`, and are left there.** Of the 106,472 in-window
-    company-quarters `fin_is` holds, 106,453 carry an observed date. The 19 that
-    do not fall over 18 companies, and 15 of them sit outside the span the
+    **20 quarters come back `NaT`, and are left there.** Of the 106,671 in-window
+    company-quarters `fin_is` holds, 106,651 carry an observed date. The 20 that
+    do not fall over 19 companies, and 15 of them sit outside the span the
     document server holds for their company — an annual filed before the
     company listed or after it stopped filing, which the vendor kept and the
-    server never carried; the remaining four are absent from inside a span the
+    server never carried; the remaining five are absent from inside a span the
     server does hold. They are not backfilled with the deadline. Substituting
     the bound there would put back exactly the look-ahead the column exists to
     remove, and it would be invisible while doing it, because the column would
@@ -2013,45 +2023,51 @@ green result means every check in the suite actually read something.
     them.** The overlay puts every delisted name back in the universe and the
     rebuild gives each one an adjusted return series, but that completeness
     stops at the price. Of the **179** commons delisted inside the window,
-    `fin_is/` carries rows for **78**, `fin_cf/` for 76, `fin_bs/` for 97 and
+    `fin_is/` carries rows for **84**, `fin_cf/` for 91, `fin_bs/` for 97 and
     `shares/` for 122. The rest are not short files, they are **empty** ones —
     zero rows before any clipping — so the gap is absence at the source rather
-    than a window artifact: 91 of the 101 missing names traded in eight or more
+    than a window artifact: 85 of the 95 missing names traded in eight or more
     in-window quarters and not one of them carries a single statement row.
-    `download.py` asks for them on every pass and the endpoint returns nothing,
-    which `download.log` records as `fin_is=ok(0)`.
+    `download.py` asks for them on every pass and the per-stock endpoint
+    returns nothing, which `download.log` records as `fin_is=ok(0)`. The
+    date-keyed pulls caveat 14 describes carry no row of theirs either. Those
+    pulls serve six names the per-stock endpoint leaves empty. The six are
+    among the 84.
 
-    What the vendor retains is the **company**, not the listing. Twelve of the
-    sixteen pre-break delistings that do carry statements are names that kept
-    filing after they left the board — 5854 left in 2011 and its income
-    statement runs to 2026-06-30 — and the other four sit within months of the
-    break. The break itself is sharp and one-sided: every one of the **62**
-    names delisted after **2020-11-20** has an income statement, against 16 of
-    the 117 delisted on or before it. `fin_cf/` breaks on the same date,
-    `shares/` three days earlier, `fin_bs/` on 2019-03-29, and `month_rev/` on
-    2020-08-25 — where the loss is partial rather than total, since 154 of the
-    179 keep a file but only 2 of the 117 pre-break names carry every revenue
-    month from their first in the window to the one before their delisting,
-    against 32 of the 62 after it. The daily series the exchange publishes show
-    no break at all: `per_pbr/` covers 177 of the 179 and `instflow/` 171.
+    What the vendor retains is the **company**, not the listing. Thirteen of
+    the fourteen pre-break delistings that carry statements are names that
+    kept filing after they left the board — 5854 left in 2011 and its income
+    statement runs to 2026-06-30. The fourteenth, 2475, filed until 48 days
+    after it left in 2019. The break itself is sharp and one-sided: every one
+    of the **70** names delisted after **2020-06-19** has an income statement,
+    against 14 of the 109 delisted on or before it. The per-stock endpoint's
+    rows alone break on 2020-11-20. The date-keyed rows moved the break to the
+    earlier date. `fin_cf/` breaks on 2019-08-05, `shares/` on
+    2020-11-17, `fin_bs/` on 2019-03-29, and `month_rev/` on 2019-10-14 —
+    where the loss is partial rather than total, since 155 of the 179 keep a
+    file but only 10 of the 109 pre-break names carry every revenue month from
+    their first in the window to the one before their delisting, against 38 of
+    the 70 after it. The daily series the exchange publishes show no break at
+    all: `per_pbr/` covers 177 of the 179 and `instflow/` 171.
 
     So **a fundamental signal on this panel is still survivorship-biased even
     though the price panel is not**, and the two are not separable by care in
     the join: the names that left are exactly the names whose statements are
-    gone, so a value or quality sort formed before 2021 ranks survivors. This
-    is not caveat 9 in another guise — that one is about when a figure became
-    public, this one about whether it is here at all — and dating the data
-    differently does not reach it. The bias runs the ordinary way for a
+    gone, so a value or quality sort formed before the break ranks survivors.
+    This is not caveat 9 in another guise — that one is about when a figure
+    became public, this one about whether it is here at all — and dating the
+    data differently does not reach it. The bias runs the ordinary way for a
     fundamentals study: the failures are the missing rows.
 
     Whether the break is fixed or rolls forward with the pull date cannot be
     read off a single pull, and the difference decides whether a fresh clone
-    reproduces this panel or a smaller one.
-    `test_taiwan_statement_trees_drop_old_delistings` pins today's break so the
-    next refresh answers it. The committed files are safe either way: a
-    non-empty file is never emptied by a re-pull — `download.py` resumes from
-    its last row and writes nothing when the fetch comes back empty — and an
-    empty file is re-pulled whole, so the gap closes by itself if the vendor
+    reproduces this panel or a smaller one. A fresh clone also lacks the rows
+    caveat 14 added: `download.py` asks per stock. `date_keyed_fill/` holds
+    them. `test_taiwan_statement_trees_drop_old_delistings` pins today's
+    break so the next refresh answers it. The committed files are safe either
+    way: a non-empty file is never emptied by a re-pull — `download.py` resumes
+    from its last row and writes nothing when the fetch comes back empty — and
+    an empty file is re-pulled whole, so the gap closes by itself if the vendor
     ever backfills.
 11. **`open` is not inside `[min, max]` on 2.0 % of rows.** 131,257 traded rows
     across 684 stocks report an `open` above the session `max` or below the
@@ -2121,6 +2137,41 @@ green result means every check in the suite actually read something.
     serves no statement before the first IFRS quarter. `fin_is/` and `fin_cf/`
     are not graded either. Those two trees, and `fin_bs/` before 2013 Q1, hold
     the values they were pulled with.
+14. **Some company-periods come from FinMind's date-keyed query.** FinMind
+    answers a query that names no stock, every stock for one period end, from
+    other coverage than a query naming one stock. `date_keyed_fill.py`
+    compared a date-keyed pull of each period end with `fin_is/`, `fin_bs/`,
+    `fin_cf/` and `month_rev/`. It added each company-period of a universe
+    name inside the window that the pull carries and the tree held no row of:
+    199 to `fin_is/` for 6 names, 467 to `fin_cf/` for 15, 7 to `fin_bs/` for
+    4, and 3,483 company-months to `month_rev/` for 719. `date_keyed_fill/`
+    holds every added row, one file per tree. The rows are of three kinds. A
+    per-stock query on 2026-09-13, for every name behind the first two, tells
+    those two apart.
+
+    **Rows the per-stock query does not return.** Every row added to `fin_is/`
+    and `fin_cf/` is of this kind. Each went into the empty file of a name
+    delisted inside the window (caveat 10). 1,454 `month_rev/` rows for 20
+    names are of this kind too. Eighteen of the 20 were delisted inside the
+    window. None of those `month_rev/` rows carries a stamp.
+
+    **Rows the vendor added after the tree was pulled.** The per-stock query
+    returns these now, with the same values. `download.py --extend` asks only
+    for what follows a file's last row. A row the vendor adds before that row
+    therefore never reaches the tree. The 7 `fin_bs/` company-periods are of
+    this kind. So are 1,409 `month_rev/` rows for 104 names, dated 2011-02-01
+    to 2013-01-01 and stamped 2026-05-19. The other trees were not compared
+    with a date-keyed pull. What they miss this way is not measured.
+
+    **The edge month.** 620 `month_rev/` rows are dated 2026-09-01, the last
+    month in the window. Their stamps run from 2026-09-10 to 2026-09-12. The
+    tree's pull ran on 2026-09-10, the deadline for that month's revenue. The
+    month held 1,306 companies before the fill. It holds 1,926 after it. 858
+    of the 1,926 were stamped after `COVERAGE_END`.
+
+    A company-period the tree held keeps its rows, including where the pull
+    carries a row the tree lacks. Rows before the window were not added. No
+    added row is graded against a filing.
 
 ## Two regime facts about the window
 
