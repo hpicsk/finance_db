@@ -784,6 +784,7 @@ def test_taiwan_adjusted_coverage_decomposition():
     traded = covered = hole = tail = first = makeup = gap = 0
     vendor_only = []
     gaps = []
+    heads = {}
     for sid in sorted(set(u["stock_id"].astype(str))):
         fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
         if not fp.exists():
@@ -811,13 +812,16 @@ def test_taiwan_adjusted_coverage_decomposition():
         miss = ~tr["date"].isin(set(adj_dates))
         covered += int((~miss).sum())
         # A session past the vendor's last is the series stopping at a delisting
-        # the raw file kept printing through. Everything else is the raw series'
-        # own first traded session, which the vendor series does not carry —
-        # verified as exactly that, one per stock, in
-        # test_taiwan_vendor_edges_are_carried. The vendor's own file may open on
-        # an earlier *date* than that session, because a raw series can open on a
-        # no-trade row the vendor still carries a price for; what it never does
-        # is open before the raw file does, which the `lead` count below pins.
+        # the raw file kept printing through. The head edge is the run of traded
+        # sessions before the vendor's first covered one, which
+        # `test_taiwan_vendor_edges_are_carried` covers. Read as a run of dates
+        # rather than as the row at position 0: the re-pull fill put a listing-day
+        # Saturday in front of two series whose first session was already ahead of
+        # the vendor's (caveat 15), so the edge is no longer one row per stock.
+        # The vendor's own file may open on an earlier *date* than the raw series'
+        # first traded session, because a raw series can open on a no-trade row the
+        # vendor still carries a price for; what it never does is open before the
+        # raw file does, which the `lead` count below pins.
         tail += int((miss & (tr["date"] > adj_dates.max())).sum())
         inner = miss & (tr["date"] <= adj_dates.max())
         # The reverse gap runs both ways, and only one direction was known. The
@@ -828,7 +832,11 @@ def test_taiwan_adjusted_coverage_decomposition():
         # they are a disclosed hole and counted as one.
         mk = inner & (tr["date"].dt.dayofweek == 5) & (tr.index > 0)
         makeup += int(mk.sum())
-        first += int((inner & ~mk & (tr.index == 0)).sum())
+        covered_from = tr.loc[~miss, "date"].min() if (~miss).any() else tr["date"].max()
+        lead = inner & ~mk & (tr["date"] < covered_from)
+        first += int(lead.sum())
+        if lead.any():
+            heads[sid] = int(lead.sum())
         # The fifth kind, and the only one that is the vendor being short rather
         # than the vendor's product being shaped that way: a weekday inside a
         # live series the adjusted endpoint has no row for. Both are a lone
@@ -836,23 +844,30 @@ def test_taiwan_adjusted_coverage_decomposition():
         # directly returns the same short answer, so the tree records what is
         # served. Counted rather than forbidden — the coverage ratio asserted
         # below is what bounds it, and an outage large enough to matter moves it.
-        g = inner & ~mk & (tr.index > 0)
+        g = inner & ~mk & ~lead
         gap += int(g.sum())
         gaps += [(sid, d.strftime("%Y-%m-%d")) for d in tr.loc[g, "date"]]
 
-    assert (traded, covered) == (6540520, 6477647), (
-        f"README pins adjusted coverage at 6,477,647 of the 6,540,520 traded "
+    assert (traded, covered) == (6540524, 6477647), (
+        f"README pins adjusted coverage at 6,477,647 of the 6,540,524 traded "
         f"sessions in ohlcv/ (99.04 %); this tree gives {covered:,} of "
         f"{traded:,} ({100 * covered / max(traded, 1):.2f} %)"
     )
-    assert (hole, tail, first, makeup, gap) == (61505, 0, 494, 872, 2), (
+    assert (hole, tail, first, makeup, gap) == (61505, 0, 498, 872, 2), (
         f"README splits the {traded - covered:,} missing sessions into 61,505 "
         f"in the 54 stocks with no adjusted series, none past the end of a "
-        f"vendor series that stopped at a delisting, 494 first sessions, "
-        f"872 make-up sessions the vendor's adjusted product does not cover "
-        f"and 2 weekdays inside a live series it is simply short of; this tree "
-        f"gives {hole:,} / {tail:,} / {first:,} / {makeup} / {gap}. The first "
-        f"number is the survivorship hole — if it moved, so did the bias"
+        f"vendor series that stopped at a delisting, 498 sessions ahead of the "
+        f"vendor's first, 872 make-up sessions the vendor's adjusted product "
+        f"does not cover and 2 weekdays inside a live series it is simply short "
+        f"of; this tree gives {hole:,} / {tail:,} / {first:,} / {makeup} / "
+        f"{gap}. The first number is the survivorship hole — if it moved, so did "
+        f"the bias"
+    )
+    assert (len(heads), sum(n > 1 for n in heads.values())) == (496, 2), (
+        f"README says the 498 sessions ahead of the vendor's first sit in 496 "
+        f"stocks, two of them carrying the listing-day Saturday the re-pull fill "
+        f"added in front of a session already ahead of it (caveat 15); they sit "
+        f"in {len(heads)}, {sum(n > 1 for n in heads.values())} with more than one"
     )
     # The split has to be exhaustive or the categories are a partial reading of
     # the shortfall, with whatever is left over invisible in both the ratio's
@@ -1406,14 +1421,14 @@ def test_taiwan_open_outside_session_range():
         f"bar on every row; {bad_close:,} rows now break that, so the problem is "
         f"no longer confined to the open field"
     )
-    assert (bad, stocks) == (131257, 684), (
-        f"README caveat 11 pins 131,257 rows across 684 stocks with open "
+    assert (bad, stocks) == (131261, 684), (
+        f"README caveat 11 pins 131,261 rows across 684 stocks with open "
         f"outside [min, max]; this tree gives {bad:,} across {stocks}"
     )
     # The rows `pit_universe.py` removes, each on or before the day its name
     # left 興櫃.
     assert (gone, gone_emerging) == (29651, 29651), (
-        f"README caveat 11 says 29,651 of the 131,257 fall on 興櫃 sessions, "
+        f"README caveat 11 says 29,651 of the 131,261 fall on 興櫃 sessions, "
         f"which pit_universe.py removes; it removes {gone:,} of them, "
         f"{gone_emerging:,} on or before their name left 興櫃")
 
@@ -3258,15 +3273,159 @@ def test_taiwan_unadjusted_first_sessions_are_carried():
         f"{len(want)} such sessions and the loader carried {len(got)}. Not "
         f"carried: {sorted(want - got)[:5]}; carried without the shape: "
         f"{sorted(got - want)[:5]}")
-    assert (edge, len(got)) == (497, 115), (
-        f"README's adj_source table counts 612 vendor_carried rows: 493 first "
+    assert (edge, len(got)) == (501, 115), (
+        f"README's adj_source table counts 616 vendor_carried rows: 497 "
         f"sessions ahead of the vendor series, the Saturday make-up session "
         f"right after it in four of those stocks, and 115 first sessions the "
-        f"vendor serves unadjusted. That is 497 the vendor does not serve and "
+        f"vendor serves unadjusted. That is 501 the vendor does not serve and "
         f"115 it does; this panel gives {edge} and {len(got)}")
     return (f"{len(got)} unadjusted first sessions carried from the second, "
             f"exactly the {len(want)} the trees show; {edge} carried ahead of "
             f"the vendor series"), edge + len(got)
+
+def test_taiwan_repull_fill_is_in_the_trees():
+    """README caveat 15: some rows of the daily trees come from the whole re-pull
+    of 2026-09-13, and `repull_fill/` records what it found in both directions.
+
+    The fill adds a row only where the tree held none under its key, so the
+    recorded rows are read back: the rows the tree holds under those keys are the
+    recorded ones and no others, value for value. A row under one of those keys
+    that the record lacks would mean the fill wrote into a row the tree held,
+    which caveat 13 found is a revision and not a correction.
+
+    Where each added row sat is read back against the tree minus the record,
+    which is the file as the fill found it: a `before` row precedes every row of
+    its stock the fill did not add, an `interior` row sits between two of them, a
+    `same-day` row shares its date with one, and an `empty` row belongs to a
+    stock that had none. That is what carries the caveat's reading of the hole —
+    a vendor backfill `--extend` cannot reach — rather than a count of rows.
+
+    The record holds one file per tree the re-pull covered, so a tree the fill
+    found nothing in is an empty file rather than an absent one, and
+    `unserved.parquet` holds the stock-dates the re-pull no longer carries. Those
+    rows are asserted to be in the trees still: what the caveat claims about them
+    is that none was dropped.
+    """
+    sys.path.insert(0, str(REPO))
+    from finmind_data.repull_fill import KEY, RECORD, _keys
+
+    names = set(_panel_ids())
+    lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
+    sessions = set(pd.read_parquet(REPO / "finmind_data/trading_sessions.parquet")
+                   ["date"].astype(str).str[:10])
+    saturdays = {d for d in sessions if pd.Timestamp(d).dayofweek == 5}
+    got, loose, merged, misplaced, off_session = {}, [], [], [], []
+    flow, nonzero, on_saturday = {}, 0, {}
+    for p in sorted(RECORD.glob("*.parquet")):
+        if p.stem not in KEY:
+            continue
+        tree, key = p.stem, KEY[p.stem]
+        r = pd.read_parquet(p)
+        out = r[~r["stock_id"].isin(names) | ~r["date"].between(lo, hi)]
+        loose += [(tree, s, d) for s, d in zip(out["stock_id"], out["date"])]
+        off_session += [(tree, s, d) for s, d in zip(r["stock_id"], r["date"])
+                        if d not in sessions]
+        on_saturday[tree] = int(r["date"].isin(saturdays).sum()) if len(r) else 0
+        if tree == "instflow":
+            nonzero = int(((r["buy"] != 0) | (r["sell"] != 0)).sum())
+            for s, d in zip(r["stock_id"], r["date"]):
+                flow.setdefault(s, set()).add(d)
+        for sid, x in r.groupby("stock_id"):
+            x = x.reset_index(drop=True)
+            # Read as written rather than through `_tree`: the claim is that the
+            # file holds these rows, and each of them is inside the window already.
+            f = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet")
+            added = _keys(f, key).isin(_keys(x, key))
+            if not f[added].reset_index(drop=True).equals(x.drop(columns="place")):
+                merged.append((tree, sid))
+                continue
+            before = set(f.loc[~added, "date"])
+            for d, place in zip(x["date"], x["place"]):
+                sits = {"empty": not before,
+                        "same-day": d in before,
+                        "before": bool(before) and d < min(before),
+                        "after": bool(before) and d > max(before),
+                        "interior": bool(before) and min(before) < d < max(before)
+                                    and d not in before}[place]
+                if not sits:
+                    misplaced.append((tree, sid, d, place))
+        got[tree] = (len(r), r["stock_id"].nunique(), r["place"].value_counts().to_dict())
+    assert not loose, (
+        f"README caveat 15 says the fill added rows for universe names inside "
+        f"the window only; {len(loose)} recorded rows are not: {loose[:5]}")
+    assert not merged, (
+        f"README caveat 15 says a row the tree held keeps its own values and "
+        f"each added key holds the pull's row alone; in {len(merged)} files the "
+        f"recorded keys read back otherwise: {merged[:5]}")
+    assert not misplaced, (
+        f"README caveat 15 counts the added rows by where each sat against the "
+        f"span its file held; {len(misplaced)} sit elsewhere: {misplaced[:5]}")
+    assert not off_session, (
+        f"README caveat 15 says every added row falls on a session the exchange "
+        f"held; {len(off_session)} do not: {off_session[:5]}")
+    assert got == {
+        "instflow": (111_056, 805, {"before": 105_528, "interior": 5_513, "same-day": 15}),
+        "margin_short": (682, 311, {"interior": 682}),
+        "ohlcv": (4, 4, {"before": 4}),
+        "per_pbr": (8_399, 757, {"interior": 8_399}),
+        "sec_lending": (0, 0, {}),
+        "shares": (0, 0, {})}, (
+        f"README caveat 15 says the fill added 111,056 rows to instflow/ for 805 "
+        f"names, 8,399 to per_pbr/ for 757, 682 to margin_short/ for 311 and 4 to "
+        f"ohlcv/ for 4, none to shares/ or sec_lending/, and 105,528 of the "
+        f"instflow/ rows before their file's first row; repull_fill/ gives "
+        f"(rows, names, places) {got}")
+    assert nonzero == 40_162, (
+        f"README caveat 15 says 40,162 of the instflow/ rows carry a buy or a "
+        f"sell that is not zero; {nonzero:,} do")
+    assert (on_saturday["per_pbr"], on_saturday["ohlcv"]) == (8_399, 4), (
+        f"README caveat 15 says all 8,399 per_pbr/ rows and all 4 ohlcv/ rows "
+        f"sit on a make-up Saturday; "
+        f"{on_saturday['per_pbr']:,} and {on_saturday['ohlcv']} do")
+    priced = sum(len(d & set(pd.read_parquet(
+        REPO / f"finmind_data/ohlcv/{s}.parquet", columns=["date"])["date"]))
+        for s, d in flow.items())
+    want = sum(len(d) for d in flow.values())
+    assert priced == want, (
+        f"README caveat 15 says ohlcv/ carries a price on every one of the "
+        f"{want:,} stock-dates the instflow/ fill reached; it carries one on "
+        f"{priced:,}")
+
+    left = pd.read_parquet(RECORD / "unserved.parquet")
+    dropped = []
+    for (tree, sid), x in left.groupby(["tree", "stock_id"]):
+        n = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet",
+                            columns=["date"])["date"].value_counts()
+        dropped += [(tree, sid, d) for d, rows in zip(x["date"], x["rows"])
+                    if n.get(d, 0) != rows]
+    assert not dropped, (
+        f"README caveat 15 says a row the re-pull no longer serves is kept; "
+        f"{len(dropped)} recorded ones are gone or hold another count now: "
+        f"{dropped[:5]}")
+    by_tree = left.groupby("tree").size().to_dict()
+    assert (by_tree, len(left), int(left["rows"].sum())) == (
+        {"instflow": 3_179, "margin_short": 3_807, "ohlcv": 1_135, "per_pbr": 872,
+         "sec_lending": 3_463, "shares": 44_271}, 56_727, 68_135), (
+        f"README caveat 15 says the re-pull carries no row for 56,727 stock-dates "
+        f"the trees hold 68,135 rows on — 44,271 in shares/, 3,807 in "
+        f"margin_short/, 3,463 in sec_lending/, 3,179 in instflow/, 1,135 in "
+        f"ohlcv/ and 872 in per_pbr/; unserved.parquet gives {by_tree}, "
+        f"{len(left):,} stock-dates, {int(left['rows'].sum()):,} rows")
+    on_session = left[left["date"].isin(sessions)]
+    assert (len(on_session), on_session.groupby("tree").size().to_dict()) == (
+        1_914, {"instflow": 779, "ohlcv": 1_135}), (
+        f"README caveat 15 says 1,914 of the unserved stock-dates fall on a "
+        f"session the exchange held, 1,135 of them in ohlcv/ and 779 in "
+        f"instflow/; {len(on_session):,} do, "
+        f"{on_session.groupby('tree').size().to_dict()}")
+    quotes = set(on_session.loc[on_session["tree"] == "ohlcv", "stock_id"])
+    assert quotes == {"1107", "2341", "2381", "2396", "2910"}, (
+        f"README caveat 15 says the ohlcv/ rows on a session belong to 1107, "
+        f"2341, 2381 and 2396, which left the board before the window, and to "
+        f"2910's one all-zero row; they belong to {sorted(quotes)}")
+    return (f"{sum(n for n, _, _ in got.values()):,} rows added from the re-pull, "
+            f"{len(left):,} stock-dates it no longer serves kept"), (
+        sum(n for n, _, _ in got.values()) + len(left))
 
 def test_taiwan_post_delisting_sessions_are_marked():
     """README, "Which rows to trust": no session after a delisting is holdable.
@@ -3489,9 +3648,9 @@ def test_taiwan_no_trade_rows_are_not_holdable():
         f"OHLCV file holds no rows at all and 37 quoted only outside the window; "
         f"{len(empty)} raised here, so this pass covered a "
         f"different panel than the counts below were measured on")
-    assert (rows, zero, zero_stocks) == (6_676_903, 136_383, 1_208), (
+    assert (rows, zero, zero_stocks) == (6_676_907, 136_383, 1_208), (
         f"README quotes 136,383 no-trade sessions in 1,208 stocks over a "
-        f"6,676,903-row panel; this tree has {zero:,} in {zero_stocks:,} over "
+        f"6,676,907-row panel; this tree has {zero:,} in {zero_stocks:,} over "
         f"{rows:,}. Every count below is a share of that population")
     assert mismatched == 0, (
         f"README claims is_valid alone is now enough — every False row carries "
@@ -5746,6 +5905,7 @@ CHECKS = [
     test_taiwan_sec_lending_pairs_are_disclosed,
     test_taiwan_fin_bs_revision_follows_the_filing,
     test_taiwan_date_keyed_fill_is_in_the_trees,
+    test_taiwan_repull_fill_is_in_the_trees,
     test_taiwan_post_delisting_sessions_are_marked,
     test_taiwan_no_trade_rows_are_not_holdable,
     test_taiwan_no_session_the_tape_holds_is_missing,

@@ -362,6 +362,8 @@ coverage ending early.
 ├── fin_bs_vintage_grade.parquet       every revised fin_bs amount graded against its filing (2013-2026)
 ├── fin_bs_vintage.parquet             every fin_bs row where the two vintages differ, old and new (2013-2026)
 ├── date_keyed_fill/<tree>.parquet     every row date_keyed_fill.py added to that tree   (2011-2026)
+├── repull_fill/<tree>.parquet         同, for the whole re-pull of the daily trees       (2011-2026)
+├── repull_fill/unserved.parquet       the stock-dates that re-pull no longer serves      (2011-2026)
 ├── delisting_sign.parquet             each market exit as failure / payout / undecided (2011-2024)
 ├── delisting_labels.csv               reasons read off announcements; the drawn sample
 ├── delisting_band.csv                 the 9 held-out band names + the pre-registered cut
@@ -407,6 +409,7 @@ coverage ending early.
 ├── volume_repair.py                   first-answer counts → the endpoint's, record → volume_repair.parquet
 ├── fin_bs_vintage.py                  grades fin_bs/ against MOPS, writes the revision its filing sides with
 ├── date_keyed_fill.py                 adds what FinMind serves date-keyed and fin_*/, month_rev/ lack
+├── repull_fill.py                     adds what a whole re-pull serves and the daily trees lack
 ├── delisting_sign.py                  last close vs prior-year high → delisting_sign.parquet
 ├── adjust.py                          rebuilds a factor from exchange reference prices (the 54 holes)
 ├── adjusted_loader.py                 price_adj/ + the two above + ohlcv/ → adj_close_tr, adj_source
@@ -659,7 +662,7 @@ history this series does not continue, or one printed after the listing
 ended, would not have been holdable had it traded either. `adj_close_tr` was already NaN on all 136,383, so
 the two-column filter above dropped them before this reason existed;
 what changed is that `is_valid` alone now drops them too, and that every
-False row in the panel's 6,676,903 carries a reason for being one.
+False row in the panel's 6,676,907 carries a reason for being one.
 
 **`adj_source` says where the row's factor came from**, and `adj_method`
 which convention produced its ex-date steps. Split a panel on them
@@ -669,7 +672,7 @@ before comparing anything across the boundary:
 |---|---|---|
 | `vendor` | `declared_dividend` | FinMind's series as served |
 | `vendor_patched` | `declared_dividend` | behind the one replaced event (120 rows) |
-| `vendor_carried` | `declared_dividend` | the first traded session, where the vendor series starts late or serves it at the raw close — factor carried from the adjacent session (612: 493 first sessions ahead of the vendor series, the Saturday make-up session right after it in four of those stocks, and 115 first sessions the vendor serves unadjusted) |
+| `vendor_carried` | `declared_dividend` | the first traded session, where the vendor series starts late or serves it at the raw close — factor carried from the adjacent session (616: 497 sessions ahead of the vendor series, the Saturday make-up session right after it in four of those stocks, and 115 first sessions the vendor serves unadjusted) |
 | `rebuilt_factored` | `exchange_reference` | 37 of the 54 holes, with a factor chain (50,064 rows) |
 | `rebuilt_noevent` | `none` | 17 of the 54, no corporate action in window — factor is 1.0 (11,441 rows) |
 | `""` | `""` | no price: the stock did not trade, or nothing covers the session |
@@ -707,11 +710,11 @@ filtering on `is_valid` alone before `no_trade` existed.
 
 ### The vendor's survivorship hole, and the rebuild that fills it
 
-`price_adj/` reaches 6,477,647 of the 6,540,520 traded sessions in
-`ohlcv/` — 99.04 % — and the 62,873 it misses are not missing at
+`price_adj/` reaches 6,477,647 of the 6,540,524 traded sessions in
+`ohlcv/` — 99.04 % — and the 62,877 it misses are not missing at
 random. They split five ways: **61,505** in the 54 stocks with no adjusted
 series at all, **0** past the end of a vendor series that stopped at a
-delisting, **494** first sessions the vendor opens one day late on,
+delisting, **498** sessions ahead of the vendor's first,
 **872** make-up sessions the raw endpoint serves and the adjusted product
 does not, and **2** weekdays inside a live series the adjusted endpoint is
 simply short of — 3064 on 2026-08-26 and 6236 on 2026-08-12, each a lone
@@ -799,12 +802,13 @@ moved.
 
 ### The edge of the vendor series, and the edge that left with the window
 
-The other 612 carried sessions are not whole stocks but one end of a
-series the vendor serves. 494 stocks are short their first traded session,
-one per stock, verified as that and nothing else. 493 of them are carried and
-the 494th is refused, below. In four of the 493 the series opens on a Friday
-and the Saturday make-up session after it is missing too; the carry covers
-both. The remaining 115 are first sessions the vendor serves at the raw
+The other 616 carried sessions are not whole stocks but one end of a
+series the vendor serves. 496 stocks are short 498 traded sessions ahead of
+the vendor's first — one each, and two in the two stocks whose listing-day
+Saturday the re-pull fill put in front of one (caveat 15). 497 of them are
+carried and 4141's is refused, below. In four of those stocks the series opens
+on a Friday and the Saturday make-up session after it is missing too; the carry
+covers both. The remaining 115 are first sessions the vendor serves at the raw
 close, described under "One pull per adjusted file".
 
 The window has **one** edge, not two. A vendor series that stops at a
@@ -1078,6 +1082,12 @@ ohlcv_all = pd.concat(
   describes on 2026-09-13. A per-stock query that day, for every name behind
   the first two of its kinds, is what sorts them. The pulls and the per-stock
   answers are not committed.
+- **Whole re-pull of the daily trees, 2026-09-13:** `ohlcv/`, `instflow/`,
+  `margin_short/`, `shares/`, `per_pbr/` and `sec_lending/` were pulled again
+  per stock over 2005-01-01..2026-09-09, the request `download.py` makes, for
+  all 2,231 files each tree holds: 13,386 requests, 13:26 to 15:57, no failure
+  and no rate-limit wait. `repull_fill.py` read it into the trees the same
+  evening; see caveat 15. The pull is not committed.
 
 ### Frozen baseline
 
@@ -2069,12 +2079,12 @@ green result means every check in the suite actually read something.
     from its last row and writes nothing when the fetch comes back empty — and
     an empty file is re-pulled whole, so the gap closes by itself if the vendor
     ever backfills.
-11. **`open` is not inside `[min, max]` on 2.0 % of rows.** 131,257 traded rows
+11. **`open` is not inside `[min, max]` on 2.0 % of rows.** 131,261 traded rows
     across 684 stocks report an `open` above the session `max` or below the
     session `min`; `close` never does, on any row of the panel. The deviation
     beyond the bar is small on most of them — median 0.75 %, and 59 % sit within
     1 % — but 0.6 % of them exceed 10 % and the worst reaches 113 %. **29,651
-    of the 131,257 fall on 興櫃 sessions**, which `pit_universe.py` removes. The
+    of the 131,261 fall on 興櫃 sessions**, which `pit_universe.py` removes. The
     share on the sessions `pit_universe.py` keeps is 1.57 %: 2.18 % for the
     names the Universe table counts under TPEx, against 1.12 % for those under
     TWSE. The TPEx share is the higher of the two in every year to 2024. The
@@ -2161,7 +2171,8 @@ green result means every check in the suite actually read something.
     therefore never reaches the tree. The 7 `fin_bs/` company-periods are of
     this kind. So are 1,409 `month_rev/` rows for 104 names, dated 2011-02-01
     to 2013-01-01 and stamped 2026-05-19. The other trees were not compared
-    with a date-keyed pull. What they miss this way is not measured.
+    with a date-keyed pull; the six daily ones were pulled again whole
+    instead, which caveat 15 reports.
 
     **The edge month.** 620 `month_rev/` rows are dated 2026-09-01, the last
     month in the window. Their stamps run from 2026-09-10 to 2026-09-12. The
@@ -2172,6 +2183,50 @@ green result means every check in the suite actually read something.
     A company-period the tree held keeps its rows, including where the pull
     carries a row the tree lacks. Rows before the window were not added. No
     added row is graded against a filing.
+
+15. **Some rows of the daily trees come from a second whole pull.**
+    `download.py --extend` asks a file only for what follows its last row, so a
+    row the vendor publishes before that row never reaches the tree. The six
+    daily trees were pulled again whole on 2026-09-13, one request per stock
+    over the range `download.py` asks for. `repull_fill.py` added every row that
+    pull carries under a key the tree held no row of — the date, and in
+    `instflow/` the date with the investor category: 111,056 rows to
+    `instflow/` for 805 names, 8,399 to `per_pbr/` for 757, 682 to
+    `margin_short/` for 311 and 4 to `ohlcv/` for 4. `shares/` and
+    `sec_lending/` took none. `repull_fill/` holds every added row beside the
+    place its date sat in, one file per tree. Every added row falls on a session
+    the exchange held.
+
+    **The institutional flows reach years further back than the tree did.**
+    105,528 of the `instflow/` rows precede their file's first row: for 515
+    names the vendor now serves flows from long before the tree's series starts,
+    1563's from 2011-02-15 against the tree's 2024-05-13. `ohlcv/` carries a
+    price on every one of the 36,756 stock-dates the fill reached and carried no
+    flow beside it, and 40,162 of the added rows carry a buy or a sell that is
+    not zero.
+
+    **`per_pbr/` had the make-up-session hole too.** Its 8,399 rows sit on the
+    14 Saturdays under "The gap that runs the other way", which
+    `backfill_make_up_sessions` closed in `ohlcv/` and `price_adj/` alone —
+    nothing had measured the same hole here. The 4 `ohlcv/` rows are listing
+    days on three of those Saturdays, the case that backfill leaves by design:
+    it fills a file's interior, and a date before the first row is the vendor's
+    series-head edge. The `margin_short/` rows sit on four ordinary sessions of
+    2011 and 2012.
+
+    **What the re-pull no longer serves is kept.** It carries no row for 56,727
+    stock-dates the trees hold 68,135 rows on, and
+    `repull_fill/unserved.parquet` records every one: 44,271 in `shares/`, 3,807
+    in `margin_short/`, 3,463 in `sec_lending/`, 3,179 in `instflow/`, 1,135 in
+    `ohlcv/` and 872 in `per_pbr/`. 1,914 of them fall on a session the exchange
+    held and the rest on a day it held none — 28 Lunar New Year dates in
+    `shares/`, seven typhoon closures in `margin_short/`. Of the 1,914, 1,135
+    are in `ohlcv/`: the post-delisting 興櫃 quotes of 1107, 2341, 2381 and 2396,
+    which left the board before the window, and one all-zero row for 2910. The
+    other 779 are `instflow/` sessions the vendor serves no flow for any more. A
+    row the vendor stops serving is not a row shown to be wrong, so none was
+    dropped. Where the two pulls disagree on a row both carry, the tree keeps
+    its own values, on caveat 13's finding that a revision is not a correction.
 
 ## Two regime facts about the window
 
