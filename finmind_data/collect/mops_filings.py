@@ -1,7 +1,7 @@
 """公開資訊觀測站 (MOPS) 重大訊息 for the commons that delisted inside the window.
 
 Why this exists. `TaiwanStockDelisting` carries date, code and name and nothing
-else (README caveat 8), so a delisting return computed from the price alone
+else (CAVEATS.md 8), so a delisting return computed from the price alone
 books −100 % where a merger paid a premium and a premium where the shell was
 worthless. The reason is published per company in a MOPS filing, never in a
 table, and no FinMind endpoint mirrors it.
@@ -27,17 +27,17 @@ import argparse
 import json
 import sys
 import time
-from pathlib import Path
 
 import pandas as pd
 import requests
 
-ROOT = Path(__file__).resolve().parent
-LOG_FILE = ROOT / "mops.log"
-LISTING_DIR = ROOT / "mops_listing"
-DETAIL_DIR = ROOT / "mops_detail"
-FRAME = ROOT / "delisting_sign.parquet"
-REFUSALS = ROOT / "mops_detail_refusals.csv"
+from ..client import log
+from ..paths import DATA
+
+LISTING_DIR = DATA / "mops_listing"
+DETAIL_DIR = DATA / "mops_detail"
+FRAME = DATA / "delisting_sign.parquet"
+REFUSALS = DATA / "mops_detail_refusals.csv"
 
 LISTING_COLS = ["stock_id", "company_name", "spoke_date", "spoke_time",
                 "subject", "roc_year", "market_kind", "enter_date", "serial_no"]
@@ -60,7 +60,7 @@ HEADERS = {
 # completed, so the filing that gives the reason predates the exit by quarters
 # rather than days; two full years ahead of it is the span that covers that
 # chain without paying for a third. Where the earliest reason-bearing filing
-# actually falls inside this window is measured in README caveat 8 rather than
+# actually falls inside this window is measured in CAVEATS.md 8 rather than
 # assumed here — a name whose filing sits on the boundary is what widens it.
 LOOKBACK_ROC_YEARS = 2
 
@@ -88,13 +88,6 @@ EMPTY: dict = {}
 
 class Refused(Exception):
     """The host will not serve this company: it is no longer registered."""
-
-
-def log(msg: str) -> None:
-    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
-    print(line, flush=True)
-    with LOG_FILE.open("a") as fh:
-        fh.write(line + "\n")
 
 
 def call(api_name: str, payload: dict, max_retries: int = 5) -> dict | None:

@@ -33,8 +33,8 @@ is repaired; one that disagrees needs its whole file re-downloaded rather than a
 row added, and is reported instead of touched. The rows are inserted, never
 overwritten — an existing row is left exactly as committed.
 
-    python -m finmind_data.backfill_make_up_sessions --dry-run
-    python -m finmind_data.backfill_make_up_sessions
+    python -m finmind_data.repair.backfill_make_up_sessions --dry-run
+    python -m finmind_data.repair.backfill_make_up_sessions
 
 Not folded into `download.py`: that script resumes each file from its own last
 date, which moves the far end and cannot reach an interior hole.
@@ -43,20 +43,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
-from pathlib import Path
 
 import pandas as pd
-import requests
 
-from .auth import headers
-from .window import COVERAGE_START, COVERAGE_END
+from ..client import get
+from ..datasets import BY_TREE
+from ..window import COVERAGE_START, COVERAGE_END
+from ..paths import TAPE, TREES
 
-HERE = Path(__file__).resolve().parent
-API = "https://api.finmindtrade.com/api/v4/data"
-TAPE = HERE / "tape"
-
-TREES = {"ohlcv": "TaiwanStockPrice", "price_adj": "TaiwanStockPriceAdj"}
+# The two trees the make-up sessions are read back into, and their endpoints.
+ENDPOINTS = {t: BY_TREE[t].vendor for t in ("ohlcv", "price_adj")}
 
 # Two committed closes for one session are the same number or they are two
 # different factor vintages; the endpoint quotes to the cent and the trees carry
@@ -88,7 +84,7 @@ def _sessions_missing_from(tree: str) -> pd.DataFrame:
         by_code.setdefault(c, set()).add(d)
 
     rows = []
-    for p in sorted((HERE / tree).glob("*.parquet")):
+    for p in sorted((TREES / tree).glob("*.parquet")):
         sid = p.stem
         if sid not in by_code:
             continue
@@ -115,21 +111,11 @@ def _sessions_missing_from(tree: str) -> pd.DataFrame:
 
 
 def fetch(dataset: str, date: str) -> pd.DataFrame:
-    params = {"dataset": dataset, "start_date": date, "end_date": date}
-    for _ in range(6):
-        r = requests.get(API, params=params, headers=headers(), timeout=180)
-        if r.status_code in (402, 429):
-            time.sleep(3600 - (time.time() % 3600) + 60)
-            continue
-        r.raise_for_status()
-        payload = r.json()
-        if payload.get("status") != 200:
-            raise RuntimeError(f"{dataset} {date}: {payload.get('msg')}")
-        df = pd.DataFrame(payload.get("data") or [])
-        if len(df):
-            assert set(df["date"]) == {date}, f"{date}: response spans dates"
-        return df
-    raise RuntimeError(f"{dataset} {date}: exhausted retries")
+    """Every stock's row on `date`, date-keyed; empty where the market was shut."""
+    df = get(dataset, start=date, end=date)
+    if len(df):
+        assert set(df["date"]) == {date}, f"{date}: response spans dates"
+    return df
 
 
 def _vintage_verdict(sid: str, committed: pd.DataFrame,
@@ -170,7 +156,7 @@ def main() -> int:
     print(f"candidate dates (interior gaps in ohlcv/ vs the tape): {len(dates)}")
     print("  " + ", ".join(f"{d} {pd.Timestamp(d).day_name()[:3]}" for d in dates))
 
-    for tree, dataset in TREES.items():
+    for tree, dataset in ENDPOINTS.items():
         # A back-adjusted close is anchored at the present, so a row fetched now
         # carries every event since the file was written. A raw print carries no
         # factor, so its close has no vintage — measured, not assumed: across
@@ -186,7 +172,7 @@ def main() -> int:
         inserted = stale = unverified = 0
         stale_ids, unverified_ids = [], []
         n_planned = 0
-        for path in sorted((HERE / tree).glob("*.parquet")):
+        for path in sorted((TREES / tree).glob("*.parquet")):
             sid = path.stem
             try:
                 f = pd.read_parquet(path)
@@ -244,7 +230,7 @@ def main() -> int:
             print(f"  refused, no shared session to verify         : {unverified} "
                   f"({len(unverified_ids)} stocks) {sorted(unverified_ids)}")
             if stale_ids:
-                print(f"  -> these need the whole file, not a row: python download.py "
+                print(f"  -> these need the whole file, not a row: python -m finmind_data.collect.download "
                       f"--datasets {tree} --stocks {' '.join(sorted(stale_ids))}")
         assert inserted + stale + unverified == n_planned, (
             f"{tree}: {n_planned} planned but {inserted}+{stale}+{unverified} "

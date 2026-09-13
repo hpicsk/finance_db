@@ -34,14 +34,13 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
-from pathlib import Path
 
 import pandas as pd
 
-from .window import COVERAGE_END
+from ..window import COVERAGE_END
+from ..paths import DATA
 
-ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "exright_reference.parquet"
+OUT = DATA / "exright_reference.parquet"
 
 URL = ("https://www.twse.com.tw/rwd/zh/exRight/TWT49U"
        "?startDate={start}&endDate={end}&response=json")

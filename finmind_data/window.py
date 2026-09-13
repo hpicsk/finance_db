@@ -33,8 +33,8 @@ because the alternative is the same comparison written out at each of them.
 The tree holds sessions on both sides of the window, so a reader that forgets
 does not fail — it quietly measures a wider panel than it reports, and the
 number it returns is the kind that gets published. The check is that every
-module `grep -l "ohlcv/" *.py` names imports from here, `download.py` excepted:
-it writes the tree, and writing it short is what the window is not for.
+module importing `paths.TREES` imports from here too, except the writers and
+whole-file readers `test_taiwan_tree_readers_import_the_window` names.
 """
 import pandas as pd
 

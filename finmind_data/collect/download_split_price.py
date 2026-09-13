@@ -36,22 +36,18 @@ exists to absorb, not a missing event.
 names and is a strict subset — every one of its 15 rows is already keyed in
 ``TaiwanStockSplitPrice`` — so only the wider table is taken.
 
-    python -m finmind_data.download_split_price
+    python -m finmind_data.collect.download_split_price
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
-import requests
 
-from .auth import headers
-from .window import COVERAGE_START, COVERAGE_END
+from ..client import get
+from ..window import COVERAGE_START, COVERAGE_END
+from ..paths import DATA
 
-ROOT = Path(__file__).resolve().parent
-API = "https://api.finmindtrade.com/api/v4/data"
 DATASET = "TaiwanStockSplitPrice"
-OUT = ROOT / "split_reference.parquet"
+OUT = DATA / "split_reference.parquet"
 
 # The columns adjust.py reads, under the endpoint's own names. `type` is kept
 # because it names which action repriced the share (面額變更 / 分割 / 反分割) and
@@ -62,13 +58,9 @@ COLUMNS = ["date", "stock_id", "type", "before_price", "after_price"]
 
 def fetch() -> pd.DataFrame:
     """The whole table. It is market-wide and takes no data_id."""
-    r = requests.get(API, params={"dataset": DATASET}, headers=headers(), timeout=120)
-    r.raise_for_status()
-    payload = r.json()
-    rows = payload.get("data")
-    if not rows:
-        raise RuntimeError(f"{DATASET} returned no rows: {payload.get('msg')!r}")
-    df = pd.DataFrame(rows)
+    df = get(DATASET)
+    if df.empty:
+        raise RuntimeError(f"{DATASET} returned no rows")
     missing = [c for c in COLUMNS if c not in df.columns]
     if missing:
         raise RuntimeError(f"{DATASET} is missing {missing}; got {list(df.columns)}")

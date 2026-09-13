@@ -12,15 +12,13 @@ the clip, re-running this after an extension rewrites the same file.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
 
 from finmind_data.window import clip
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-SRC = ROOT / "cap_red"
-OUT = ROOT / "capital_reduction.parquet"
+SRC = TREES / "cap_red"
+OUT = DATA / "capital_reduction.parquet"
 
 
 def main() -> None:

@@ -29,9 +29,9 @@ vintages differ is kept in `fin_bs_vintage.parquet`, with both values. Both
 steps refuse to start while that record exists, because the grade is of the tree
 before the replacement.
 
-    python -m finmind_data.fin_bs_vintage grade --snapshot DIR --cache DIR
-    python -m finmind_data.fin_bs_vintage apply --snapshot DIR --dry-run
-    python -m finmind_data.fin_bs_vintage apply --snapshot DIR
+    python -m finmind_data.repair.fin_bs_vintage grade --snapshot DIR --cache DIR
+    python -m finmind_data.repair.fin_bs_vintage apply --snapshot DIR --dry-run
+    python -m finmind_data.repair.fin_bs_vintage apply --snapshot DIR
 """
 from __future__ import annotations
 
@@ -45,12 +45,12 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .mops_filings import EMPTY, Refused, call
+from ..collect.mops_filings import EMPTY, Refused, call
+from ..paths import RECORDS, TREES
 
-HERE = Path(__file__).resolve().parent
-TREE = HERE / "fin_bs"
-GRADE = HERE / "fin_bs_vintage_grade.parquet"
-RECORD = HERE / "fin_bs_vintage.parquet"
+TREE = TREES / "fin_bs"
+GRADE = RECORDS / "fin_bs_vintage_grade.parquet"
+RECORD = RECORDS / "fin_bs_vintage.parquet"
 KEY = ["date", "stock_id", "type"]
 # `t164sb03` serves no statement before the first IFRS quarter: asked for 2012 Q3
 # and Q4, it answers that no such filing exists.

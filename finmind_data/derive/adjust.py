@@ -71,18 +71,16 @@ and ``adjusted_loader`` turns them into ``is_valid``.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
-from .window import clip
+from ..window import clip
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-OHLCV_DIR = ROOT / 'ohlcv'
-DIV_RESULT_DIR = ROOT / 'div_result'
-CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
-SPLIT_PATH = ROOT / 'split_reference.parquet'
+OHLCV_DIR = TREES / 'ohlcv'
+DIV_RESULT_DIR = TREES / 'div_result'
+CAP_RED_PATH = DATA / 'capital_reduction.parquet'
+SPLIT_PATH = DATA / 'split_reference.parquet'
 
 # 除權息 columns: the exchange's official pre- and post-event reference prices.
 _DIV_BEFORE, _DIV_AFTER = 'before_price', 'after_price'

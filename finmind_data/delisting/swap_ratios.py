@@ -5,7 +5,7 @@ per target share, and for most of the swap-labelled exits that number is not
 available at all. The labels record a ratio for a dozen of them, but in
 conventions that disagree row to row — ``0.3562:1``, ``1:1.68``, ``3.15:1``, a
 bare ``1.39`` — and picking a direction by whichever reading lands nearest the
-last close would measure the picking rather than the deal (README caveat 8).
+last close would measure the picking rather than the deal (CAVEATS.md 8).
 The direction has to come off a filing, and this is what fetches it.
 
 **Why the acquirer and not the target.** ``mops_filings.py`` documents the
@@ -45,27 +45,26 @@ fetched only for subjects that name the target or the ratio. The filter is
 recorded per deal in the cache, because a subject line that was not fetched is
 not evidence of absence.
 
-    python -m finmind_data.swap_ratios              # every deal not yet cached
-    python -m finmind_data.swap_ratios --only 3534
+    python -m finmind_data.delisting.swap_ratios              # every deal not yet cached
+    python -m finmind_data.delisting.swap_ratios --only 3534
 """
 from __future__ import annotations
 
 import argparse
 import re
 import sys
-from pathlib import Path
 
 import pandas as pd
 
-from .mops_filings import (LISTING_DIR, LOOKBACK_ROC_YEARS, details_for,
+from ..collect.mops_filings import (LISTING_DIR, LOOKBACK_ROC_YEARS, details_for,
                            listings_for, log)
+from ..paths import DATA
 
-ROOT = Path(__file__).resolve().parent
-ACQ_LISTING_DIR = ROOT / "mops_acquirer_listing"
-ACQ_DETAIL_DIR = ROOT / "mops_acquirer_detail"
-ACQ_REFUSALS = ROOT / "mops_acquirer_refusals.csv"
-FRAME = ROOT / "delisting_sign.parquet"
-LABELS = ROOT / "delisting_labels.csv"
+ACQ_LISTING_DIR = DATA / "mops_acquirer_listing"
+ACQ_DETAIL_DIR = DATA / "mops_acquirer_detail"
+ACQ_REFUSALS = DATA / "mops_acquirer_refusals.csv"
+FRAME = DATA / "delisting_sign.parquet"
+LABELS = DATA / "delisting_labels.csv"
 
 # target -> (acquirer code, the acquirer's company name as the target's own
 # subject lines write it). The name is the evidence for the code and is checked
@@ -103,7 +102,7 @@ DEALS = {
     # settlement interface: each was tendered first and ended by a second step
     # the buyer filed, so the tender price is what the holders who tendered
     # received and the ratio here is what the rest were squeezed out at
-    # (README caveat 8). They differ from the entries above only in having a
+    # (CAVEATS.md 8). They differ from the entries above only in having a
     # tender in front of them; the lookup is the same one.
     "6422": ("2327", "國巨"),
     "4725": ("1101", "台灣水泥"),

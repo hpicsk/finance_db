@@ -28,9 +28,9 @@ A whole re-pull of `price_adj/` brings the adjusted endpoint's counts back, so
 the record: the counts it replaces are the endpoint's current answer, not a
 first answer that nothing serves any more.
 
-    python -m finmind_data.volume_repair --dry-run
-    python -m finmind_data.volume_repair
-    python -m finmind_data.volume_repair --adjusted-only
+    python -m finmind_data.repair.volume_repair --dry-run
+    python -m finmind_data.repair.volume_repair
+    python -m finmind_data.repair.volume_repair --adjusted-only
 """
 from __future__ import annotations
 
@@ -41,10 +41,10 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from .backfill_make_up_sessions import fetch
-from .window import COVERAGE_START, COVERAGE_END
+from ..window import COVERAGE_START, COVERAGE_END
+from ..paths import RECORDS, TAPE, TREES
 
-HERE = Path(__file__).resolve().parent
-LOG = HERE / "volume_repair.parquet"
+LOG = RECORDS / "volume_repair.parquet"
 COUNTS = ["Trading_Volume", "Trading_money", "Trading_turnover"]
 PRICES = ["open", "max", "min", "close", "spread"]
 LO, HI = str(COVERAGE_START.date()), str(COVERAGE_END.date())
@@ -60,10 +60,10 @@ def _read(path: Path) -> pd.DataFrame | None:
 def _stale_dates() -> list[str]:
     """In-window sessions on which some `ohlcv/` row's volume or value is not
     the tape's."""
-    tape = pd.concat([pd.read_parquet(p) for p in sorted((HERE / "tape").glob("*.parquet"))],
+    tape = pd.concat([pd.read_parquet(p) for p in sorted((TAPE).glob("*.parquet"))],
                      ignore_index=True)
     tree = []
-    for p in sorted((HERE / "ohlcv").glob("*.parquet")):
+    for p in sorted((TREES / "ohlcv").glob("*.parquet")):
         if pq.ParquetFile(p).metadata.num_rows == 0:
             continue
         f = pd.read_parquet(p, columns=["date", "stock_id", "Trading_Volume",
@@ -88,8 +88,8 @@ def _adopt_raw_counts(fixed: dict) -> tuple[list[pd.DataFrame], list[Path]]:
     """Copy `ohlcv/`'s three counts into `price_adj/` wherever an in-window row
     differs, reading `ohlcv/` from `fixed` where this run has repaired it."""
     log, written = [], []
-    for p in sorted((HERE / "price_adj").glob("*.parquet")):
-        q = HERE / "ohlcv" / p.name
+    for p in sorted((TREES / "price_adj").glob("*.parquet")):
+        q = TREES / "ohlcv" / p.name
         a = _read(p)
         if a is None or not q.exists():
             continue
@@ -142,7 +142,7 @@ def main() -> int:
     served = dict(tuple(snap.groupby("stock_id")))
 
     log, fixed, written = [], {}, []
-    for p in sorted((HERE / "ohlcv").glob("*.parquet")):
+    for p in sorted((TREES / "ohlcv").glob("*.parquet")):
         f = _read(p)
         if f is None:
             continue

@@ -153,15 +153,15 @@ import numpy as np
 import pandas as pd
 
 from . import adjust
-from .backfill_make_up_sessions import _VINTAGE_TOL
+from ..repair.backfill_make_up_sessions import _VINTAGE_TOL
 from .vendor_event_audit import defective_events
-from .window import COVERAGE_START, COVERAGE_END, clip
+from ..window import COVERAGE_START, COVERAGE_END, clip
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-OHLCV_DIR = ROOT / 'ohlcv'
-PRICE_ADJ_DIR = ROOT / 'price_adj'
-UNPRICED_PATH = ROOT / 'unpriced_actions.parquet'
-DELISTED_PATH = ROOT / 'delisted_universe.parquet'
+OHLCV_DIR = TREES / 'ohlcv'
+PRICE_ADJ_DIR = TREES / 'price_adj'
+UNPRICED_PATH = DATA / 'unpriced_actions.parquet'
+DELISTED_PATH = DATA / 'delisted_universe.parquet'
 
 # A listing that stops trading for two years and returns is not the same series.
 # Observed gap lengths are empty between 419 and 738 days, so every cut in that
@@ -191,7 +191,7 @@ def _unpriced_dates(stock_id: str) -> np.ndarray:
     if not UNPRICED_PATH.exists():
         raise FileNotFoundError(
             f'{UNPRICED_PATH} is missing — run '
-            f'`python -m finmind_data.detect_unpriced_actions` first. Without it '
+            f'`python -m finmind_data.derive.detect_unpriced_actions` first. Without it '
             f'the capital reductions filed before the event file starts '
             f'(2011-01-25) stay unmarked in is_valid.')
     u = pd.read_parquet(UNPRICED_PATH)
@@ -209,7 +209,7 @@ def _delisting_date(stock_id: str):
     if not DELISTED_PATH.exists():
         raise FileNotFoundError(
             f'{DELISTED_PATH} is missing — run '
-            f'`python -m finmind_data.build_universe` first. Without it the '
+            f'`python -m finmind_data.derive.build_universe` first. Without it the '
             f'sessions a delisted name goes on printing stay is_valid and a '
             f'backtest holds them.')
     d = pd.read_parquet(DELISTED_PATH)
@@ -314,7 +314,7 @@ def load_adjusted(stock_id: str,
     if not a.exists():
         raise FileNotFoundError(
             f'no adjusted series for {stock_id} at {a} — run '
-            f'`python download.py --datasets price_adj --stocks {stock_id}`')
+            f'`python -m finmind_data.collect.download --datasets price_adj --stocks {stock_id}`')
     adj = pd.read_parquet(a)
     if len(adj):
         adj['date'] = pd.to_datetime(adj['date'])
@@ -499,7 +499,7 @@ def _require_raw_covers_vendor(stock_id: str, out: pd.DataFrame,
         f'session{"s" if len(missing) > 1 else ""} ohlcv/ has no row for ({", ".join(dates)}{" ..." if len(missing) > 5 else ""}), so '
         f'the return after each one spans two sessions. The raw tree is behind '
         f'a vendor backfill — repair the tree, do not derive the rows: '
-        f'`python -m finmind_data.backfill_make_up_sessions --dry-run`')
+        f'`python -m finmind_data.repair.backfill_make_up_sessions --dry-run`')
 
 
 def _patch(stock_id: str, dates: np.ndarray, covered: np.ndarray,

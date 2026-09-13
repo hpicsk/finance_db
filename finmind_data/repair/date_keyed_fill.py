@@ -20,8 +20,8 @@ is not a correction. Every added row is written to
 start while that directory exists, because a second run finds nothing to add
 and would overwrite the record of the first with an empty one.
 
-    python -m finmind_data.date_keyed_fill --snapshot DIR [DIR ...] --dry-run
-    python -m finmind_data.date_keyed_fill --snapshot DIR [DIR ...]
+    python -m finmind_data.repair.date_keyed_fill --snapshot DIR [DIR ...] --dry-run
+    python -m finmind_data.repair.date_keyed_fill --snapshot DIR [DIR ...]
 """
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .window import COVERAGE_END, COVERAGE_START
+from ..window import COVERAGE_END, COVERAGE_START
+from ..paths import DATA, RECORDS, TREES
 
-HERE = Path(__file__).resolve().parent
-RECORD = HERE / "date_keyed_fill"
-TREES = ("fin_is", "fin_bs", "fin_cf", "month_rev")
+RECORD = RECORDS / "date_keyed_fill"
+STATEMENT_TREES = ("fin_is", "fin_bs", "fin_cf", "month_rev")
 
 
 def _pull(tree: str, snapshots: list[Path]) -> pd.DataFrame:
@@ -68,7 +68,7 @@ def _plan(tree: str, snapshots: list[Path], names: set[str]) -> dict[str, pd.Dat
         raise SystemExit(f"{tree}: the pull carries a {key} twice")
     plan = {}
     for sid, new in now.groupby("stock_id", sort=True):
-        f = pd.read_parquet(HERE / tree / f"{sid}.parquet")
+        f = pd.read_parquet(TREES / tree / f"{sid}.parquet")
         if len(f) and (list(f.columns) != list(new.columns)
                        or (f.dtypes != new.dtypes).any()):
             raise SystemExit(f"{tree}/{sid}.parquet and the pull differ in schema: "
@@ -83,8 +83,8 @@ def fill(snapshots: list[Path], dry_run: bool) -> dict[str, pd.DataFrame]:
     if RECORD.exists():
         raise SystemExit(f"{RECORD.name}/ exists: the fill has run, and a second run "
                          f"would overwrite its record with an empty one")
-    names = set(pd.read_parquet(HERE / "universe.parquet")["stock_id"].astype(str))
-    plans = {tree: _plan(tree, snapshots, names) for tree in TREES}
+    names = set(pd.read_parquet(DATA / "universe.parquet")["stock_id"].astype(str))
+    plans = {tree: _plan(tree, snapshots, names) for tree in STATEMENT_TREES}
     added = {tree: pd.concat(plan.values(), ignore_index=True) for tree, plan in plans.items()}
     for tree, rec in added.items():
         cps = rec[["stock_id", "date"]].drop_duplicates()
@@ -97,7 +97,7 @@ def fill(snapshots: list[Path], dry_run: bool) -> dict[str, pd.DataFrame]:
         rec.to_parquet(RECORD / f"{tree}.parquet", index=False)
     for tree, plan in plans.items():
         for sid, add in plan.items():
-            p = HERE / tree / f"{sid}.parquet"
+            p = TREES / tree / f"{sid}.parquet"
             f = pd.read_parquet(p)
             out = pd.concat([f, add], ignore_index=True) if len(f) else add
             out.sort_values("date", kind="stable").reset_index(drop=True).to_parquet(p, index=False)

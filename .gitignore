@@ -40,47 +40,28 @@ fnguide_data/*.zip
 # "marcap coverage verification".
 marcap/
 
-# FinMind per-stock parquets (~1.6 GB total)
-finmind_data/ohlcv/
-finmind_data/price_adj/
-finmind_data/instflow/
-finmind_data/shares/
-finmind_data/per_pbr/
-finmind_data/margin_short/
-finmind_data/month_rev/
-finmind_data/fin_is/
-finmind_data/fin_bs/
-finmind_data/fin_cf/
-finmind_data/dividend/
-finmind_data/div_result/
-finmind_data/sec_lending/
-finmind_data/cap_red/
+# FinMind raw store: one dated vintage per date-keyed sweep (~1 GB each),
+# written by finmind_data/collect/sweep.py and never edited afterwards, plus
+# raw/tape/, the four-column price tape collect/tape_universe.py sweeps.
+finmind_data/raw/
 
-# Date-keyed full-market tape (~78 MB), regenerable from the endpoint via
-# tape_universe.py. The per-code summary it rolls up to,
-# tape_universe.parquet, is small and is tracked — that is the file the
-# assertions read.
-finmind_data/tape/
-
-# Capital-reduction consolidated output is regenerable from cap_red/ via
-# consolidate_capred.py
-finmind_data/capital_reduction.parquet
-
-# Per-company 財務報告書 filing indexes from TWSE's document server (~23 MB,
-# 2,230 files), regenerable via filing_dates.py — budget a day, the server
-# allows a burst of ~14 requests then a cooldown. The company-quarter panel it
-# rolls up to, filing_dates.parquet, is small and is tracked — that is the file
+# FinMind per-stock trees (~1.6 GB): the 14 datasets finmind_data/datasets.py
+# names, plus trees/filing_dates/, the per-company 財務報告書 indexes from TWSE's
+# document server (~23 MB, regenerable via collect/filing_dates.py — budget a
+# day, the server allows a burst of ~14 requests then a cooldown). The small
+# tables they roll up to under finmind_data/data/ are tracked; those are what
 # the assertions read.
-finmind_data/filing_dates/
+finmind_data/trees/
 
-# Unpriced share cancellations, regenerable from shares/ via
-# detect_unpriced_actions.py
-finmind_data/unpriced_actions.parquet
+# Regenerable derived tables, each from an input above: capital_reduction from
+# trees/cap_red/ (derive/consolidate_capred.py), unpriced_actions from
+# trees/shares/ (derive/detect_unpriced_actions.py), exright_reference from
+# twse.com.tw (collect/download_exright.py).
+finmind_data/data/capital_reduction.parquet
+finmind_data/data/unpriced_actions.parquet
+finmind_data/data/exright_reference.parquet
 
-# TWSE 除權除息計算結果表, regenerable from twse.com.tw via download_exright.py
-finmind_data/exright_reference.parquet
-
-# NOT ignored, deliberately: finmind_data/vendor_event_audit.parquet. It grades
+# NOT ignored, deliberately: finmind_data/data/vendor_event_audit.parquet. It grades
 # the vendor's adjusted series against the exchange event by event, so it is a
 # snapshot of something that can change under a re-download rather than a
 # derivation of something stable — the same reason krx_adj_oracle.parquet is
@@ -118,6 +99,10 @@ __pycache__/
 
 # Per-package run state (PID files, progress checkpoints, run logs — regenerable)
 runtime/
+
+# Per-package instruments and run logs: audit tables, fingerprints, nohup output.
+# Nothing a reader needs; research CLAUDE.md §1 puts every instrument here.
+_internal/
 
 # Stray PDFs
 finmind_data/*.pdf

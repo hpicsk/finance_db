@@ -3,7 +3,7 @@
 Merges in delistings from `delisted_universe.parquet` that FinMind's live
 `taiwan_stock_info` endpoint no longer returns. Without these names the
 universe is what the endpoint still lists, which is the survivors — see
-README "Survivorship bias".
+README "Survivorship".
 
 The re-add used to be gated at `date < 2015-01-01`, on the premise that the
 live endpoint keeps every name that delisted from 2015 on. It does not, and
@@ -28,17 +28,16 @@ the stock: replaying it against the 2026-08-17 table leaks all 36 ids the
 endpoint marks as an excluded instrument, which is what the assertion
 below counts.
 """
-from FinMind.data import DataLoader
 import pandas as pd
-from pathlib import Path
+
+from ..client import get
 
 from .pit_universe import emerging_boundary
-from .window import COVERAGE_START, COVERAGE_END
+from ..window import COVERAGE_START, COVERAGE_END
+from ..paths import DATA
 
-OUT = Path(__file__).resolve().parent
 
-dl = DataLoader()
-raw = dl.taiwan_stock_info()
+raw = get("TaiwanStockInfo")
 
 # Instrument types that are not common equity. A stock is dropped if *any* of
 # its rows carries one: these mark what an instrument is, and within the 2005-
@@ -104,7 +103,7 @@ assert not (set(info["stock_id"]) & excluded_ids), (
 # nothing about the company the universe row stands for. Match on the name the
 # delisting was recorded under: those four are still listed under their own,
 # and 2432 is not.
-delisted = pd.read_parquet(OUT / "delisted_universe.parquet")
+delisted = pd.read_parquet(DATA / "delisted_universe.parquet")
 exits = delisted[delisted["date"] >= str(COVERAGE_START.date())].copy()
 exits = exits[exits["stock_id"].str.fullmatch(r"\d{4}")]
 live_names = raw.groupby("stock_id")["stock_name"].apply(set)
@@ -148,5 +147,5 @@ print(f"Excluded by instrument type: {len(excluded_ids)}")
 print("\nTop industries:")
 print(info["industry_category"].value_counts().head(15))
 
-info.to_parquet(OUT / "universe.parquet", index=False)
-print(f"\nSaved to {OUT / 'universe.parquet'}")
+info.to_parquet(DATA / "universe.parquet", index=False)
+print(f"\nSaved to {DATA / 'universe.parquet'}")

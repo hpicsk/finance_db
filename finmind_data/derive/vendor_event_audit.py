@@ -50,7 +50,7 @@ than ``_MAX_BRACKET_DAYS``, and 3454's non-positive row. Every rate quoted here
 — 81.4 %, 99.6 %, the defect counts — is over the 21,224; every count of what
 was *filed* is over the 21,418.
 
-    python -m finmind_data.vendor_event_audit
+    python -m finmind_data.derive.vendor_event_audit
 """
 from __future__ import annotations
 
@@ -60,13 +60,13 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .window import clip
+from ..window import clip
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-OHLCV_DIR = ROOT / 'ohlcv'
-PRICE_ADJ_DIR = ROOT / 'price_adj'
-DIV_RESULT_DIR = ROOT / 'div_result'
-OUT_PATH = ROOT / 'vendor_event_audit.parquet'
+OHLCV_DIR = TREES / 'ohlcv'
+PRICE_ADJ_DIR = TREES / 'price_adj'
+DIV_RESULT_DIR = TREES / 'div_result'
+OUT_PATH = DATA / 'vendor_event_audit.parquet'
 
 # The vendor's step for an event is read off two *adjacent* covered sessions
 # bracketing it. Further apart than this and the ratio spans a gap that may
@@ -177,7 +177,7 @@ def defective_events(path: Path = OUT_PATH) -> pd.DataFrame:
     """
     if not path.exists():
         raise FileNotFoundError(
-            f'{path} is missing — run `python -m finmind_data.vendor_event_audit` '
+            f'{path} is missing — run `python -m finmind_data.derive.vendor_event_audit` '
             f'first. Without it the vendor events that are wrong rather than '
             f'differently derived go through unpatched.')
     d = pd.read_parquet(path)

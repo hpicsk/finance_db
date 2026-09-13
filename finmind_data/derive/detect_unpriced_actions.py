@@ -1,4 +1,4 @@
-"""Share-count changes no filed event explains. `python -m finmind_data.detect_unpriced_actions`
+"""Share-count changes no filed event explains. `python -m finmind_data.derive.detect_unpriced_actions`
 
 ``capital_reduction.parquet`` starts on 2011-01-25; ``ohlcv/`` and ``div_result/``
 start in 2005. The six missing years are a limit of FinMind's endpoint, not of the
@@ -47,20 +47,19 @@ is on, so the 5 % floor sets recall, not the pass mark.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from finmind_data.adjusted_loader import OHLCV_DIR, UNPRICED_PATH
+from .adjusted_loader import OHLCV_DIR, UNPRICED_PATH
 from finmind_data.window import COVERAGE_START, COVERAGE_END, clip
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-SHARES_DIR = ROOT / 'shares'
+SHARES_DIR = TREES / 'shares'
 # The two filed-event chains, read here only as the explainer set: a detected
 # share drop within _EXPLAINED_WINDOW_DAYS of a filing is one the exchange priced.
-DIV_RESULT_DIR = ROOT / 'div_result'
-CAP_RED_PATH = ROOT / 'capital_reduction.parquet'
+DIV_RESULT_DIR = TREES / 'div_result'
+CAP_RED_PATH = DATA / 'capital_reduction.parquet'
 
 _MIN_SHARE_DROP = 0.05
 _MIN_SUSPENSION_DAYS = 5

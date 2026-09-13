@@ -29,11 +29,23 @@ import pandas as pd
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from finmind_data.window import COVERAGE_START, COVERAGE_END, clip  # noqa: E402
+from finmind_data.paths import DATA, PKG, RECORDS, TAPE, TREES  # noqa: E402
 
 # Each check's population, recorded so a tree that lost rows fails rather
 # than passing on a smaller one. Per package, not per repo: the root is a
 # container and holds no package's numbers.
 POPULATIONS = Path(__file__).with_name("populations.json")
+
+
+def _sources() -> list[Path]:
+    """The package's own modules: what the source-level checks read.
+
+    Every `.py` under the package except this suite, the check modules and
+    `_internal/`, which holds run state rather than code the package runs.
+    """
+    return sorted(p for p in PKG.rglob("*.py")
+                  if "_internal" not in p.parts and "checks" not in p.parts
+                  and not p.name.startswith("test_"))
 
 
 def _tree(path, columns=None):
@@ -76,7 +88,7 @@ def _panel_ids():
     what the README's exclusion table describes, so it is what a panel figure is
     counted over.
     """
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
     return sorted(u["stock_id"].astype(str))
 
 
@@ -90,48 +102,49 @@ def test_taiwan_tree_readers_import_the_window():
     invariant was written in prose and nothing enforced it, which is the state
     every figure in this suite was in before it was asserted.
 
-    Two files are excepted and both are named here rather than skipped by
-    pattern, so adding a third is a change to this list and not a silent one.
-    `window.py` defines the window, and `download.py` writes the trees — writing
-    them short is what the window is not for, since a wider tree costs nothing
-    and a narrower one cannot be widened without a re-download.
+    A module reads the trees when it imports `TREES` from `paths`, the one
+    spelling of where they are. Four are excepted, and named here rather than
+    skipped by pattern, so adding a fifth is a change to this list and not a
+    silent one. `download.py` writes the trees — writing them short is what the
+    window is not for, since a wider tree costs nothing and a narrower one
+    cannot be widened without a re-download. `filing_dates.py` reads which files
+    exist and the newest quarter each holds, to decide what to collect;
+    `fin_bs_vintage.py` grades whole files against a snapshot whose own periods
+    bound the comparison; `available_date.py` opens one file in its
+    demonstration block. None of the three publishes a figure over the trees.
 
     The import is what is checked, not the call, because that is what the
     docstring claims and a module may legitimately hold the dates rather than
-    clip a frame (`build_universe` reads neither tree and does exactly that).
-    A reader that imports and then forgets to clip is caught by the population
-    guard instead: its count moves against `populations.json`.
+    clip a frame. A reader that imports and then forgets to clip is caught by
+    the population guard instead: its count moves against `populations.json`.
     """
-    src = sorted(glob.glob(str(REPO / "finmind_data/*.py")))
-    readers = []
-    for f in src:
-        text = Path(f).read_text()
-        if "ohlcv/" in text:
-            readers.append((os.path.basename(f), text))
+    readers = [(p.name, p.read_text()) for p in _sources()]
+    readers = [(n, t) for n, t in readers
+               if re.search(r"^from (\.\.?|finmind_data\.)paths import .*\bTREES\b", t, re.M)]
     assert readers, (
-        "no module in the package names `ohlcv/` at all, so this check has no "
-        "population — the trees moved, or the path spelling did, and the "
-        "invariant is unverified rather than held"
+        "no module in the package imports `paths.TREES` at all, so this check "
+        "has no population — the trees moved, or the path spelling did, and "
+        "the invariant is unverified rather than held"
     )
-    excepted = {"window.py", "download.py"}
+    excepted = {"download.py", "filing_dates.py", "fin_bs_vintage.py", "available_date.py"}
     names = {n for n, _ in readers}
     assert excepted <= names, (
-        f"window.py's docstring excepts {sorted(excepted)} from the import "
-        f"rule; {sorted(excepted - names)} no longer names `ohlcv/`, so the "
-        f"exception is stale and the docstring names a file that is not there"
+        f"this check excepts {sorted(excepted)} from the import rule; "
+        f"{sorted(excepted - names)} no longer reads the trees, so the "
+        f"exception is stale and names a file that is not there"
     )
     missing = sorted(n for n, t in readers
                      if n not in excepted
-                     and "from .window import" not in t
-                     and "from finmind_data.window import" not in t)
+                     and not re.search(r"^from (\.\.?|finmind_data\.)window import", t, re.M))
     assert not missing, (
         f"window.py's docstring claims every module that reads the trees "
-        f"imports the window from it, `download.py` excepted; {missing} reads "
-        f"them and does not. An unclipped read measures the sessions outside "
+        f"imports the window from it, the writers and whole-file readers "
+        f"excepted; {missing} reads them and does not. An unclipped read "
+        f"measures the sessions outside "
         f"{COVERAGE_START.date()}..{COVERAGE_END.date()} into a figure the "
         f"package publishes as being about the window"
     )
-    return (f"{len(readers)} modules name the trees; "
+    return (f"{len(readers)} modules read the trees; "
             f"{len(readers) - len(excepted)} of them import the window, "
             f"{sorted(excepted)} excepted"), len(readers)
 
@@ -158,14 +171,14 @@ def test_taiwan_coverage_does_not_outrun_the_data():
     coverage end on a Sunday would pass a `<=` against the last session and
     name a day the market was shut, which is the same defect one day wide.
     """
-    cal_path = REPO / "finmind_data/trading_sessions.parquet"
-    spans_path = REPO / "finmind_data/listing_spans.parquet"
-    tape_path = REPO / f"finmind_data/tape/{COVERAGE_END.year}.parquet"
+    cal_path = DATA / "trading_sessions.parquet"
+    spans_path = DATA / "listing_spans.parquet"
+    tape_path = TAPE / f"{COVERAGE_END.year}.parquet"
     if not cal_path.exists() or not spans_path.exists() or not tape_path.exists():
         raise Skipped("trading_sessions.parquet / listing_spans.parquet / the "
                       "tape year coverage ends in are not built — run "
-                      "`python -m finmind_data.tape_universe` then "
-                      "`python -m finmind_data.pit_universe`")
+                      "`python -m finmind_data.collect.tape_universe` then "
+                      "`python -m finmind_data.derive.pit_universe`")
     cal = list(pd.read_parquet(cal_path)["date"])
     lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
     assert lo in cal and hi in cal, (
@@ -197,7 +210,7 @@ def test_taiwan_coverage_does_not_outrun_the_data():
     # rebuild short of the coverage every figure here is quoted on.
     end_default = [kw.value.value
                    for node in ast.walk(ast.parse(
-                       (REPO / "finmind_data/download.py").read_text()))
+                       (PKG / "collect/download.py").read_text()))
                    if isinstance(node, ast.Call)
                    and getattr(node.func, "attr", None) == "add_argument"
                    and node.args
@@ -217,7 +230,7 @@ def test_taiwan_coverage_does_not_outrun_the_data():
     # nothing.
     tape = pd.read_parquet(tape_path, columns=["date", "stock_id"])
     universe = set(pd.read_parquet(
-        REPO / "finmind_data/universe.parquet", columns=["stock_id"])["stock_id"])
+        DATA / "universe.parquet", columns=["stock_id"])["stock_id"])
     on_last = sorted(universe & set(
         tape.loc[tape["date"].astype(str) == hi, "stock_id"]))
     assert on_last, (
@@ -225,7 +238,7 @@ def test_taiwan_coverage_does_not_outrun_the_data():
         f"coverage ends on a day the package holds no price for")
     silent = [s for s in on_last
               if hi not in set(pd.read_parquet(
-                  REPO / f"finmind_data/ohlcv/{s}.parquet",
+                  TREES / f"ohlcv/{s}.parquet",
                   columns=["date"])["date"].astype(str))]
     assert not silent, (
         f"{len(silent)} of the {len(on_last):,} universe names the tape quotes "
@@ -260,11 +273,11 @@ def test_taiwan_tape_years_are_whole():
     """
     import pyarrow.parquet as pq
 
-    from finmind_data.tape_universe import _YEAR_END_SLACK
+    from finmind_data.collect.tape_universe import _YEAR_END_SLACK
 
-    files = sorted((REPO / "finmind_data/tape").glob("*.parquet"))
+    files = sorted((TAPE).glob("*.parquet"))
     if not files:
-        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+        raise Skipped("tape/ not built (python -m finmind_data.collect.tape_universe)")
     years = [int(f.stem) for f in files]
     assert years == list(range(years[0], years[-1] + 1)), (
         f"the tape skips a year: {sorted(set(range(years[0], years[-1] + 1)) - set(years))}")
@@ -320,9 +333,9 @@ def test_taiwan_delisting_frame_does_not_follow_coverage():
     against itself — git holds the frame the labels were drawn against.
     """
     import finmind_data.window as window
-    from finmind_data import delisting_sign
+    from finmind_data.delisting import delisting_sign
 
-    frozen = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    frozen = pd.read_parquet(DATA / "delisting_sign.parquet")
     frozen_ids = set(frozen["stock_id"].astype(str))
 
     saved = window.COVERAGE_END
@@ -385,7 +398,7 @@ def test_taiwan_loader_takes_the_callers_span():
     """
     import numpy as np
 
-    from finmind_data.adjusted_loader import load_adjusted, available_stocks
+    from finmind_data.derive.adjusted_loader import load_adjusted, available_stocks
 
     days = pd.DataFrame({"date": pd.date_range(COVERAGE_START, "2030-12-31")})
     named = clip(days, start="2015-03-02", end="2015-03-06")
@@ -403,7 +416,7 @@ def test_taiwan_loader_takes_the_callers_span():
     scanned = 0
     witness = None
     for sid in stocks:
-        f = REPO / f"finmind_data/div_result/{sid}.parquet"
+        f = TREES / f"div_result/{sid}.parquet"
         if not f.exists():
             continue
         ev = pd.read_parquet(f)
@@ -481,7 +494,7 @@ def test_taiwan_dataset_names_in_code_resolve():
     name it does not know the same way it answers a name that is simply empty
     for the ticker asked for, so an invented endpoint and a genuinely absent
     series are told apart by probing, and the answer is then written down as a
-    comment that nothing re-checks. `download.py` carries two such answers.
+    comment that nothing re-checks. `catalogue.KNOWN_ABSENT` registers two.
 
     The vendored catalogue is the enum itself, so the question is local. This
     checks it in both directions: every dataset name spelled anywhere in the
@@ -508,11 +521,11 @@ def test_taiwan_dataset_names_in_code_resolve():
     )
     token = re.compile(r"\bTaiwan[A-Z][A-Za-z0-9]*\b")
     seen = {}
-    for f in sorted(glob.glob(str(REPO / "finmind_data/*.py"))):
-        for node in ast.walk(ast.parse(Path(f).read_text())):
+    for f in _sources():
+        for node in ast.walk(ast.parse(f.read_text())):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 for t in token.findall(node.value):
-                    seen.setdefault(t, set()).add(os.path.basename(f))
+                    seen.setdefault(t, set()).add(f.name)
     used = {t: v for t, v in seen.items() if t not in catalogue.KNOWN_ABSENT}
     assert used, (
         "no module in the package spells a FinMind dataset name at all, so "
@@ -541,11 +554,11 @@ def test_taiwan_dataset_names_in_code_resolve():
 
 # ---- Taiwan: one OHLCV file per universe id --------------------------------
 def _tw_ids():
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     uid = set(u["stock_id"].astype(str))
     files = {os.path.basename(p).split(".")[0]
-             for p in glob.glob(str(REPO / "finmind_data/ohlcv/*"))}
+             for p in glob.glob(str(TREES / "ohlcv/*"))}
     return u, d, uid, files
 
 
@@ -561,14 +574,14 @@ def _in_window_exits():
     longer see. Names with no traded session inside coverage are left out: they
     have no last trade the universe could be asked about.
     """
-    from finmind_data.pit_universe import sessions
+    from finmind_data.derive.pit_universe import sessions
 
     cal = sessions()
     _, d, uid, _ = _tw_ids()
     d = d[d["stock_id"].isin(uid) & (d["date"] >= cal[0]) & (d["date"] <= cal[-1])]
     rows = []
     for r in d.itertuples():
-        p = _tree(REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet",
+        p = _tree(TREES / f"ohlcv/{r.stock_id}.parquet",
                   columns=["date", "close"])
         if not len(p):
             continue
@@ -635,7 +648,7 @@ def test_taiwan_universe_excludes_the_instruments_it_claims_to():
     The other checks that failed on that copy pinned a count or needed a price
     file for 0015. A common added to the overlay fails them the same way.
     """
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
     name = u["stock_name"].astype(str)
 
     bad_industry = u[u["industry_category"].isin(_EXCLUDED_INSTRUMENTS)]
@@ -681,7 +694,7 @@ def test_taiwan_price_adj_one_per_universe():
     """
     _, _, uid, _ = _tw_ids()
     adj = {os.path.basename(p).split(".")[0]
-           for p in glob.glob(str(REPO / "finmind_data/price_adj/*"))}
+           for p in glob.glob(str(TREES / "price_adj/*"))}
     missing = uid - adj
     assert not missing, (
         f"{len(missing)} universe ids have no price_adj file "
@@ -692,7 +705,7 @@ def test_taiwan_price_adj_one_per_universe():
     # package does not answer for is a name it serves nothing for here.
     empty = sum(1 for sid in uid
                 if not len(_tree(
-                    REPO / f"finmind_data/price_adj/{sid}.parquet")))
+                    TREES / f"price_adj/{sid}.parquet")))
     assert empty == 92, (
         f"README pins 92 empty adjusted series — 50 in-window delistings and 42 "
         f"pre-window, and none of the third kind the shorter window had, a name "
@@ -721,8 +734,8 @@ def test_taiwan_adjusted_survivorship_hole():
     delistings scattered through the middle of the window, and the earlier shape
     was the biased overlay describing itself.
     """
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     uid = set(u["stock_id"].astype(str))
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
@@ -732,8 +745,8 @@ def test_taiwan_adjusted_survivorship_hole():
 
     hole = []
     for sid in sorted(set(inwin["sid"])):
-        raw = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
-        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
+        raw = _tree(TREES / f"ohlcv/{sid}.parquet")
+        adj = _tree(TREES / f"price_adj/{sid}.parquet")
         if len(raw) and not len(adj):
             hole.append(sid)
 
@@ -780,13 +793,13 @@ def test_taiwan_adjusted_coverage_decomposition():
     beside the ones that do rather than left to a per-stock `attrs` field
     nobody sums.
     """
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
     traded = covered = hole = tail = first = makeup = gap = 0
     vendor_only = []
     gaps = []
     heads = {}
     for sid in sorted(set(u["stock_id"].astype(str))):
-        fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        fp = TREES / f"ohlcv/{sid}.parquet"
         if not fp.exists():
             continue
         raw = _tree(fp)
@@ -797,7 +810,7 @@ def test_taiwan_adjusted_coverage_decomposition():
         tr = tr.sort_values("date").reset_index(drop=True)
         traded += len(tr)
 
-        adj = _tree(REPO / f"finmind_data/price_adj/{sid}.parquet")
+        adj = _tree(TREES / f"price_adj/{sid}.parquet")
         if not len(adj):
             hole += len(tr)
             continue
@@ -879,7 +892,7 @@ def test_taiwan_adjusted_coverage_decomposition():
     # A gap the panel carried a price across would be a silent one. Disclosure
     # is the whole of what makes it tolerable, so it is checked rather than
     # asserted in prose.
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive.adjusted_loader import load_adjusted
     for sid, day in gaps:
         row = load_adjusted(sid, start=day, end=day)
         assert len(row) == 1 and not bool(row["adj_covered"].iloc[0]), (
@@ -942,10 +955,10 @@ def test_taiwan_overlay_covers_the_window():
 
 
 def _tape_universe():
-    p = REPO / "finmind_data/tape_universe.parquet"
+    p = DATA / "tape_universe.parquet"
     if not p.exists():
         raise Skipped("tape_universe.parquet not built "
-                      "(python -m finmind_data.tape_universe)")
+                      "(python -m finmind_data.collect.tape_universe)")
     return pd.read_parquet(p)
 
 
@@ -1039,9 +1052,9 @@ def test_taiwan_pit_universe_is_dated_and_keeps_its_delistings():
     tidiness: a clone can verify that the delistings are all here and cannot
     verify that the 興櫃 names are not.
     """
-    from finmind_data.pit_universe import universe_at, sessions
+    from finmind_data.derive.pit_universe import universe_at, sessions
 
-    spans = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
+    spans = pd.read_parquet(DATA / "listing_spans.parquet")
     cal = sessions()
     u, _, uid, _ = _tw_ids()
     assert len(cal) == 3_823 and (cal[0], cal[-1]) == (
@@ -1152,11 +1165,11 @@ def test_taiwan_listing_spans_reconcile_with_the_tape():
     """
     import numpy as np
 
-    tape_dir = REPO / "finmind_data/tape"
+    tape_dir = TAPE
     if not tape_dir.exists():
-        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
-    spans = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
-    cal = list(pd.read_parquet(REPO / "finmind_data/trading_sessions.parquet")["date"])
+        raise Skipped("tape/ not built (python -m finmind_data.collect.tape_universe)")
+    spans = pd.read_parquet(DATA / "listing_spans.parquet")
+    cal = list(pd.read_parquet(DATA / "trading_sessions.parquet")["date"])
     at = {d: i for i, d in enumerate(cal)}
     _, _, uid, _ = _tw_ids()
     frame = set(_in_window_exits()["stock_id"])
@@ -1184,7 +1197,7 @@ def test_taiwan_listing_spans_reconcile_with_the_tape():
         f"the tape holds {len(swept)} in-window sessions and "
         f"trading_sessions.parquet holds {len(cal)}; the tape has moved since "
         f"the spans were built, so rebuild both with "
-        f"`python -m finmind_data.pit_universe`")
+        f"`python -m finmind_data.derive.pit_universe`")
     quoted = np.unique(tape["stock_id"].map(slot).to_numpy() * width
                        + tape["date"].map(at).to_numpy())
     listed = np.unique(np.concatenate([
@@ -1244,12 +1257,12 @@ def test_taiwan_universe_bridges_a_halt_only_when_asked():
     dated universe exists for, checked at the widest setting rather than
     argued from the loop.
     """
-    from finmind_data.pit_universe import _bridged, sessions, universe_at
+    from finmind_data.derive.pit_universe import _bridged, sessions, universe_at
 
     cal = sessions()
     at = {d: i for i, d in enumerate(cal)}
     spans = _bridged(0)
-    committed = pd.read_parquet(REPO / "finmind_data/listing_spans.parquet")
+    committed = pd.read_parquet(DATA / "listing_spans.parquet")
     assert spans[["stock_id", "start", "end"]].equals(
             committed[["stock_id", "start", "end"]]), (
         "bridge_gaps_upto=0 does not return the committed spans, so the default "
@@ -1329,10 +1342,9 @@ def test_taiwan_adj_covered_survives_concat():
     mixes covered with uncovered, which is the only panel that does. This pins
     both halves: that `attrs` really does drop, and that the column does not.
     """
-    sys.path.insert(0, str(REPO))
-    if not (REPO / "finmind_data/unpriced_actions.parquet").exists():
+    if not (DATA / "unpriced_actions.parquet").exists():
         raise Skipped("unpriced_actions.parquet not built")
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive.adjusted_loader import load_adjusted
 
     full = load_adjusted("2330")       # vendor covers every session
     hole = load_adjusted("1566")       # delisted in-window, covered nowhere
@@ -1382,18 +1394,18 @@ def test_taiwan_open_outside_session_range():
     per-year claims range over every year of the window.
     """
     import pyarrow.parquet as pq
-    from finmind_data.pit_universe import _spans
+    from finmind_data.derive.pit_universe import _spans
 
     spans = {s: list(zip(pd.to_datetime(g["start"]), pd.to_datetime(g["end"])))
              for s, g in _spans().groupby("stock_id")}
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
     board = dict(zip(u["stock_id"].astype(str), u["type"]))
     until = pd.to_datetime(_tape_universe().set_index("stock_id")["emerging_until"])
 
     bad = tot = stocks = bad_close = gone = gone_emerging = 0
     kept = []
     for sid in _panel_ids():
-        p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        p = TREES / f"ohlcv/{sid}.parquet"
         # Some files hold no rows and carry no schema, so a column-projected
         # read would fail on them; the row count comes from the footer instead.
         if pq.ParquetFile(p).metadata.num_rows == 0:
@@ -1487,9 +1499,9 @@ def test_taiwan_repull_returns_the_stored_prices():
     re-pulled counts into `ohlcv/`. The rows that came back higher are
     therefore read off `volume_repair.parquet`, which keeps their first counts.
     """
-    from finmind_data.ohlcv_repull import draw, strata
+    from finmind_data.collect.ohlcv_repull import draw, strata
 
-    fresh = pd.read_parquet(REPO / "finmind_data/ohlcv_repull.parquet")
+    fresh = pd.read_parquet(DATA / "ohlcv_repull.parquet")
     fresh["date"] = pd.to_datetime(fresh["date"])
     ids = sorted(fresh["stock_id"].unique())
     anomalous, clean = strata()
@@ -1505,7 +1517,7 @@ def test_taiwan_repull_returns_the_stored_prices():
         "ohlcv_repull.draw no longer returns the stocks in "
         "ohlcv_repull.parquet, so the committed sample is not the seeded draw")
 
-    stored = pd.concat([_tree(REPO / f"finmind_data/ohlcv/{s}.parquet")
+    stored = pd.concat([_tree(TREES / f"ohlcv/{s}.parquet")
                         for s in ids], ignore_index=True)
     m = stored.merge(clip(fresh), on=["date", "stock_id"], how="outer",
                      suffixes=("_s", "_f"), indicator=True)
@@ -1525,13 +1537,13 @@ def test_taiwan_repull_returns_the_stored_prices():
     assert not any(still.values()), (
         f"README Provenance says the repair has since written the re-pulled "
         f"counts into ohlcv/; these still differ: {still}")
-    log = pd.read_parquet(REPO / "finmind_data/volume_repair.parquet")
+    log = pd.read_parquet(RECORDS / "volume_repair.parquet")
     log = log[log["tree"] == "ohlcv"].assign(date=lambda x: pd.to_datetime(x["date"]))
     hit = m.merge(log, on=["date", "stock_id"])
     higher = all(((hit[f"{c}_old"] < hit[f"{c}_f"])
                   & (hit[f"{c}_new"] == hit[f"{c}_f"])).all() for c in counts)
     sessions = pd.to_datetime(pd.read_parquet(
-        REPO / "finmind_data/trading_sessions.parquet")["date"])
+        DATA / "trading_sessions.parquet")["date"])
     saturdays = sessions[sessions.dt.dayofweek == 5]
     got = (len(hit), higher, bool(hit["date"].isin(saturdays).all()))
     assert got == (138, True, True), (
@@ -1555,7 +1567,7 @@ def test_taiwan_delisting_table_has_no_reason():
     was paid. This asserts the absence, so that a vendor backfill
     retires the caveat instead of leaving it to contradict the data quietly.
     """
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     cols = set(d.columns)
     assert cols == {"date", "stock_id", "stock_name", "year"}, (
         f"README caveat 8 says TaiwanStockDelisting carries date, stock_id, "
@@ -1585,7 +1597,7 @@ def test_taiwan_delisting_sign_sample_is_preregistered():
     being frozen in git rather than in a second implementation of the draw —
     this recomputes, git remembers, and the two can disagree.
     """
-    from finmind_data.delisting_sign import (
+    from finmind_data.delisting.delisting_sign import (
         _DD_DISTRESS, _DD_MERGER, features, draw_sample)
 
     f = features()
@@ -1605,7 +1617,7 @@ def test_taiwan_delisting_sign_sample_is_preregistered():
     )
 
     drawn = set(draw_sample(f)["stock_id"])
-    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    labels = pd.read_csv(DATA / "delisting_labels.csv",
                          dtype={"stock_id": str})
     committed = set(labels.loc[labels["purpose"] == "measure", "stock_id"])
     assert drawn == committed, (
@@ -1647,10 +1659,10 @@ def test_taiwan_delisting_sign_accuracy():
     appears, or this one stops missing, the sentence describing the error mode
     is no longer the sentence the data supports.
     """
-    from finmind_data.delisting_sign import accuracy, features
+    from finmind_data.delisting.delisting_sign import accuracy, features
 
     f = features()
-    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    labels = pd.read_csv(DATA / "delisting_labels.csv",
                          dtype={"stock_id": str})
     blank = labels.loc[labels["label"].fillna("") == "", "stock_id"]
     assert not len(blank), (
@@ -1735,14 +1747,14 @@ def test_taiwan_single_cut_is_registered_unscored():
     Asserting the constant itself would restate it; asserting how far it can
     travel is the part neither docstring can hold up on its own.
     """
-    from finmind_data.delisting_sign import (
+    from finmind_data.delisting.delisting_sign import (
         _DD_SINGLE, _GATE_MIN_LABELS, _GATE_NULL, _LONG_SUSPENSION_DAYS,
         band_holdout, features, gate_threshold, single_cut_gate)
 
     f = features()
-    labels = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    labels = pd.read_csv(DATA / "delisting_labels.csv",
                          dtype={"stock_id": str})
-    band = pd.read_csv(REPO / "finmind_data/delisting_band.csv",
+    band = pd.read_csv(DATA / "delisting_band.csv",
                        dtype={"stock_id": str})
     fresh = band_holdout(f, labels)
 
@@ -1895,7 +1907,7 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     than described here.
     """
     import numpy as np
-    from finmind_data.delisting_sign import (
+    from finmind_data.delisting.delisting_sign import (
         band_holdout, features, substitute_error, terminal_value)
 
     f = features()
@@ -2058,13 +2070,13 @@ def test_taiwan_substitute_error_splits_by_deal_form():
     # names nobody has looked up — the same nine the single cut is registered
     # against. Read off the label file rather than off a count, because a count
     # would still pass if the nine were a different nine.
-    labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
+    labels = pd.read_csv(DATA / "delisting_labels.csv",
                          dtype={"stock_id": str})
     # Both label files, because settlement reads both. The band file's `label`
     # fills in as a held-out name's filing gets read for some other reason, and
     # a check that read only the drawn sample would pass while `terminal_value`
     # booked those names off a column no assertion had opened.
-    band_file = pd.read_csv(Path(__file__).with_name("delisting_band.csv"),
+    band_file = pd.read_csv(DATA / "delisting_band.csv",
                             dtype={"stock_id": str})
     hand = pd.concat([labels[["stock_id", "label"]],
                       band_file[["stock_id", "label"]]], ignore_index=True)
@@ -2146,10 +2158,10 @@ def test_taiwan_cash_payouts_land_outside_the_band():
     alike. It is counted out of the stated-form table rather than read into it,
     because reading one in would invent the fact the column exists to count.
     """
-    from finmind_data.delisting_sign import _DD_MERGER, features
+    from finmind_data.delisting.delisting_sign import _DD_MERGER, features
 
     f = features()
-    labels = pd.read_csv(Path(__file__).with_name("delisting_labels.csv"),
+    labels = pd.read_csv(DATA / "delisting_labels.csv",
                          dtype={"stock_id": str})
     labels = labels[labels["label"].fillna("") != ""]
     m = labels[labels["label"] == "merger"].drop(columns=["sign", "drawdown"])
@@ -2233,14 +2245,14 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     `AnnouncementDate`, which is what makes the others' silence a gap rather
     than a convention of the source.
     """
-    fin = _tree(REPO / "finmind_data/fin_is/2330.parquet")
+    fin = _tree(TREES / "fin_is/2330.parquet")
     ends = set(pd.to_datetime(fin["date"]).dt.strftime("%m-%d"))
     assert ends <= {"03-31", "06-30", "09-30", "12-31"}, (
         f"README caveat 9 says fin_is dates are fiscal quarter ends; 2330 also "
         f"carries {sorted(ends - {'03-31', '06-30', '09-30', '12-31'})}"
     )
     for dset in ("fin_is", "fin_bs", "fin_cf"):
-        c = set(pd.read_parquet(REPO / f"finmind_data/{dset}/2330.parquet").columns)
+        c = set(pd.read_parquet(TREES / f"{dset}/2330.parquet").columns)
         assert not {"AnnouncementDate", "create_time", "announcement_date"} & c, (
             f"README caveat 9 says {dset}/ carries no announcement date; it now "
             f"has one, so the look-ahead caveat is obsolete and signals built "
@@ -2264,7 +2276,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
     tot = stamped = inwin_stamped = 0
     backfill_lag = []
     months, stamps = [], []
-    for p in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet"))):
+    for p in sorted(glob.glob(str(TREES / "month_rev/*.parquet"))):
         m = pd.read_parquet(p)
         if not len(m):
             continue
@@ -2340,7 +2352,7 @@ def test_taiwan_fundamentals_are_fiscal_dated():
         f"tree gives {figures}"
     )
 
-    div = _tree(REPO / "finmind_data/dividend/1101.parquet")
+    div = _tree(TREES / "dividend/1101.parquet")
     assert "AnnouncementDate" in div.columns, (
         "README caveat 9 names dividend/ as the one dataset carrying "
         "AnnouncementDate; it no longer does"
@@ -2386,11 +2398,10 @@ def test_taiwan_statement_trees_drop_old_delistings():
     """
     import pyarrow.parquet as pq
 
-    sys.path.insert(0, str(REPO))
-    from finmind_data.date_keyed_fill import RECORD
+    from finmind_data.repair.date_keyed_fill import RECORD
 
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     uid = set(u["stock_id"].astype(str))
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
@@ -2405,8 +2416,8 @@ def test_taiwan_statement_trees_drop_old_delistings():
 
     have, empty_file, stale_only, last_row = [], 0, [], {}
     for sid in sorted(delist):
-        whole = pd.read_parquet(REPO / f"finmind_data/fin_is/{sid}.parquet")
-        clipped = _tree(REPO / f"finmind_data/fin_is/{sid}.parquet")
+        whole = pd.read_parquet(TREES / f"fin_is/{sid}.parquet")
+        clipped = _tree(TREES / f"fin_is/{sid}.parquet")
         if len(clipped):
             have.append(sid)
             last_row[sid] = pd.to_datetime(whole["date"]).max()
@@ -2429,7 +2440,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     )
 
     def traded_quarters(sid):
-        o = _tree(REPO / f"finmind_data/ohlcv/{sid}.parquet")
+        o = _tree(TREES / f"ohlcv/{sid}.parquet")
         return o.loc[o["Trading_Volume"] > 0, "date"].dt.to_period("Q").nunique() if len(o) else 0
 
     missing = [s for s in delist if s not in last_row]
@@ -2486,8 +2497,8 @@ def test_taiwan_statement_trees_drop_old_delistings():
     cover = {}
     for sub in ("fin_cf", "fin_bs", "shares", "month_rev", "per_pbr", "instflow"):
         held = {s for s in delist
-                if pq.ParquetFile(REPO / f"finmind_data/{sub}/{s}.parquet").metadata.num_rows
-                and len(_tree(REPO / f"finmind_data/{sub}/{s}.parquet", columns=["date"]))}
+                if pq.ParquetFile(TREES / f"{sub}/{s}.parquet").metadata.num_rows
+                and len(_tree(TREES / f"{sub}/{s}.parquet", columns=["date"]))}
         cover[sub] = (len(held), str(max(delist[s] for s in delist if s not in held).date()))
     assert {k: cover[k] for k in ("fin_cf", "fin_bs", "shares", "month_rev")} == {
             "fin_cf": (91, "2019-08-05"), "fin_bs": (97, "2019-03-29"),
@@ -2499,7 +2510,7 @@ def test_taiwan_statement_trees_drop_old_delistings():
     )
 
     def every_month(sid):
-        p = REPO / f"finmind_data/month_rev/{sid}.parquet"
+        p = TREES / f"month_rev/{sid}.parquet"
         if not pq.ParquetFile(p).metadata.num_rows:
             return False
         got = set(_tree(p, columns=["date"])["date"])
@@ -2548,29 +2559,29 @@ def test_taiwan_no_event_holes_are_event_free_in_three_sources():
     """
     holes = []
     for sid in _panel_ids():
-        raw = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        raw = TREES / f"ohlcv/{sid}.parquet"
         if not raw.exists() or not len(_tree(raw)):
             continue
-        if not len(_tree(REPO / f"finmind_data/price_adj/{sid}.parquet")):
+        if not len(_tree(TREES / f"price_adj/{sid}.parquet")):
             holes.append(sid)
     assert len(holes) == 54, (
         f"README counts 54 stocks with raw prices and no adjusted series in the "
         f"window; this tree has {len(holes)}. The split below is over that set"
     )
 
-    cr = _tree(REPO / "finmind_data/capital_reduction.parquet")
+    cr = _tree(DATA / "capital_reduction.parquet")
     cr_ids = set(cr["stock_id"].astype(str))
-    er = _tree(REPO / "finmind_data/exright_reference.parquet")
+    er = _tree(DATA / "exright_reference.parquet")
     er_ids = set(er["stock_id"].astype(str))
 
     noevent, offending = [], {}
     for sid in holes:
-        dr = _tree(REPO / f"finmind_data/div_result/{sid}.parquet")
+        dr = _tree(TREES / f"div_result/{sid}.parquet")
         if len(dr) or sid in cr_ids:
             continue                       # the factor path found an event
         noevent.append(sid)
         other = []
-        dv = REPO / f"finmind_data/dividend/{sid}.parquet"
+        dv = TREES / f"dividend/{sid}.parquet"
         if dv.exists() and len(_tree(dv)):
             other.append("dividend")
         if sid in er_ids:
@@ -2597,7 +2608,7 @@ def test_taiwan_no_event_holes_are_event_free_in_three_sources():
 
 # ---- consolidate_capred delivered artifact ---------------------------------
 def test_capital_reduction_artifact_exists():
-    fp = REPO / "finmind_data/capital_reduction.parquet"
+    fp = DATA / "capital_reduction.parquet"
     assert fp.exists(), "capital_reduction.parquet documented as delivered but missing"
     # Read it rather than stat it: a consolidation that wrote an empty frame
     # delivers the path and nothing else, and the runner's population guard is
@@ -2619,7 +2630,7 @@ def test_taiwan_ohlcv_is_raw():
     import numpy as np
 
     frames = []
-    for p in sorted(glob.glob(str(REPO / "finmind_data/div_result/*.parquet"))):
+    for p in sorted(glob.glob(str(TREES / "div_result/*.parquet"))):
         d = _tree(p)
         if len(d):
             frames.append(d[["stock_id", "date", "before_price"]])
@@ -2631,7 +2642,7 @@ def test_taiwan_ohlcv_is_raw():
 
     hit = tot = 0
     for sid, g in ev.groupby("stock_id"):
-        fp = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        fp = TREES / f"ohlcv/{sid}.parquet"
         if not fp.exists():
             continue
         px = _tree(fp)
@@ -2696,7 +2707,7 @@ def test_taiwan_pre_listing_sessions_are_one_vendor_day():
     """
     import pyarrow.parquet as pq
 
-    files = sorted((REPO / "finmind_data/ohlcv").glob("*.parquet"))
+    files = sorted((TREES / "ohlcv").glob("*.parquet"))
     if not files:
         raise Skipped("ohlcv/ not built — run `download.py`")
     day = pd.Timestamp(_PRE_LISTING_DAY)
@@ -2754,12 +2765,11 @@ def test_taiwan_adjusted_series():
     vendor supplies one; and that a share cancellation the vendor did not price
     is marked rather than left in the series as a return.
     """
-    sys.path.insert(0, str(REPO))
-    if not (REPO / "finmind_data/unpriced_actions.parquet").exists():
+    if not (DATA / "unpriced_actions.parquet").exists():
         raise Skipped("unpriced_actions.parquet not built")
     import numpy as np
 
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive.adjusted_loader import load_adjusted
 
     # (1) The factor is the exchange's. Each 除權息 event contributes
     # before_price/after_price; FinMind reaches the same number by subtracting
@@ -2767,7 +2777,7 @@ def test_taiwan_adjusted_series():
     # exactly on most events and closely on the rest.
     rel, cash = [], []
     for sid in ("2330", "2317", "1101", "2412", "1216", "2002"):
-        ev = _tree(REPO / f"finmind_data/div_result/{sid}.parquet")
+        ev = _tree(TREES / f"div_result/{sid}.parquet")
         ev = ev[(ev["before_price"] > 0) & (ev["after_price"] > 0)]
         d = load_adjusted(sid)
         f = d["tr_factor"].to_numpy(dtype=float)
@@ -2810,7 +2820,7 @@ def test_taiwan_adjusted_series():
     # one, so the row must hold no adjusted close.
     d = load_adjusted("8934")
     z = d["close"] == 0
-    vendor = _tree(REPO / "finmind_data/price_adj/8934.parquet")
+    vendor = _tree(TREES / "price_adj/8934.parquet")
     n_filled = int(d.loc[z, "date"].isin(vendor.loc[vendor["close"] > 0, "date"]).sum())
     # 8934 is the example because it barely trades: its zero-close rows are the
     # majority of its file. Both counts are pinned rather than tested for
@@ -2883,12 +2893,11 @@ def test_taiwan_vendor_event_audit_is_current():
     publish an older run's grade while the loader patches a different set, so
     the file is regenerated here and compared rather than merely read.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.vendor_event_audit import OUT_PATH, audit
+    from finmind_data.derive.vendor_event_audit import OUT_PATH, audit
 
     assert OUT_PATH.exists(), (
         f"{OUT_PATH.name} is missing — run "
-        f"`python -m finmind_data.vendor_event_audit`"
+        f"`python -m finmind_data.derive.vendor_event_audit`"
     )
     committed = pd.read_parquet(OUT_PATH)
     fresh = audit()
@@ -2914,7 +2923,7 @@ def test_taiwan_vendor_event_audit_is_current():
     # The two counts are one file and a column, not a filter that moved between
     # runs. Pin what the 34-row difference is made of so it stays that way.
     nc = committed[~committed["checkable"]]
-    served = {p.stem for p in (REPO / "finmind_data/price_adj").glob("*.parquet")
+    served = {p.stem for p in (TREES / "price_adj").glob("*.parquet")
               if len(_tree(p))}
     unserved = int((~nc["stock_id"].astype(str).isin(served)).sum())
     assert (len(nc), unserved) == (194, 174), (
@@ -2969,11 +2978,10 @@ def test_taiwan_vendor_defects_are_patched():
     The one inside the window moves the ex-date return from +4.19 % to +1.19 %,
     so an unpatched panel overstates that session by a factor of three.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
 
-    from finmind_data.adjusted_loader import load_adjusted
-    from finmind_data.vendor_event_audit import defective_events
+    from finmind_data.derive.adjusted_loader import load_adjusted
+    from finmind_data.derive.vendor_event_audit import defective_events
 
     d = defective_events()
     assert len(d) == 1, (
@@ -3049,11 +3057,10 @@ def test_taiwan_vendor_edges_are_carried():
     delisting all left the market before `COVERAGE_START`, so the vendor never
     served them here and the rebuild does instead.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
 
-    from finmind_data import adjust
-    from finmind_data.adjusted_loader import _unpriced_dates, load_adjusted
+    from finmind_data.derive import adjust
+    from finmind_data.derive.adjusted_loader import _unpriced_dates, load_adjusted
 
     head = tail = 0
     refused, uncovered = [], []
@@ -3153,19 +3160,18 @@ def test_taiwan_adjusted_factor_moves_only_on_events():
     vendor serves the first row at its own anchor, so its adjusted close is the
     raw close.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
     import pyarrow.parquet as pq
 
-    from finmind_data import adjust
-    from finmind_data.adjusted_loader import _unpriced_dates
-    from finmind_data.backfill_make_up_sessions import _VINTAGE_TOL
+    from finmind_data.derive import adjust
+    from finmind_data.derive.adjusted_loader import _unpriced_dates
+    from finmind_data.repair.backfill_make_up_sessions import _VINTAGE_TOL
 
     steps = 0
     second, stray = [], []
     for sid in _panel_ids():
-        a = REPO / f"finmind_data/price_adj/{sid}.parquet"
-        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        a = TREES / f"price_adj/{sid}.parquet"
+        r = TREES / f"ohlcv/{sid}.parquet"
         # A zero-row file is written without a schema, so it has no column to read.
         if not pq.ParquetFile(a).metadata.num_rows or not pq.ParquetFile(r).metadata.num_rows:
             continue
@@ -3224,18 +3230,17 @@ def test_taiwan_unadjusted_first_sessions_are_carried():
     The same pass counts every carried row in the panel, which the README's
     `adj_source` table quotes.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
     import pyarrow.parquet as pq
 
-    from finmind_data.adjusted_loader import load_adjusted
-    from finmind_data.backfill_make_up_sessions import _VINTAGE_TOL
+    from finmind_data.derive.adjusted_loader import load_adjusted
+    from finmind_data.repair.backfill_make_up_sessions import _VINTAGE_TOL
 
     want, got = set(), set()
     edge = 0
     for sid in _panel_ids():
-        a = REPO / f"finmind_data/price_adj/{sid}.parquet"
-        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        a = TREES / f"price_adj/{sid}.parquet"
+        r = TREES / f"ohlcv/{sid}.parquet"
         # A zero-row file is written without a schema, so it has no column to read.
         if not pq.ParquetFile(r).metadata.num_rows:
             continue
@@ -3306,12 +3311,11 @@ def test_taiwan_repull_fill_is_in_the_trees():
     rows are asserted to be in the trees still: what the caveat claims about them
     is that none was dropped.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.repull_fill import KEY, RECORD, _keys
+    from finmind_data.repair.repull_fill import KEY, RECORD, _keys
 
     names = set(_panel_ids())
     lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
-    sessions = set(pd.read_parquet(REPO / "finmind_data/trading_sessions.parquet")
+    sessions = set(pd.read_parquet(DATA / "trading_sessions.parquet")
                    ["date"].astype(str).str[:10])
     saturdays = {d for d in sessions if pd.Timestamp(d).dayofweek == 5}
     got, loose, merged, misplaced, off_session = {}, [], [], [], []
@@ -3334,7 +3338,7 @@ def test_taiwan_repull_fill_is_in_the_trees():
             x = x.reset_index(drop=True)
             # Read as written rather than through `_tree`: the claim is that the
             # file holds these rows, and each of them is inside the window already.
-            f = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet")
+            f = pd.read_parquet(TREES / f"{tree}/{sid}.parquet")
             added = _keys(f, key).isin(_keys(x, key))
             if not f[added].reset_index(drop=True).equals(x.drop(columns="place")):
                 merged.append((tree, sid))
@@ -3383,7 +3387,7 @@ def test_taiwan_repull_fill_is_in_the_trees():
         f"sit on a make-up Saturday; "
         f"{on_saturday['per_pbr']:,} and {on_saturday['ohlcv']} do")
     priced = sum(len(d & set(pd.read_parquet(
-        REPO / f"finmind_data/ohlcv/{s}.parquet", columns=["date"])["date"]))
+        TREES / f"ohlcv/{s}.parquet", columns=["date"])["date"]))
         for s, d in flow.items())
     want = sum(len(d) for d in flow.values())
     assert priced == want, (
@@ -3394,7 +3398,7 @@ def test_taiwan_repull_fill_is_in_the_trees():
     left = pd.read_parquet(RECORD / "unserved.parquet")
     dropped = []
     for (tree, sid), x in left.groupby(["tree", "stock_id"]):
-        n = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet",
+        n = pd.read_parquet(TREES / f"{tree}/{sid}.parquet",
                             columns=["date"])["date"].value_counts()
         dropped += [(tree, sid, d) for d, rows in zip(x["date"], x["rows"])
                     if n.get(d, 0) != rows]
@@ -3453,13 +3457,12 @@ def test_taiwan_post_delisting_sessions_are_marked():
     assertion below, and one that stops being quoted but was left unmarked fails
     the `post == after` assertion further down.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
     import pyarrow.parquet as pq
 
-    from finmind_data.adjusted_loader import _BREAK_GAP_DAYS, load_adjusted
+    from finmind_data.derive.adjusted_loader import _BREAK_GAP_DAYS, load_adjusted
 
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
 
     # What separates a departure from an exit has to be something the loader did
@@ -3471,7 +3474,7 @@ def test_taiwan_post_delisting_sessions_are_marked():
     # about the panel, defined for rebuilt and vendor-served names alike.
     last = {}
     for r in d.itertuples():
-        f = REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet"
+        f = TREES / f"ohlcv/{r.stock_id}.parquet"
         if not f.exists():
             continue
         c = _tree(f)
@@ -3489,7 +3492,7 @@ def test_taiwan_post_delisting_sessions_are_marked():
     # scan is what let the two answer differently in the first place, and the
     # window makes that sharper: the trees now run past `COVERAGE_END`, so an
     # unclipped scan answers with a session no check here is quoted on.
-    from finmind_data.delisting_sign import _panel_last_session
+    from finmind_data.delisting.delisting_sign import _panel_last_session
 
     panel_end = _panel_last_session()
 
@@ -3604,10 +3607,9 @@ def test_taiwan_no_trade_rows_are_not_holdable():
     behind a break keeps the break's name, because those rows would not have
     been holdable had they traded either.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
 
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive.adjusted_loader import load_adjusted
 
     rows = invalid = mismatched = zero = zero_stocks = 0
     by_reason: dict[str, int] = {}
@@ -3698,9 +3700,9 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
     ``adjusted_loader`` handles by carrying the adjacent factor — and is not a
     gap in the calendar.
     """
-    tape_dir = REPO / "finmind_data/tape"
+    tape_dir = TAPE
     if not tape_dir.exists():
-        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+        raise Skipped("tape/ not built (python -m finmind_data.collect.tape_universe)")
     tape = pd.concat([pd.read_parquet(q) for q in sorted(tape_dir.glob("*.parquet"))],
                      ignore_index=True)
     lo, hi = tape["date"].min(), tape["date"].max()
@@ -3709,7 +3711,7 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
         by_code.setdefault(c, set()).add(d)
 
     interior, examined, offenders = 0, 0, []
-    for q in sorted((REPO / "finmind_data/ohlcv").glob("*.parquet")):
+    for q in sorted((TREES / "ohlcv").glob("*.parquet")):
         sid = q.stem
         if sid not in by_code:
             continue
@@ -3737,9 +3739,9 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
     # now raises rather than deriving one — this is the panel-wide version of
     # that guard, which per stock sees only what price_adj/ exposes.
     vendor_only = 0
-    for q in sorted((REPO / "finmind_data/price_adj").glob("*.parquet")):
+    for q in sorted((TREES / "price_adj").glob("*.parquet")):
         sid = q.stem
-        r = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        r = TREES / f"ohlcv/{sid}.parquet"
         if not r.exists():
             continue
         try:
@@ -3758,7 +3760,7 @@ def test_taiwan_no_session_the_tape_holds_is_missing():
     import pyarrow.parquet as pq
     before = inside = after = 0
     for sid in _panel_ids():
-        q = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        q = TREES / f"price_adj/{sid}.parquet"
         if sid not in by_code or not pq.ParquetFile(q).metadata.num_rows:
             continue
         have = set(pd.read_parquet(q, columns=["date"])["date"].astype(str).str[:10])
@@ -3794,25 +3796,25 @@ def test_taiwan_volume_repair_matches_the_tape():
     """
     import pyarrow.parquet as pq
 
-    tape_dir = REPO / "finmind_data/tape"
+    tape_dir = TAPE
     if not tape_dir.exists():
-        raise Skipped("tape/ not built (python -m finmind_data.tape_universe)")
+        raise Skipped("tape/ not built (python -m finmind_data.collect.tape_universe)")
     tape = pd.concat([pd.read_parquet(q) for q in sorted(tape_dir.glob("*.parquet"))],
                      ignore_index=True)
     tape["date"] = pd.to_datetime(tape["date"])
     sessions = pd.to_datetime(pd.read_parquet(
-        REPO / "finmind_data/trading_sessions.parquet")["date"])
+        DATA / "trading_sessions.parquet")["date"])
     saturdays = sessions[sessions.dt.dayofweek == 5]
-    log = pd.read_parquet(REPO / "finmind_data/volume_repair.parquet")
+    log = pd.read_parquet(RECORDS / "volume_repair.parquet")
     log["date"] = pd.to_datetime(log["date"])
     counts = ["Trading_Volume", "Trading_money", "Trading_turnover"]
 
     raw, adj = [], []
     for sid in _panel_ids():
-        p = REPO / f"finmind_data/ohlcv/{sid}.parquet"
+        p = TREES / f"ohlcv/{sid}.parquet"
         if pq.ParquetFile(p).metadata.num_rows:
             raw.append(_tree(p, columns=["date", "stock_id"] + counts))
-        q = REPO / f"finmind_data/price_adj/{sid}.parquet"
+        q = TREES / f"price_adj/{sid}.parquet"
         if q.exists() and pq.ParquetFile(q).metadata.num_rows:
             adj.append(_tree(q, columns=["date", "stock_id"] + counts))
     raw = pd.concat(raw, ignore_index=True)
@@ -3842,7 +3844,7 @@ def test_taiwan_volume_repair_matches_the_tape():
         f"worst by 99.5 %; the repair record gives {gap.median():.2%} and "
         f"{gap.max():.1%}")
 
-    fresh = pd.read_parquet(REPO / "finmind_data/ohlcv_repull.parquet",
+    fresh = pd.read_parquet(DATA / "ohlcv_repull.parquet",
                             columns=["date", "stock_id", "Trading_Volume",
                                      "Trading_money"])
     fresh["date"] = pd.to_datetime(fresh["date"])
@@ -3891,22 +3893,30 @@ def test_taiwan_volume_repair_matches_the_tape():
 def test_taiwan_token_travels_in_a_header():
     """README, "Provenance": every collector sends the token in a header.
 
-    The collectors are the modules that name FinMind's endpoint, found by reading
-    the package rather than listed, so one added later is held to the same rule.
-    A `token` key in a request's parameters puts the token in the URL, and
-    `requests` writes the URL into the errors a collector logs.
+    One request loop, `client.get`, is how: it sends `auth.headers()` and never
+    puts the token in the query string, which `requests` writes into the errors
+    a collector logs. The collectors are the modules that import that loop,
+    found by reading the package rather than listed, and the rest of the check
+    is that no module but the client spells the endpoint itself — a request
+    loop written beside the client is where a token goes back into a URL.
     """
     host = "api.finmindtrade.com"
-    mods = [p for p in sorted((REPO / "finmind_data").glob("*.py"))
-            if p.name != Path(__file__).name and host in p.read_text()]
-    in_url = [p.name for p in mods
-              if re.search(r"""["']token["']\s*(?::|\]\s*=)""", p.read_text())]
-    no_header = [p.name for p in mods if "headers=" not in p.read_text()]
-    assert not in_url and not no_header, (
-        f"README says every collector sends the token in an Authorization: "
-        f"Bearer header; {in_url} put it in a request's parameters and "
-        f"{no_header} send no header")
-    return f"{len(mods)} collectors send the token in a header", len(mods)
+    client = (PKG / "client.py").read_text()
+    assert "headers=headers()" in client and not re.search(
+        r"""["']token["']\s*(?::|\]\s*=)""", client), (
+        "README says every collector sends the token in an Authorization: "
+        "Bearer header; client.py, the one request loop, does not")
+    bypass = sorted(p.name for p in _sources()
+                    if p.name != "client.py" and host in p.read_text())
+    assert not bypass, (
+        f"README says every collector requests through client.get; {bypass} "
+        f"spell the endpoint themselves, so their token handling is their own")
+    users = sorted(p.name for p in _sources() if re.search(
+        r"^from (\.\.?|finmind_data\.)client import .*\bget\b", p.read_text(), re.M))
+    assert users, ("no module imports client.get, so nothing collects through "
+                   "the loop this check is about")
+    return (f"{len(users)} collectors request through client.get, which sends "
+            f"the token in a header"), len(users)
 
 
 def test_taiwan_sec_lending_pairs_are_disclosed():
@@ -3924,7 +3934,7 @@ def test_taiwan_sec_lending_pairs_are_disclosed():
     sizes: dict[int, int] = {}
     days = set()
     for sid in _panel_ids():
-        p = REPO / f"finmind_data/sec_lending/{sid}.parquet"
+        p = TREES / f"sec_lending/{sid}.parquet"
         # A zero-row file is written without a schema, so it has no column to read.
         if not pq.ParquetFile(p).metadata.num_rows:
             continue
@@ -3965,8 +3975,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
     tree's. Every amount graded in a revised company-period the filing does not
     side with is read back as well, and holds the value the grade read.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.fin_bs_vintage import GRADE, KEY, RECORD, verdicts
+    from finmind_data.repair.fin_bs_vintage import GRADE, KEY, RECORD, verdicts
 
     g = pd.read_parquet(GRADE)
     v = verdicts(g)
@@ -3992,7 +4001,7 @@ def test_taiwan_fin_bs_revision_follows_the_filing():
     rec["name_want"] = rec["origin_name_old"].where(kept, rec["origin_name_new"])
     wrong, moved = [], []
     for sid in sorted(set(rec["stock_id"]) | set(stay["stock_id"])):
-        f = _tree(REPO / f"finmind_data/fin_bs/{sid}.parquet")
+        f = _tree(TREES / f"fin_bs/{sid}.parquet")
         m = rec[rec["stock_id"] == sid].merge(f, on=KEY, how="left")
         ok = (((m["value"] == m["value_want"]) | (m["value"].isna() & m["value_want"].isna()))
               & (m["origin_name"] == m["name_want"]))
@@ -4087,16 +4096,15 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
     of 2026-09-13 did: no stamp on each row that query did not return, one
     stamp on each row it did, and September stamps on the edge month.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.date_keyed_fill import RECORD, TREES
+    from finmind_data.repair.date_keyed_fill import RECORD, STATEMENT_TREES
 
     names = set(_panel_ids())
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     gone = names & set(d.loc[pd.to_datetime(d["date"]).between(
         COVERAGE_START, COVERAGE_END), "stock_id"].astype(str))
     lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
     rec, got, only, loose, merged = {}, {}, {}, [], []
-    for tree in TREES:
+    for tree in STATEMENT_TREES:
         r = pd.read_parquet(RECORD / f"{tree}.parquet")
         rec[tree] = r
         out = r[~r["stock_id"].isin(names) | ~r["date"].between(lo, hi)]
@@ -4105,7 +4113,7 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
         for sid, x in r.groupby("stock_id"):
             # Read as written rather than through `_tree`: the claim is that the
             # file holds exactly these rows, and each of them is in the window.
-            f = pd.read_parquet(REPO / f"finmind_data/{tree}/{sid}.parquet")
+            f = pd.read_parquet(TREES / f"{tree}/{sid}.parquet")
             # A zero-row file is written without a schema, so it has no column to read.
             held = f[f["date"].isin(set(x["date"]))].reset_index(drop=True) if len(f) else f
             if not held.equals(x.reset_index(drop=True)):
@@ -4158,7 +4166,7 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
 
     last = m["date"].max()
     month = [f.loc[f["date"] == last, "create_time"] for f in (
-        pd.read_parquet(REPO / f"finmind_data/month_rev/{sid}.parquet")
+        pd.read_parquet(TREES / f"month_rev/{sid}.parquet")
         for sid in sorted(names)) if len(f)]
     month = pd.concat(month, ignore_index=True).astype(str).str.strip().str[:10]
     counts = (len(month) - int(edge.sum()), len(month), int((month > hi).sum()))
@@ -4194,11 +4202,10 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     company's 192 in-window traded sessions carry `series_break`, the tail of a
     history that straddles the window start.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive.adjusted_loader import load_adjusted
 
-    u = pd.read_parquet(REPO / "finmind_data/universe.parquet")
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    u = pd.read_parquet(DATA / "universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     uid = set(u["stock_id"].astype(str))
     d = d.copy()
     d["date"] = pd.to_datetime(d["date"])
@@ -4210,8 +4217,8 @@ def test_taiwan_survivorship_hole_is_rebuilt():
     # unclipped, a name whose whole history predates `COVERAGE_START` counts as
     # one, and `load_adjusted` below then raises on it rather than measuring it.
     holes = [sid for sid in sorted(set(inwin["sid"]))
-             if len(_tree(REPO / f"finmind_data/ohlcv/{sid}.parquet"))
-             and not len(_tree(REPO / f"finmind_data/price_adj/{sid}.parquet"))]
+             if len(_tree(TREES / f"ohlcv/{sid}.parquet"))
+             and not len(_tree(TREES / f"price_adj/{sid}.parquet"))]
     traded = priced = 0
     kinds = {}
     invalid = {}
@@ -4263,13 +4270,12 @@ def test_taiwan_rebuild_matches_vendor():
     delistings the vendor *does* cover — same era, same situation — and the
     statistic is the one research consumes: the daily adjusted return.
     """
-    sys.path.insert(0, str(REPO))
     import numpy as np
 
-    from finmind_data import adjust
-    from finmind_data.adjusted_loader import load_adjusted
+    from finmind_data.derive import adjust
+    from finmind_data.derive.adjusted_loader import load_adjusted
 
-    d = pd.read_parquet(REPO / "finmind_data/delisted_universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
     ids = sorted(set(d[(d["date"] >= COVERAGE_START)
                        & (d["date"] <= COVERAGE_END)]["stock_id"].astype(str)))
@@ -4322,8 +4328,7 @@ def test_taiwan_adj_source_partitions_the_panel():
     declared-dividend and exchange-reference conventions without a way to split
     them again.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data.adjusted_loader import _METHOD, load_adjusted
+    from finmind_data.derive.adjusted_loader import _METHOD, load_adjusted
 
     seen = set()
     rows = 0
@@ -4362,10 +4367,9 @@ def test_taiwan_filing_deadline_table_covers_the_data():
     join. This also pins the 2012 regime boundary, which is the reason the
     deadlines are a versioned table instead of two constants.
     """
-    sys.path.insert(0, str(REPO))
     import pyarrow.parquet as pq
 
-    from finmind_data.available_date import available_date, with_available_date
+    from finmind_data.derive.available_date import available_date, with_available_date
 
     resolved = 0
     for sub, kind, n_ends in (("fin_is", "financial_statement", 62),
@@ -4373,7 +4377,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
                               ("fin_cf", "financial_statement", 62),
                               ("month_rev", "monthly_revenue", 188)):
         ends = set()
-        for f in sorted(glob.glob(str(REPO / f"finmind_data/{sub}/*.parquet"))):
+        for f in sorted(glob.glob(str(TREES / f"{sub}/*.parquet"))):
             if not pq.ParquetFile(f).metadata.num_rows:
                 continue
             ends |= set(_tree(f, columns=["date"])["date"])
@@ -4409,7 +4413,7 @@ def test_taiwan_filing_deadline_table_covers_the_data():
         )
 
     # The lag is a research parameter, and `date` is never overwritten.
-    d = _tree(REPO / "finmind_data/fin_is/2330.parquet")
+    d = _tree(TREES / "fin_is/2330.parquet")
     a = with_available_date(d)
     b = with_available_date(d, extra_days=15)
     assert (a["date"] == d["date"]).all() and (b["date"] == d["date"]).all(), (
@@ -4448,7 +4452,7 @@ def test_taiwan_month_rev_date_is_the_following_month():
     import pyarrow.parquet as pq
 
     rows = off = first = 0
-    for f in sorted(glob.glob(str(REPO / "finmind_data/month_rev/*.parquet"))):
+    for f in sorted(glob.glob(str(TREES / "month_rev/*.parquet"))):
         if not pq.ParquetFile(f).metadata.num_rows:
             continue
         d = _tree(f, columns=["date", "revenue_month", "revenue_year"])
@@ -4480,8 +4484,8 @@ def test_taiwan_mops_covers_every_delisted_name():
     pointed at the wrong host fails here rather than shrinking the population a
     reason is later read from.
     """
-    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
-    d = REPO / "finmind_data/mops_listing"
+    frame = pd.read_parquet(DATA / "delisting_sign.parquet")
+    d = DATA / "mops_listing"
     if not d.exists():
         raise Skipped("mops_listing/ not built — run `mops_filings.py listings`")
     files = {p.stem for p in d.glob("*.parquet")}
@@ -4515,13 +4519,13 @@ def test_taiwan_mops_detail_gate_is_registration_not_filing():
     must still be read one filing at a time is obsolete and the 說明 for 150
     names is sitting there unread.
     """
-    path = REPO / "finmind_data/mops_detail_refusals.csv"
+    path = DATA / "mops_detail_refusals.csv"
     if not path.exists():
         raise Skipped("mops_detail_refusals.csv not built — "
                       "run `mops_filings.py details`")
     ref = pd.read_csv(path, dtype={"stock_id": str})
     ref = ref[ref["stage"] == "details"]
-    frame = pd.read_parquet(REPO / "finmind_data/delisting_sign.parquet")
+    frame = pd.read_parquet(DATA / "delisting_sign.parquet")
     served = len(frame) - len(ref)
     assert served == 14, (
         f"README caveat 8 says MOPS serves the 說明 for 14 of the "
@@ -4558,7 +4562,7 @@ def test_taiwan_swap_ratio_quotes_the_filing_it_names():
     quoted = re.compile("「([^」]+)」")
     roc = re.compile(r"\b\d{2,3}/\d{2}/\d{2}\b")
     flat = lambda s: re.sub(r"\s+", "", s or "")
-    cons = pd.read_csv(REPO / "finmind_data/delisting_consideration.csv",
+    cons = pd.read_csv(DATA / "delisting_consideration.csv",
                        dtype={"stock_id": str, "successor": str})
     rows = [r for r in cons.itertuples() if quoted.search(r.source or "")]
 
@@ -4568,7 +4572,7 @@ def test_taiwan_swap_ratio_quotes_the_filing_it_names():
         # serves it, the acquirer's otherwise. Reading the routing out of the
         # sentence keeps the two caches from being interchangeable by accident.
         sub = "mops_detail" if "own filing" in r.source else "mops_acquirer_detail"
-        path = REPO / f"finmind_data/{sub}/{r.stock_id}.parquet"
+        path = DATA / f"{sub}/{r.stock_id}.parquet"
         if not path.exists():
             raise Skipped(f"{sub}/{r.stock_id}.parquet not built — "
                           "run `swap_ratios.py`")
@@ -4589,7 +4593,7 @@ def test_taiwan_swap_ratio_quotes_the_filing_it_names():
     # is: it is a coverage figure. An acquirer that was itself later bought is
     # refused in the same words as a target, and the five that are out are why
     # seven of the seventeen in-frame swaps still have no ratio.
-    refused = pd.read_csv(REPO / "finmind_data/mops_acquirer_refusals.csv",
+    refused = pd.read_csv(DATA / "mops_acquirer_refusals.csv",
                           dtype=str)
     off_script = refused.loc[~refused["refusal"].str.contains(
         "不繼續公開發行|已下市", regex=True, na=False), "target_id"]
@@ -4618,7 +4622,7 @@ def test_taiwan_mops_reason_empties_the_undecided_band():
     without the cut — so if the reader shrinks, the cut is carrying names the
     caveat says it no longer has to.
     """
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
     r = pd.read_parquet(path)
@@ -4654,7 +4658,7 @@ def test_taiwan_mops_overturns_only_failures_the_tape_missed():
     the four were the rule misreading a share swap, not the tape missing a
     failure.
     """
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
     r = pd.read_parquet(path)
@@ -4696,15 +4700,14 @@ def test_taiwan_exchange_provision_markers_match_what_they_govern():
     decide. Six file one and two would move, and both numbers were true of
     something.
     """
-    sys.path.insert(0, str(REPO))
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
-    from finmind_data import mops_reason as M
+    from finmind_data.delisting import mops_reason as M
 
     r = pd.read_parquet(path).set_index("stock_id")
     subjects = {p.stem: pd.read_parquet(p)["subject"].fillna("")
-                for p in sorted((REPO / "finmind_data/mops_listing").glob("*.parquet"))}
+                for p in sorted((DATA / "mops_listing").glob("*.parquet"))}
     cites = lambda pat: sorted(k for k, v in subjects.items()
                                if v.str.contains(pat, regex=True).any())
 
@@ -4747,7 +4750,7 @@ def test_taiwan_exchange_provision_markers_match_what_they_govern():
         f"README caveat 8 says 6 companies file a TPEx business-rule notice; "
         f"{len(filers)} do now ({filers})"
     )
-    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    lab = pd.read_csv(DATA / "delisting_labels.csv",
                       dtype={"stock_id": str}).set_index("stock_id")["label"]
     base = M.build().set_index("stock_id")["reason"]
     stated = M.DISTRESS
@@ -4791,11 +4794,11 @@ def test_taiwan_mops_reason_scored_against_the_hand_labels():
     drawn is the number with provenance. What this asserts is that nothing
     parts now, so a rule that drifts arrives here by name.
     """
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
     r = pd.read_parquet(path)
-    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    lab = pd.read_csv(DATA / "delisting_labels.csv",
                       dtype={"stock_id": str})[["stock_id", "label"]]
     m = r.merge(lab, on="stock_id", how="inner")
     dec = m[m["reason"] != "unknown"]
@@ -4840,11 +4843,10 @@ def test_taiwan_anchor_overrides_agree_with_their_own_window():
     because neither carries a label. Both halves are asserted, so an empty
     result stays evidence.
     """
-    sys.path.insert(0, str(REPO))
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
-    from finmind_data import mops_reason as M
+    from finmind_data.delisting import mops_reason as M
 
     def contradicted(frame):
         """Anchor-decided names whose own window votes the other way."""
@@ -4858,7 +4860,7 @@ def test_taiwan_anchor_overrides_agree_with_their_own_window():
         return sorted(out)
 
     r = pd.read_parquet(path)
-    lab = set(pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    lab = set(pd.read_csv(DATA / "delisting_labels.csv",
                           dtype={"stock_id": str})["stock_id"])
     anchors = r[r["basis"] == "anchor"]
     unwitnessed = sorted(set(anchors["stock_id"]) - lab)
@@ -4923,14 +4925,13 @@ def test_taiwan_silent_names_keep_their_unknown():
     scored only where it fires cannot show this, and neither can the hand-label
     score above.
     """
-    sys.path.insert(0, str(REPO))
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
-    from finmind_data import mops_reason as M
+    from finmind_data.delisting import mops_reason as M
 
     r = pd.read_parquet(path)
-    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    lab = pd.read_csv(DATA / "delisting_labels.csv",
                       dtype={"stock_id": str}).set_index("stock_id")["label"]
     silent = r[r["basis"] == "silent"]
     span = (int(silent["n_subjects_in_window"].min()),
@@ -5020,7 +5021,7 @@ def test_taiwan_reason_frame_is_frozen():
     behind it, or a frame name that loses its label, breaks the arithmetic
     rather than quietly re-basing a percentage nobody recomputes.
     """
-    path = REPO / "finmind_data/mops_reason.parquet"
+    path = DATA / "mops_reason.parquet"
     if not path.exists():
         raise Skipped("mops_reason.parquet not built — run `mops_reason.py`")
     r = pd.read_parquet(path)
@@ -5051,7 +5052,7 @@ def test_taiwan_reason_frame_is_frozen():
     reason = r["reason"].value_counts().to_dict()
     basis = r["basis"].value_counts().to_dict()
 
-    lab = pd.read_csv(REPO / "finmind_data/delisting_labels.csv",
+    lab = pd.read_csv(DATA / "delisting_labels.csv",
                       dtype={"stock_id": str})
     got = r.set_index("stock_id")["reason"].reindex(lab["stock_id"])
     # `pre_window` here is frame membership, not the sheet's own `purpose`
@@ -5113,13 +5114,13 @@ def test_taiwan_filing_dates_cover_the_statement_trees():
     """
     import pyarrow.parquet as pq
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built — "
                       "run `filing_dates.py` then `--consolidate`")
     d = pd.read_parquet(path)
     trees, holding = set(), set()
-    for f in (REPO / "finmind_data/fin_is").glob("*.parquet"):
+    for f in (TREES / "fin_is").glob("*.parquet"):
         trees.add(f.stem)
         if pq.read_metadata(f).num_rows:
             holding.add(f.stem)
@@ -5178,11 +5179,11 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
     trees hold, not only the window's.
     """
     import pyarrow.parquet as pq
-    from finmind_data.filing_dates import documents
+    from finmind_data.collect.filing_dates import documents
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists() or not any(
-            (REPO / "finmind_data/filing_dates").glob("*.parquet")):
+            (TREES / "filing_dates").glob("*.parquet")):
         raise Skipped("filing_dates.parquet or the filing_dates/ histories "
                       "not built")
     d = pd.read_parquet(path)
@@ -5218,7 +5219,7 @@ def test_taiwan_filing_dates_drop_reports_filed_before_their_quarter():
     held = []
     for sid in sorted(early["stock_id"].unique()):
         for tree in ("fin_is", "fin_bs", "fin_cf"):
-            f = REPO / "finmind_data" / tree / f"{sid}.parquet"
+            f = TREES / tree / f"{sid}.parquet"
             if not f.exists() or not pq.read_metadata(f).num_rows:
                 continue
             dates = pd.to_datetime(pd.read_parquet(f, columns=["date"])["date"])
@@ -5271,9 +5272,9 @@ def test_taiwan_statements_are_published_after_their_deadline():
     the patch is gone and the number is unchanged — which is the evidence that
     it was the same correction in both places.
     """
-    from finmind_data.available_date import available_date
+    from finmind_data.derive.available_date import available_date
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built")
     d = pd.read_parquet(path)
@@ -5320,9 +5321,9 @@ def test_taiwan_late_rate_falls_after_the_frame():
     pull holds no report later than its own reach and so scores a share of
     one, which lets every year in the frame take part without a special case.
     """
-    from finmind_data.available_date import available_date
+    from finmind_data.derive.available_date import available_date
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built")
     d = pd.read_parquet(path)
@@ -5429,10 +5430,10 @@ def test_taiwan_filing_deadline_q2_boundary_is_fy2013():
     like FY2011 and FY2013 must not. A table edited until one quarter passed
     would still fail here if it put the break in the wrong year.
     """
-    from finmind_data.available_date import available_date
-    from finmind_data.filing_dates import CLASS_CONSOLIDATED
+    from finmind_data.derive.available_date import available_date
+    from finmind_data.collect.filing_dates import CLASS_CONSOLIDATED
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built")
     d = pd.read_parquet(path)
@@ -5499,12 +5500,12 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     the claim, and the half that would be invisible if it broke: a substituted
     bound fills the column, and the rows then trade on a date nobody observed.
     """
-    from finmind_data.available_date import observed_date
+    from finmind_data.derive.available_date import observed_date
 
-    if not (REPO / "finmind_data/filing_dates.parquet").exists():
+    if not (DATA / "filing_dates.parquet").exists():
         raise Skipped("filing_dates.parquet not built")
     frames = []
-    for f in sorted((REPO / "finmind_data/fin_is").glob("*.parquet")):
+    for f in sorted((TREES / "fin_is").glob("*.parquet")):
         d = _tree(f)
         if not len(d) or "date" not in d.columns:
             continue
@@ -5528,7 +5529,7 @@ def test_taiwan_observed_date_leaves_the_undatable_undated():
     # The caveat explains them as periods outside what the server holds for the
     # company, not as a collector that missed rows. Asserted, because the two
     # have the same count and only one of them is a reason to go back.
-    span = (pd.read_parquet(REPO / "finmind_data/filing_dates.parquet")
+    span = (pd.read_parquet(DATA / "filing_dates.parquet")
               .groupby("stock_id")["period_end"].agg(["min", "max"]))
     j = undated.join(span, on="stock_id")
     outside = int(((j["period_end"] < j["min"])
@@ -5558,10 +5559,10 @@ def test_taiwan_observed_date_rolls_past_the_session_close():
     Scored on whatever `filing_deadlines.csv` returns, with no correction
     applied here — for the reason the check above it gives.
     """
-    from finmind_data.available_date import (available_date, observed_date,
+    from finmind_data.derive.available_date import (available_date, observed_date,
                                              SESSION_CLOSE)
 
-    path = REPO / "finmind_data/filing_dates.parquet"
+    path = DATA / "filing_dates.parquet"
     if not path.exists():
         raise Skipped("filing_dates.parquet not built")
     d = pd.read_parquet(path)
@@ -5613,12 +5614,12 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
     because the column the offeror files — 被收購公司於收購後是否終止上市 — does not
     carry it, being marked 是 on two of the three and 不適用 on the third.
     """
-    from finmind_data.delisting_sign import considerations, features
+    from finmind_data.delisting.delisting_sign import considerations, features
 
-    path = REPO / "finmind_data/tender_offers.parquet"
+    path = DATA / "tender_offers.parquet"
     if not path.exists():
         raise Skipped("tender_offers.parquet not built — "
-                      "run `python -m finmind_data.tender_offers`")
+                      "run `python -m finmind_data.delisting.tender_offers`")
     d = pd.read_parquet(path)
     f = features()
     on_frame = d[d["target_id"].isin(f["stock_id"])].merge(
@@ -5630,7 +5631,7 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
         f"the source moved and a rise means it reaches further back"
     )
 
-    c = pd.read_csv(REPO / "finmind_data/delisting_consideration.csv",
+    c = pd.read_csv(DATA / "delisting_consideration.csv",
                     dtype={"stock_id": str})
     booked = c[c["source"].str.contains("公開收購申報資料彙總表", na=False)]
     assert len(booked) == 3, (
@@ -5685,7 +5686,7 @@ def test_taiwan_booked_tender_offers_opened_on_the_delisting_date():
     )
     last = {}
     for tid in linked["target_id"]:
-        px = pd.read_parquet(REPO / f"finmind_data/ohlcv/{tid}.parquet")
+        px = pd.read_parquet(TREES / f"ohlcv/{tid}.parquet")
         last[tid] = float(px.loc[pd.to_datetime(px["date"]).idxmax(), "close"])
     # Signed the way the README quotes it: the tender price against the last
     # close, so 5820's +11.1 % means the offer was above the tape.
@@ -5790,7 +5791,7 @@ def test_taiwan_short_sale_series_has_no_regime_gap():
     import pyarrow.parquet as pq
 
     frames = []
-    for f in sorted(glob.glob(str(REPO / "finmind_data/margin_short/*.parquet"))):
+    for f in sorted(glob.glob(str(TREES / "margin_short/*.parquet"))):
         if not pq.ParquetFile(f).metadata.num_rows:
             continue
         frames.append(_tree(f, columns=["date", "ShortSaleSell",
@@ -5839,8 +5840,7 @@ def test_taiwan_short_sale_flows_match_the_balances():
     """
     import pyarrow.parquet as pq
 
-    sys.path.insert(0, str(REPO))
-    from finmind_data.short_sale_repair import BUY, RECORD, SELL, crossed
+    from finmind_data.repair.short_sale_repair import BUY, RECORD, SELL, crossed
 
     names = set(_panel_ids())
     rec = pd.read_parquet(RECORD)
@@ -5849,7 +5849,7 @@ def test_taiwan_short_sale_flows_match_the_balances():
     rows = bad = margin = 0
     unrepaired = []
     by_stock = dict(tuple(rec.groupby("stock_id")))
-    for p in sorted((REPO / "finmind_data/margin_short").glob("*.parquet")):
+    for p in sorted((TREES / "margin_short").glob("*.parquet")):
         sid = p.stem
         if not pq.ParquetFile(p).metadata.num_rows:
             continue
@@ -5917,20 +5917,19 @@ def test_taiwan_par_value_changes_are_priced():
     also stopped — the raw drop is what makes the event's presence checkable
     from outside either adjusted series.
     """
-    sys.path.insert(0, str(REPO))
-    from finmind_data import adjust
+    from finmind_data.derive import adjust
 
-    sp = pd.read_parquet(REPO / "finmind_data/split_reference.parquet")
-    uni = set(pd.read_parquet(REPO / "finmind_data/universe.parquet")["stock_id"])
+    sp = pd.read_parquet(DATA / "split_reference.parquet")
+    uni = set(pd.read_parquet(DATA / "universe.parquet")["stock_id"])
     ev = sp[sp["date"].between(COVERAGE_START, COVERAGE_END)
             & sp["stock_id"].isin(uni)]
     raw_drop = matched = 0
     for r in ev.itertuples():
-        px = _tree(REPO / f"finmind_data/ohlcv/{r.stock_id}.parquet",
+        px = _tree(TREES / f"ohlcv/{r.stock_id}.parquet",
                    columns=["date", "close"]).sort_values("date")
         px = px.reset_index(drop=True)
         i = px.index[px["date"] >= r.date]
-        a = _tree(REPO / f"finmind_data/price_adj/{r.stock_id}.parquet",
+        a = _tree(TREES / f"price_adj/{r.stock_id}.parquet",
                   columns=["date", "close"]).sort_values("date")
         a = a.reset_index(drop=True)
         j = a.index[a["date"] >= r.date]

@@ -84,9 +84,9 @@ seconds after any kr_status run. Dependency-ordered runbook at
 | Investor trading flow (3-category Smart Money) | `fnguide_data/investor_loader.py::load_investor_flow()` — 기관 / 개인 / 외국인, summed from the `raw/fnguide_investor_*` sheets |
 | Short-selling / lending / free-float | `fnguide_data/raw/fnguide_short-lending-float_20260615.xlsx` |
 | KOSPI 200 membership history | `krx_supplement/output/index_panel_daily.parquet` |
-| Taiwan OHLCV / institutional flow | `finmind_data/ohlcv/`, `finmind_data/instflow/` |
-| Taiwan adjusted close (total return — the only convention sold) | `finmind_data/adjusted_loader.py::load_adjusted(ticker)` |
-| Taiwan fundamentals dated when they became readable, not when the quarter closed | `finmind_data/available_date.py::with_available_date(df)` |
+| Taiwan OHLCV / institutional flow | `finmind_data/trees/ohlcv/`, `finmind_data/trees/instflow/` |
+| Taiwan adjusted close (total return — the only convention sold) | `finmind_data/derive/adjusted_loader.py::load_adjusted(ticker)` |
+| Taiwan fundamentals dated when they became readable, not when the quarter closed | `finmind_data/derive/available_date.py::with_available_date(df)` |
 
 **Before joining two FnGuide sheets, read
 [`fnguide_data/README.md`](fnguide_data/README.md#️-every-sheet-has-its-own-pull-date).**
@@ -121,7 +121,7 @@ vintage, not the FnGuide pull.
 
 To rebuild the data trees from scratch: re-export FnGuide xlsx via
 DataGuide (subscription needed, "all codes" filter); pull marcap parquets from
-the upstream `FinanceData/marcap` repo; run `finmind_data/download.py` against
+the upstream `FinanceData/marcap` repo; run `python -m finmind_data.collect.download` against
 your FinMind token; run `kr_delisted/build_delisting_calendar.py` against KIND.
 
 ## Verifying

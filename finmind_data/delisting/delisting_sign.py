@@ -167,21 +167,20 @@ shared delisting date, which marks a correlated event but not its direction:
 2007-06-20 retire three names of the 力霸 group into bankruptcy. It is recorded
 below as corroboration and never as a verdict.
 
-    python -m finmind_data.delisting_sign
+    python -m finmind_data.delisting.delisting_sign
 """
 from __future__ import annotations
 
 from math import comb
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .adjusted_loader import _BREAK_GAP_DAYS
-from .window import clip
+from ..derive.adjusted_loader import _BREAK_GAP_DAYS
+from ..window import clip
+from ..paths import DATA, TREES
 
-HERE = Path(__file__).resolve().parent
 
 # The frame the sample was drawn from, frozen here and deliberately not
 # `window.py`'s. `COVERAGE_END` is the package's own constant and moves for the
@@ -242,10 +241,10 @@ _GATE_ALPHA = 0.05
 # `single_cut_gate`.
 _GATE_MIN_LABELS = 11
 
-_LABEL_FILE = HERE / "delisting_labels.csv"
-_BAND_FILE = HERE / "delisting_band.csv"
-_CONSIDERATION_FILE = HERE / "delisting_consideration.csv"
-_OUT_FILE = HERE / "delisting_sign.parquet"
+_LABEL_FILE = DATA / "delisting_labels.csv"
+_BAND_FILE = DATA / "delisting_band.csv"
+_CONSIDERATION_FILE = DATA / "delisting_consideration.csv"
+_OUT_FILE = DATA / "delisting_sign.parquet"
 
 
 def _price(stock_id: str) -> pd.DataFrame | None:
@@ -269,7 +268,7 @@ def _price(stock_id: str) -> pd.DataFrame | None:
     there is no unexplained cut hiding in it. Clipping here would move a
     pre-registered draw on an artefact of the truncation.
     """
-    f = HERE / f"ohlcv/{stock_id}.parquet"
+    f = TREES / f"ohlcv/{stock_id}.parquet"
     if not f.exists():
         return None
     p = pd.read_parquet(f)
@@ -300,7 +299,7 @@ def _panel_last_session() -> pd.Timestamp:
     blind — same guard `_price` applies after its read.
     """
     last = None
-    for f in sorted(HERE.glob("ohlcv/*.parquet")):
+    for f in sorted((TREES / "ohlcv").glob("*.parquet")):
         if "date" not in pq.read_schema(f).names:
             continue
         d = pd.read_parquet(f, columns=["date"])
@@ -319,7 +318,7 @@ def _panel_last_session() -> pd.Timestamp:
 
 def features() -> pd.DataFrame:
     """One row per in-window delisted common stock with a price history."""
-    d = pd.read_parquet(HERE / "delisted_universe.parquet")
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
     d["date"] = pd.to_datetime(d["date"])
     d["stock_id"] = d["stock_id"].astype(str)
     d = d[(d["date"] >= _WIN_START) & (d["date"] <= _WIN_END)]
@@ -329,7 +328,7 @@ def features() -> pd.DataFrame:
     # delisting table carries 11 of them inside the window. Under the regex all
     # 11 entered the frame and left it again for want of a price file, which is
     # the right answer for a reason that expires the day the file is downloaded.
-    u = set(pd.read_parquet(HERE / "universe.parquet")["stock_id"].astype(str))
+    u = set(pd.read_parquet(DATA / "universe.parquet")["stock_id"].astype(str))
     d = d[d["stock_id"].isin(u)]
 
     rows = []

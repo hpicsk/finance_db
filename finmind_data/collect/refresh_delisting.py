@@ -11,18 +11,15 @@ refresh therefore has to be a replace, not a union — a union would preserve
 exactly the vendor errors the backfill corrected — and the guard below is what
 keeps a replace from being a silent truncation instead.
 
-    python -m finmind_data.refresh_delisting
+    python -m finmind_data.collect.refresh_delisting
 """
-from pathlib import Path
 
 import pandas as pd
-import requests
 
-from .auth import headers
+from ..client import get
+from ..paths import DATA
 
-HERE = Path(__file__).resolve().parent
-API = "https://api.finmindtrade.com/api/v4/data"
-OUT = HERE / "delisted_universe.parquet"
+OUT = DATA / "delisted_universe.parquet"
 
 # A pull that returns fewer rows than this is a truncated response, not a
 # vendor retraction: the table is cumulative and the count only grows. Set to
@@ -31,15 +28,7 @@ _MIN_ROWS = 723
 
 
 def main() -> None:
-    r = requests.get(API, params={"dataset": "TaiwanStockDelisting"},
-                     headers=headers(), timeout=60)
-    r.raise_for_status()
-    payload = r.json()
-    if payload.get("status") != 200:
-        raise RuntimeError(f"FinMind returned {payload.get('status')}: "
-                           f"{payload.get('msg')}")
-
-    new = pd.DataFrame(payload["data"])
+    new = get("TaiwanStockDelisting")
     if len(new) < _MIN_ROWS:
         raise RuntimeError(
             f"pull returned {len(new)} rows, fewer than the {_MIN_ROWS} already "

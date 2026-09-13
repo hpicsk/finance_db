@@ -53,9 +53,9 @@ at query time. The number is the caller's: a backtest that cannot sell into a
 halt holds through it and says so in the call, and this module does not decide
 for it by picking a default other than the artifact's own.
 
-    python -m finmind_data.pit_universe    # rebuild the spans and the calendar
+    python -m finmind_data.derive.pit_universe    # rebuild the spans and the calendar
 
-    from finmind_data.pit_universe import universe_at, sessions
+    from .pit_universe import universe_at, sessions
     universe_at("2016-06-30")                       # 1,702 codes
     universe_at("2016-06-30", bridge_gaps_upto=20)  # holding through short halts
 """
@@ -64,19 +64,15 @@ from __future__ import annotations
 import sys
 from bisect import bisect_left
 from functools import lru_cache
-from pathlib import Path
 
 import pandas as pd
-import requests
 
-from .auth import headers
-from .window import COVERAGE_START, COVERAGE_END, clip
+from ..client import get
+from ..window import COVERAGE_START, COVERAGE_END, clip
+from ..paths import DATA, TAPE
 
-HERE = Path(__file__).resolve().parent
-SPANS = HERE / "listing_spans.parquet"
-CALENDAR = HERE / "trading_sessions.parquet"
-TAPE = HERE / "tape"
-API = "https://api.finmindtrade.com/api/v4/data"
+SPANS = DATA / "listing_spans.parquet"
+CALENDAR = DATA / "trading_sessions.parquet"
 
 
 # ---- runtime ---------------------------------------------------------------
@@ -85,7 +81,7 @@ API = "https://api.finmindtrade.com/api/v4/data"
 def _spans() -> pd.DataFrame:
     if not SPANS.exists():
         raise FileNotFoundError(
-            f"{SPANS.name} not built — run `python -m finmind_data.pit_universe`")
+            f"{SPANS.name} not built — run `python -m finmind_data.derive.pit_universe`")
     return pd.read_parquet(SPANS)
 
 
@@ -103,7 +99,7 @@ def sessions() -> tuple[str, ...]:
     """
     if not CALENDAR.exists():
         raise FileNotFoundError(
-            f"{CALENDAR.name} not built — run `python -m finmind_data.pit_universe`")
+            f"{CALENDAR.name} not built — run `python -m finmind_data.derive.pit_universe`")
     return tuple(pd.read_parquet(CALENDAR)["date"])
 
 
@@ -208,9 +204,7 @@ def _emerging_until() -> tuple[pd.Series, str]:
     this is a vendor pull, and the boundary it draws is only as current as the
     day it was taken.
     """
-    raw = pd.DataFrame(requests.get(
-        API, params={"dataset": "TaiwanStockInfo"}, headers=headers(),
-        timeout=180).json()["data"])
+    raw = get("TaiwanStockInfo")
     stamp = pd.to_datetime(raw["date"], errors="coerce").max()
     assert pd.notna(stamp) and stamp >= COVERAGE_END, (
         f"the registry's latest usable stamp is {stamp}, before the window "
@@ -228,19 +222,19 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     if not TAPE.exists():
         raise FileNotFoundError(
-            f"{TAPE.name}/ not built — run `python -m finmind_data.tape_universe`")
+            f"{TAPE.name}/ not built — run `python -m finmind_data.collect.tape_universe`")
     tape = clip(pd.concat([pd.read_parquet(p) for p in sorted(TAPE.glob("*.parquet"))],
                           ignore_index=True))
     cal = sorted(tape["date"].unique())
     at = {d: i for i, d in enumerate(cal)}
 
-    universe = set(pd.read_parquet(HERE / "universe.parquet")["stock_id"])
+    universe = set(pd.read_parquet(DATA / "universe.parquet")["stock_id"])
     emerging, registry_pull = _emerging_until()
 
     # A delisting is an exit only if it lands inside the window: a code that
     # delisted earlier is absent from the tape anyway, and one that delists later
     # is still listed on the last session this package answers for.
-    delisted = pd.read_parquet(HERE / "delisted_universe.parquet")
+    delisted = pd.read_parquet(DATA / "delisted_universe.parquet")
     exits = delisted[delisted["stock_id"].isin(universe)]
     exits = exits.set_index("stock_id")["date"]
     exits = exits[(exits >= cal[0]) & (exits <= cal[-1])]

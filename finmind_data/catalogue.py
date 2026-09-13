@@ -43,7 +43,8 @@ from pathlib import Path
 
 import requests
 
-ROOT = Path(__file__).resolve().parent
+from .paths import DATA
+
 URL = "https://finmind.github.io/llms-full.txt"
 STEM = "finmind_catalogue_"
 
@@ -72,10 +73,10 @@ def path() -> Path:
     a refresh adds a file; the live catalogue is the one that answers "does this
     dataset exist today".
     """
-    copies = sorted(ROOT.glob(f"{STEM}*.txt"))
+    copies = sorted(DATA.glob(f"{STEM}*.txt"))
     if not copies:
         raise FileNotFoundError(
-            f"no {STEM}*.txt in {ROOT} — run `python -m finmind_data.catalogue`")
+            f"no {STEM}*.txt in {DATA} — run `python -m finmind_data.catalogue`")
     return copies[-1]
 
 
@@ -112,7 +113,7 @@ def datasets() -> dict[str, dict[str, str]]:
 def main() -> None:
     r = requests.get(URL, timeout=60)
     r.raise_for_status()
-    out = ROOT / f"{STEM}{dt.date.today():%Y%m%d}.txt"
+    out = DATA / f"{STEM}{dt.date.today():%Y%m%d}.txt"
     out.write_text(r.text, encoding="utf-8")
     print(f"{out.name}: {len(r.text):,} bytes, {len(datasets())} datasets")
 

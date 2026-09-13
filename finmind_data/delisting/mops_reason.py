@@ -1,6 +1,6 @@
 """Read why each in-window common left the exchange, out of its MOPS subjects.
 
-README caveat 8 says the reason a Taiwanese common delisted is published per
+CAVEATS.md 8 says the reason a Taiwanese common delisted is published per
 company in a 公開資訊觀測站 filing and in no table, and that until those filings
 are pulled a delisting return computed from this package is an assumption
 wearing a number. `mops_filings.py` pulls them. This module reads them.
@@ -23,14 +23,13 @@ fills them cannot be told from one that knew.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pandas as pd
+from ..paths import DATA
 
-ROOT = Path(__file__).resolve().parent
-FRAME = ROOT / "delisting_sign.parquet"
-LISTING_DIR = ROOT / "mops_listing"
-OUT = ROOT / "mops_reason.parquet"
+FRAME = DATA / "delisting_sign.parquet"
+LISTING_DIR = DATA / "mops_listing"
+OUT = DATA / "mops_reason.parquet"
 
 # How far ahead of the exit a filing is still about the exit. A merger is
 # resolved by the board, approved by shareholders and completed months later,

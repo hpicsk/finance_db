@@ -73,7 +73,7 @@ and it is what ``observed_date`` below is for. ``filing_dates.parquet`` carries
 the 上傳日期 of the report that first made each company-quarter public, collected
 by ``filing_dates.py`` from TWSE's document server, and against it 6.56 % of the
 company-quarters ending 2011-12-31..2024-12-31 were published after their
-deadline (README caveat 9).
+deadline (CAVEATS.md 9).
 
 The tradable gap is wider than the published one, because three quarters of
 reports are uploaded after the session closes: **14.66 %** of those
@@ -89,13 +89,11 @@ rather than aligning against a RangeIndex the frame no longer has.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
+from ..paths import DATA, TREES
 
-ROOT = Path(__file__).resolve().parent
-DEADLINES_PATH = ROOT / 'filing_deadlines.csv'
-FILING_DATES_PATH = ROOT / 'filing_dates.parquet'
+DEADLINES_PATH = DATA / 'filing_deadlines.csv'
+FILING_DATES_PATH = DATA / 'filing_dates.parquet'
 
 # Quarter-end month → the rule row that governs it. `fin_*` is dated on exactly
 # these four; a 12-31 row is the annual report, not a fourth quarterly one.
@@ -213,7 +211,7 @@ def with_available_date(df: pd.DataFrame, kind: str = 'financial_statement',
 # uploaded after it could not be acted on at that day's close and the first
 # close that can be traded on its figures is the next session's. Three quarters
 # of filings land after this hour, which is why the observed date is a roll and
-# not a `.dt.normalize()` — README caveat 9. After-hours odd-lot trading at
+# not a `.dt.normalize()` — CAVEATS.md 9. After-hours odd-lot trading at
 # 14:00 settles at the closing price already set, so it does not move the hour;
 # and rolling a borderline filing forward errs later, which is the direction
 # this module errs in throughout.
@@ -310,7 +308,7 @@ def with_observed_date(df: pd.DataFrame) -> pd.DataFrame:
 if __name__ == '__main__':
     for kind, pat in (('financial_statement', 'fin_is/2330.parquet'),
                       ('monthly_revenue', 'month_rev/2330.parquet')):
-        d = pd.read_parquet(ROOT / pat)
+        d = pd.read_parquet(TREES / pat)
         d = with_available_date(d, kind=kind)
         s = (d[['date', 'available_date']].drop_duplicates()
              .assign(lag=lambda x: (pd.to_datetime(x['available_date'])
@@ -321,7 +319,7 @@ if __name__ == '__main__':
         print(s.tail(3).to_string(index=False))
         print(f'  lag in days: {sorted(int(x) for x in s["lag"].unique())}')
 
-    d = with_observed_date(pd.read_parquet(ROOT / 'fin_is/2330.parquet'))
+    d = with_observed_date(pd.read_parquet(TREES / 'fin_is/2330.parquet'))
     d = with_available_date(d)
     s = (d[['date', 'available_date', 'observed_date']].drop_duplicates()
          .assign(bound_early=lambda x: (x['available_date']

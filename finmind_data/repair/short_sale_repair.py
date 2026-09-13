@@ -26,8 +26,8 @@ values as the tree has them, which would contradict the reading above.
 tree held them and whether the re-pull confirmed the exchange, and the run
 refuses to start while that record exists.
 
-    python -m finmind_data.short_sale_repair --snapshot DIR --dry-run
-    python -m finmind_data.short_sale_repair --snapshot DIR
+    python -m finmind_data.repair.short_sale_repair --snapshot DIR --dry-run
+    python -m finmind_data.repair.short_sale_repair --snapshot DIR
 """
 from __future__ import annotations
 
@@ -38,10 +38,10 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .window import COVERAGE_END, COVERAGE_START
+from ..window import COVERAGE_END, COVERAGE_START
+from ..paths import DATA, RECORDS, TREES
 
-HERE = Path(__file__).resolve().parent
-RECORD = HERE / "short_sale_repair.parquet"
+RECORD = RECORDS / "short_sale_repair.parquet"
 TREE = "margin_short"
 BUY, SELL = "ShortSaleBuy", "ShortSaleSell"
 
@@ -58,10 +58,10 @@ def repair(snapshot: Path, dry_run: bool) -> pd.DataFrame:
         raise SystemExit(f"{RECORD.name} exists: the repair has run, and a second run "
                          f"would overwrite its record with an empty one")
     lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
-    names = sorted(pd.read_parquet(HERE / "universe.parquet")["stock_id"].astype(str))
+    names = sorted(pd.read_parquet(DATA / "universe.parquet")["stock_id"].astype(str))
     rows, writes = [], {}
     for sid in names:
-        p = HERE / TREE / f"{sid}.parquet"
+        p = TREES / TREE / f"{sid}.parquet"
         if not pq.ParquetFile(p).metadata.num_rows:
             continue
         held = pd.read_parquet(p)
@@ -105,7 +105,7 @@ def repair(snapshot: Path, dry_run: bool) -> pd.DataFrame:
         return log
     log.to_parquet(RECORD, index=False)
     for sid, out in writes.items():
-        out.to_parquet(HERE / TREE / f"{sid}.parquet", index=False)
+        out.to_parquet(TREES / TREE / f"{sid}.parquet", index=False)
     return log
 
 

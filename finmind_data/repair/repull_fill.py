@@ -25,8 +25,8 @@ the vendor stops serving is not a row shown to be wrong. `fill` refuses to start
 while the directory exists, because a second run finds nothing to add and would
 overwrite the record of the first with an empty one.
 
-    python -m finmind_data.repull_fill --snapshot DIR --dry-run
-    python -m finmind_data.repull_fill --snapshot DIR
+    python -m finmind_data.repair.repull_fill --snapshot DIR --dry-run
+    python -m finmind_data.repair.repull_fill --snapshot DIR
 """
 from __future__ import annotations
 
@@ -36,18 +36,20 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .window import COVERAGE_END, COVERAGE_START
+from ..datasets import DATASETS
+from ..window import COVERAGE_END, COVERAGE_START
+from ..paths import DATA, RECORDS, TREES
 
-HERE = Path(__file__).resolve().parent
-RECORD = HERE / "repull_fill"
-KEY = {"ohlcv": ["date"], "instflow": ["date", "name"], "margin_short": ["date"],
-       "shares": ["date"], "per_pbr": ["date"], "sec_lending": ["date"]}
-# `sec_lending/` is keyed on its date alone, and its rows are not unique under
-# that key: the tree carries 86,002 rows twice (README caveat 12), and nothing
-# here can tell a repeated load from two identical transactions. A date the tree
+RECORD = RECORDS / "repull_fill"
+# Every tree but a back-adjusted one, which takes no appended rows at all
+# (`datasets.py`): the key under which a pulled row is new to the tree.
+KEY = {d.tree: list(d.key) for d in DATASETS if not d.back_adjusted}
+# A tree whose rows are not unique under its key (`Dataset.repeats`):
+# `sec_lending/` carries 86,002 rows twice (CAVEATS.md 12), and nothing here
+# can tell a repeated load from two identical transactions. A date the tree
 # holds no row of takes every row the pull carries for it; a date it holds keeps
 # the rows it has.
-REPEATS = {"sec_lending"}
+REPEATS = {d.tree for d in DATASETS if d.repeats}
 
 
 def _read(path: Path) -> pd.DataFrame | None:
@@ -79,7 +81,7 @@ def _plan(tree: str, snapshot: Path, names: list[str]) -> tuple[dict[str, pd.Dat
         if not pulled.exists():
             raise SystemExit(f"{pulled} is not in the snapshot")
         now = _read(pulled)
-        held_all = _read(HERE / tree / f"{sid}.parquet")
+        held_all = _read(TREES / tree / f"{sid}.parquet")
         if held_all is not None:
             mine = held_all[held_all["date"].between(lo, hi)]
             theirs = set(now["date"]) if now is not None else set()
@@ -126,7 +128,7 @@ def fill(snapshot: Path, dry_run: bool) -> dict[str, pd.DataFrame]:
     unknown = [t for t in trees if t not in KEY]
     if unknown:
         raise SystemExit(f"{snapshot} holds {unknown}, which this fill has no key for")
-    names = sorted(pd.read_parquet(HERE / "universe.parquet")["stock_id"].astype(str))
+    names = sorted(pd.read_parquet(DATA / "universe.parquet")["stock_id"].astype(str))
     plans, added, unserved = {}, {}, []
     for tree in trees:
         plan, empty, left = _plan(tree, snapshot, names)
@@ -149,7 +151,7 @@ def fill(snapshot: Path, dry_run: bool) -> dict[str, pd.DataFrame]:
     unserved.to_parquet(RECORD / "unserved.parquet", index=False)
     for tree, plan in plans.items():
         for sid, add in plan.items():
-            p = HERE / tree / f"{sid}.parquet"
+            p = TREES / tree / f"{sid}.parquet"
             held = _read(p)
             add = add.drop(columns="place")
             out = pd.concat([held, add], ignore_index=True) if held is not None else add

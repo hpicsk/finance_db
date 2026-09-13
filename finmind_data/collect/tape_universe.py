@@ -40,7 +40,7 @@ have made the answer depend on the tree whose completeness is the question.
 Sundays are dropped because the tree holds none in twenty years and the make-up
 sessions the exchange does hold are Saturdays.
 
-    python -m finmind_data.tape_universe
+    python -m finmind_data.collect.tape_universe
 
 Resumable per year: a year whose file already reaches the end of what this
 window asks for is skipped, so an interrupted sweep resumes at the year it
@@ -52,24 +52,20 @@ from __future__ import annotations
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pandas as pd
-import requests
 
-from .auth import headers
-from .pit_universe import emerging_boundary
-from .window import COVERAGE_START, COVERAGE_END
+from ..client import get
+from ..datasets import CODE
+from ..derive.pit_universe import emerging_boundary
+from ..window import COVERAGE_START, COVERAGE_END
+from ..paths import DATA, TAPE
 
-HERE = Path(__file__).resolve().parent
-API = "https://api.finmindtrade.com/api/v4/data"
-TAPE = HERE / "tape"
-OUT = HERE / "tape_universe.parquet"
+OUT = DATA / "tape_universe.parquet"
 
-# The sponsor tier allows 6,000 requests/hour and the sweep needs ~4,890. Three
-# workers hold the rate near 5,400/hr at the ~2 s round trip a recent session
-# costs, which finishes inside the hour; a fourth would overshoot the quota and
-# earn a 402, and fetch() answers that by sleeping to the reset.
+# Three in flight keeps the client's pacing slots filled at the one to two
+# seconds a session takes to answer; the client, not the worker count, bounds
+# the hourly total.
 WORKERS = 3
 
 # The longest the exchange is shut inside a year. 農曆春節 closes it for up to
@@ -79,52 +75,29 @@ WORKERS = 3
 # one whose last session was the 28th.
 _YEAR_END_SLACK = pd.Timedelta(days=31)
 
-# Only 4-digit numeric codes are kept. This is `build_universe.py`'s filter, and
-# keeping the tape to it drops the warrants that make a recent session 50,000
-# rows wide while retaining every code the universe could be missing.
-CODE = r"\d{4}"
+# Only `datasets.CODE`, the 4-digit codes every tree is narrowed to: it drops
+# the warrants that make a recent session 50,000 rows wide while retaining every
+# code the universe could be missing.
 
 
 def fetch_session(date: str) -> pd.DataFrame:
     """Every instrument that traded on `date`, narrowed to 4-digit codes.
 
-    Returns an empty frame for a day the market was closed. Retries a rate
-    limit by sleeping to the quota reset; anything else raises, because a
-    session silently recorded as empty is a code list with a hole in it and
-    the union would not show which day it came from.
+    Returns an empty frame for a day the market was closed. The client answers
+    a rate limit by sleeping to the quota reset and raises on anything else,
+    because a session silently recorded as empty is a code list with a hole in
+    it and the union would not show which day it came from.
     """
-    params = {"dataset": "TaiwanStockPrice", "start_date": date,
-              "end_date": date}
-    for attempt in range(6):
-        try:
-            r = requests.get(API, params=params, headers=headers(), timeout=180)
-        except requests.RequestException as e:
-            if attempt == 5:
-                raise
-            print(f"  net-err {date}: {e}; retry", flush=True)
-            time.sleep(20)
-            continue
-        if r.status_code in (402, 429):
-            sleep_s = 3600 - (time.time() % 3600) + 60
-            print(f"  rate-limit {date}; sleep {sleep_s:.0f}s to quota reset",
-                  flush=True)
-            time.sleep(sleep_s)
-            continue
-        r.raise_for_status()
-        payload = r.json()
-        if payload.get("status") != 200:
-            raise RuntimeError(f"{date}: {payload.get('msg')}")
-        df = pd.DataFrame(payload.get("data") or [])
-        if df.empty:
-            return df
-        # The endpoint keys on `start_date` and ignores `end_date`; assert it
-        # rather than trust it, since a range response would silently attribute
-        # other sessions' codes to this one.
-        assert set(df["date"]) == {date}, f"{date}: response spans {set(df['date'])}"
-        keep = df["stock_id"].str.fullmatch(CODE)
-        return df.loc[keep, ["date", "stock_id", "Trading_Volume",
-                             "Trading_money"]].reset_index(drop=True)
-    raise RuntimeError(f"{date}: exhausted retries")
+    df = get("TaiwanStockPrice", start=date, end=date)
+    if df.empty:
+        return df
+    # The endpoint keys on `start_date` and ignores `end_date`; assert it
+    # rather than trust it, since a range response would silently attribute
+    # other sessions' codes to this one.
+    assert set(df["date"]) == {date}, f"{date}: response spans {set(df['date'])}"
+    keep = df["stock_id"].str.fullmatch(CODE)
+    return df.loc[keep, ["date", "stock_id", "Trading_Volume",
+                         "Trading_money"]].reset_index(drop=True)
 
 
 def sweep() -> None:
@@ -173,9 +146,7 @@ def _registry() -> pd.DataFrame:
     rule — dropping rows and deduplicating afterwards keeps a stock alive on
     whichever classification the response happened to list first.
     """
-    raw = pd.DataFrame(requests.get(
-        API, params={"dataset": "TaiwanStockInfo"}, headers=headers(),
-        timeout=180).json()["data"])
+    raw = get("TaiwanStockInfo")
     excluded = {"ETF", "ETN", "受益證券", "存託憑證", "臺灣存託憑證",
                 "創新版股票", "創新板股票"}
     g = raw.groupby("stock_id")

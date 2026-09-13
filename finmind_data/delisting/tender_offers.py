@@ -1,6 +1,6 @@
 """What a tender offer paid, for every 公開收購 the exchange has on file.
 
-README caveat 8: the reason a company left is read off its filing subjects, but
+CAVEATS.md 8: the reason a company left is read off its filing subjects, but
 the *amount* a holder received is in the 說明, and MOPS refuses the 說明 for 150
 of the 164 names because they are no longer 公開發行. That gate is on the
 company's registration today rather than on the filing, so it falls hardest on
@@ -47,18 +47,14 @@ from __future__ import annotations
 
 import html
 import re
-import sys
-from pathlib import Path
 
 import pandas as pd
+import requests
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT.parent))
-from finmind_data.window import COVERAGE_END  # noqa: E402
+from ..paths import DATA
+from ..window import COVERAGE_END
 
-import requests  # noqa: E402
-
-OUT_PATH = ROOT / "tender_offers.parquet"
+OUT_PATH = DATA / "tender_offers.parquet"
 
 URL = "https://mopsov.twse.com.tw/mops/web/ajax_t162sb03"
 # The legacy host answers a plain form POST. The 2025 SPA reaches the same table
@@ -97,7 +93,7 @@ N_CELLS = len(COLUMNS)
 # 5304 不適用 on the same facts, all three having terminated their own listing
 # before the offer opened. So it says whether *an* exit followed and not which
 # transaction was one, and the rule that picks the exits reads the dates instead
-# — see `linkage` in the module docstring and README caveat 8.
+# — see `linkage` in the module docstring and CAVEATS.md 8.
 DELISTED_AFTER = {"是": "yes", "否": "no", "不適用": "not_applicable"}
 SUCCEEDED = "成功"
 

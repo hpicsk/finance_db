@@ -21,9 +21,7 @@ re-raises one of those writes the token with it. FinMind documents the
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-TOKEN_FILE = Path(__file__).resolve().parent / ".token"
+from .paths import TOKEN_FILE
 
 
 def token() -> str:

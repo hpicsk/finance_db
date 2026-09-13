@@ -1,6 +1,6 @@
 """When each Taiwanese financial report was actually published.
 
-README caveat 9: `available_date.py` dates a statement by the deadline the law
+CAVEATS.md 9: `available_date.py` dates a statement by the deadline the law
 set for it, which is a valid upper bound for a company that filed on time and
 wrong for one that did not. A late filer, or one granted a 不可抗力 extension,
 published after the date that module computes, and a join on it hands a trader
@@ -33,16 +33,16 @@ import html
 import re
 import sys
 import time
-from pathlib import Path
 
 import pandas as pd
 import pyarrow.parquet as pq
 import requests
 
-ROOT = Path(__file__).resolve().parent
-LOG_FILE = ROOT / "filing_dates.log"
-OUT_DIR = ROOT / "filing_dates"
-PANEL = ROOT / "filing_dates.parquet"
+from ..client import log
+from ..paths import DATA, TREES
+
+OUT_DIR = TREES / "filing_dates"
+PANEL = DATA / "filing_dates.parquet"
 
 URL = "https://doc.twse.com.tw/server-java/t57sb01"
 # mtype A is 財務報告書. The other document classes the server carries — 財務預測書,
@@ -113,13 +113,6 @@ CLASS_CONSOLIDATED = "AI1"
 
 COLUMNS = ["stock_id", "period_end", "nature", "class_code", "detail",
            "filename", "upload_ts", "roc_period"]
-
-
-def log(msg: str) -> None:
-    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
-    print(line, flush=True)
-    with LOG_FILE.open("a") as fh:
-        fh.write(line + "\n")
 
 
 def _cells(row_html: str) -> list[str]:
@@ -295,7 +288,7 @@ def consolidate() -> pd.DataFrame:
 
 def targets() -> list[str]:
     """The companies whose statement trees this dates: `fin_is/` is the frame."""
-    ids = sorted(p.stem for p in (ROOT / "fin_is").glob("*.parquet"))
+    ids = sorted(p.stem for p in (TREES / "fin_is").glob("*.parquet"))
     if not ids:
         raise FileNotFoundError("fin_is/ is empty — nothing to date")
     return ids
@@ -312,7 +305,7 @@ def covers_tree(stock_id: str) -> bool:
     on the server is re-asked once per run, which is what not skipping the ones
     that do costs.
     """
-    tree = ROOT / "fin_is" / f"{stock_id}.parquet"
+    tree = TREES / "fin_is" / f"{stock_id}.parquet"
     path = OUT_DIR / f"{stock_id}.parquet"
     if not path.exists():
         return False
