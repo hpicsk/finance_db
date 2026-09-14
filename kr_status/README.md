@@ -199,7 +199,8 @@ fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
 | DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Reliable from ~2015 |
 | KIND delisting feed | `kind.krx.co.kr/investwarn/delcompany.do` | already-wired in `../kr_delisted/build_delisting_calendar.py`; consumed by `fdr_collect --seed-historical` |
 
-DART rate cap: ~10,000 req/day per API key. `dart_audit` for ~4,300 tickers
+DART rate cap: ~10,000 req/day per API key; `run_dart_audit_resume.sh` runs one
+day's batch and logs to `runtime/`. `dart_audit` for ~4,300 tickers
 × ~10 years ≈ 43,000 req → batch across ~5 days (resumable via the
 `dart_audit_opinions.parquet` cache).
 
