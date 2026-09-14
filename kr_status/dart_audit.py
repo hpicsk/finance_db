@@ -56,7 +56,7 @@ QUALIFIED_OPINIONS = {"한정", "부적정", "의견거절"}
 
 
 def _working_universe() -> pd.DataFrame:
-    from _universe import load_working_universe
+    from kr_status._universe import load_working_universe
     return load_working_universe(include_dates=True)
 
 

@@ -86,8 +86,7 @@ def _candidate_tickers() -> list[str]:
 
 
 def _all_universe_tickers() -> list[str]:
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from _universe import load_working_universe
+    from kr_status._universe import load_working_universe
     u = load_working_universe(include_dates=False)
     return sorted(u["ticker"].astype(str).str.zfill(6).unique())
 

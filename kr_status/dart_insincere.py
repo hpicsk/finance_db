@@ -51,7 +51,7 @@ def _save_progress(done: set[str]) -> None:
 
 
 def _working_universe() -> pd.DataFrame:
-    from _universe import load_working_universe
+    from kr_status._universe import load_working_universe
     return load_working_universe(include_dates=False)
 
 
