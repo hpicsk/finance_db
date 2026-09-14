@@ -235,12 +235,60 @@ def test_marcap_carries_every_kind_ticker():
             f"marcap years ({len(codes):,} distinct codes)"), len(kind)
 
 
+# ---- README "marcap coverage verification": the end-of-trading pattern -----
+def test_marcap_end_of_trading_pattern():
+    """README.md "marcap coverage verification" reads each KIND ticker's last
+    marcap row before its delisting_date: 48 delist past the clone's right
+    edge, and of the 1,220 inside it 1,219 (99.9 %) end 1–7 days before
+    delisting, 6 of those in the prior year's file, and one (449020) 8 days
+    before; none exceeds 30. The figures move with every marcap pull, and the
+    README says so — a pull is meant to fail this and carry the new numbers in.
+    """
+    files = sorted(glob.glob(str(REPO / "marcap/data/marcap-*.parquet")))
+    if not files:
+        raise Skipped("no marcap parquets under marcap/data")
+    cal = _calendar()
+    kind = cal[cal["reason"].fillna("") != PROXY_REASON]
+    tickers = set(kind["ticker"])
+    parts, edge = [], None
+    for fp in files:
+        df = pd.read_parquet(fp, columns=["Code", "Date"])
+        df["Code"] = df["Code"].astype(str).str.zfill(6)
+        df = df[df["Code"].isin(tickers)]
+        if len(df):
+            edge = df["Date"].max() if edge is None else max(edge, df["Date"].max())
+            parts.append(df)
+    rows = pd.concat(parts)
+    # Per calendar row, not per ticker: a reused code delists twice, and each
+    # event has its own last session.
+    m = kind[["ticker", "delisting_date"]].merge(rows, left_on="ticker", right_on="Code")
+    last = (m[m["Date"] < m["delisting_date"]]
+            .groupby(["ticker", "delisting_date"])["Date"].max()
+            .rename("last").reset_index())
+    past = kind[kind["delisting_date"] > edge]
+    inside = last[last["delisting_date"] <= edge]
+    gap = (inside["delisting_date"] - inside["last"]).dt.days
+    week = gap.between(1, 7)
+    prior_year = inside[week & (inside["last"].dt.year < inside["delisting_date"].dt.year)]
+    got = (len(past), len(inside), int(week.sum()), len(prior_year),
+           sorted(inside.loc[gap == 8, "ticker"]), int(gap.max()))
+    want = (48, 1220, 1219, 6, ["449020"], 8)
+    assert got == want, (
+        f"README.md 'marcap coverage verification' states 48 past the edge, 1,220 "
+        f"inside, 1,219 with a 1–7 day gap (6 in the prior year's file), one 8-day "
+        f"gap (449020) and none over 30 days; the clone now gives (past, inside, "
+        f"1–7d, prior-year, 8d, max gap) = {got}")
+    return (f"{len(past)} past the {edge.date()} edge; {got[2]}/{len(inside)} end "
+            f"1–7 days before delisting, max gap {got[5]} days"), len(inside)
+
+
 CHECKS = [
     test_calendar_composition,
     test_is_genuine_split,
     test_override_layers,
     test_dissolution_rows_all_saw_the_dart_pass,
     test_marcap_carries_every_kind_ticker,
+    test_marcap_end_of_trading_pattern,
 ]
 
 

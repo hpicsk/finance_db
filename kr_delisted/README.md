@@ -104,7 +104,7 @@ docstring for the rationale of each layer.
 
 4. **Verified deviations from the legacy curated CSV (not corrected —
    regen is more accurate).** The current regenerator agrees with the
-   legacy `delisting_calendar.curated.csv` on 1,111 / 1,116 overlap
+   legacy `delisting_calendar.curated.csv` (not kept in the tree) on 1,111 / 1,116 overlap
    rows; the remaining 5 are all verified curated bugs left as-is
    because the regen's classification is correct (researched 2026-05-11):
    - `037150 CJ인터넷`, `056200 엠넷미디어` 2011-03-22 — both 피흡수합병
@@ -238,7 +238,7 @@ it, taking each ticker's last marcap row *before* its `delisting_date`:
   clone cannot show their last session yet. Update lag, not a coverage gap —
   the figure moves with every marcap pull and is the one number here that is
   about the clone rather than the data.
-- Of the 1,220 inside that span, **1,210 (99.2 %)** have a 1–7 day gap — the
+- Of the 1,220 inside that span, **1,219 (99.9 %)** have a 1–7 day gap — the
   textbook pattern — of which 6 are Jan 2–3 delistings whose last trading row
   falls in `marcap-{year−1}.parquet` (Dec 28–30).
 - 1 has an 8-day gap (`449020`, delisted 2025-10-10), a suspension before the

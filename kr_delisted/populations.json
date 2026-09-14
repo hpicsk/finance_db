@@ -15,6 +15,10 @@
     "bound": "monotone",
     "n": 1268
   },
+  "test_marcap_end_of_trading_pattern": {
+    "bound": "monotone",
+    "n": 1220
+  },
   "test_override_layers": {
     "bound": "monotone",
     "n": 85
