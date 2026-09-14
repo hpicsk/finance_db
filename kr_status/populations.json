@@ -1,0 +1,50 @@
+{
+  "test_alert_runs_overlapping_2020_2024": {
+    "bound": "monotone",
+    "n": 230
+  },
+  "test_audit_events_are_non_clean_opinions_2015_plus": {
+    "bound": "monotone",
+    "n": 401
+  },
+  "test_audit_events_rebuild_from_the_cache": {
+    "bound": "monotone",
+    "n": 401
+  },
+  "test_corp_actions_are_not_a_status_source": {
+    "bound": "monotone",
+    "n": 2769
+  },
+  "test_corp_code_cache_records_its_misses": {
+    "bound": "monotone",
+    "n": 4340
+  },
+  "test_halt_crosscheck_sample": {
+    "bound": "monotone",
+    "n": 60
+  },
+  "test_historical_seed_matches_the_calendar": {
+    "bound": "monotone",
+    "n": 273
+  },
+  "test_insincere_windows_are_one_year": {
+    "bound": "monotone",
+    "n": 1771
+  },
+  "test_long_halts_are_the_documented_share": {
+    "bound": "monotone",
+    "n": 28138
+  },
+  "test_marcap_runs_break_on_the_gap": {
+    "bound": "monotone",
+    "n": 25787
+  },
+  "test_marcap_signals_start_where_marcap_does": {
+    "bound": "monotone",
+    "n": 29556
+  },
+  "test_status_tables_share_the_schema": {
+    "bound": "monotone",
+    "n": 32001
+  }
+}

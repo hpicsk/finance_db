@@ -38,7 +38,8 @@ Convention: `end_date = NaT` means **still active as of the most recent
 
 ### `marcap_halt_infer.py` — canonical source for `halt`, `admin`, `alert`
 
-Full historical coverage 2004–2026 for halt and 2014–2026 for admin/alert;
+Coverage 2004–2026 for halt (2004 is the collector's default `--start-year`;
+marcap itself runs from 1995) and 2011-05 onward for admin/alert;
 no auth, no rate limits. Reads the marcap daily snapshots
 (`../marcap/data/marcap-YYYY.parquet`) and emits three signals:
 
@@ -48,8 +49,10 @@ no auth, no rate limits. Reads the marcap daily snapshots
   prior heuristic over-counted illiquid no-trade days as halts.
 - `status='admin'` ← `Dept` column contains `관리종목`. The same KRX
   classification that drives FDR's `KRX-ADMINISTRATIVE` list and seeds
-  DART's 관리종목지정 filings. Reliable **2014 onward** (pre-2014 marcap
-  rows have `Dept = NaN`).
+  DART's 관리종목지정 filings. The label first appears in marcap on
+  **2011-05-02**; nothing earlier is recoverable from marcap, and 2011–2013
+  is unverified against a second source (the FDR spot-check below covers
+  2020–2024).
 - `status='alert'` ← `Dept` column contains `투자주의환기` (투자주의환기
   종목 designation). Same coverage as admin.
 
@@ -83,14 +86,17 @@ anchored events for `bsns_year ≥ 2015`.
 Requires `OPEN_DART_API_KEY` (DART) — loaded from repo-root `.env`:
 
 ```bash
-set -a; . ../.env; set +a            # exports OPEN_DART_API_KEY
+set -a; . .env; set +a               # exports OPEN_DART_API_KEY; run from the repo root
 python -m kr_status.dart_audit       # 감사의견 (2015+) via accnutAdtorNmNdAdtOpinion.json
 python -m kr_status.dart_insincere   # 불성실공시 PIT history via DART list.json
 ```
 
 Outputs (under `data/`):
-- `dart_audit_opinions.parquet` — raw `(ticker, bsns_year, opinion_code, receipt_dt)`
-- `dart_audit_events.parquet` — `audit_qualified` events (non-적정 → next-year-or-NaT)
+- `dart_audit_opinions.parquet` — raw `(ticker, bsns_year, opinion_code, receipt_dt, raw)`
+- `dart_audit_events.parquet` — one `audit_qualified` event per non-적정
+  opinion, `[receipt_dt, the ticker's next non-적정 receipt_dt)`, or one year
+  when none follows; never NaT. A projection of the opinions cache:
+  `python -m kr_status.dart_audit --rebuild-events` regenerates it without DART
 - `dart_insincere_events.parquet` — `insincere` events
 
 ```bash
@@ -160,7 +166,7 @@ and is never misread as a break. DART's structured coverage is reliable from
 ~2015; earlier events are sparse and fall to the manual-override path.
 
 ```bash
-set -a; . ../.env; set +a
+set -a; . .env; set +a
 python -m kr_status.dart_corp_actions            # writes data/dart_corp_action_events.parquet
 ```
 

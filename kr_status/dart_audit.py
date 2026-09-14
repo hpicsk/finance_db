@@ -10,8 +10,8 @@ the raw `fnltt_singl_acnt` API depending on OpenDartReader version).
 Iterates over (corp_code, year) pairs, skipping already-cached pairs.  Raw
 opinion rows are persisted to ``data/dart_audit_opinions.parquet``; non-적정
 opinions are projected to event rows in ``data/dart_audit_events.parquet``
-with ``start_date = receipt_dt`` and ``end_date = next year's receipt_dt``
-(or NaT for the most recent opinion).
+with ``start_date = receipt_dt`` and ``end_date`` = the ticker's next non-적정
+``receipt_dt``, or one year on when none follows (never NaT).
 
 Usage:
     export OPEN_DART_API_KEY=...

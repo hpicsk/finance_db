@@ -9,11 +9,11 @@ these caveats.
 
 | Flag              | Date range covered                  | Primary source                | PIT? | Delisted firms? | Known gaps |
 |-------------------|-------------------------------------|-------------------------------|------|-----------------|-----------|
-| `admin`           | **2014–2026** (marcap.Dept first reliable in 2014) | `marcap_halt_infer.py` via `Dept~'관리종목'` on `../marcap/data/marcap-YYYY.parquet` | ✅ per-day flags consolidated to `(start_date, end_date)` events; gap > 7d breaks a run | ✅ marcap includes delisted firms up to their last trading day | Pre-2014 admin coverage absent (Dept is NaN). 2020–2024 KOSPI+KOSDAQ spot-check vs the retired FDR snapshot: 16/18 events matched with zero-day lag. |
+| `admin`           | **2011-05-02 – 2026** (the first marcap session carrying the label) | `marcap_halt_infer.py` via `Dept~'관리종목'` on `../marcap/data/marcap-YYYY.parquet` | ✅ per-day flags consolidated to `(start_date, end_date)` events; gap > 7d breaks a run | ✅ marcap includes delisted firms up to their last trading day | Nothing before 2011-05-02 (see '관리종목 before 2011-05' below), and 2011–2013 unverified against a second source. 2020–2024 KOSPI+KOSDAQ spot-check vs the retired FDR snapshot: 16/18 events matched with zero-day lag. |
 | `audit_qualified` | (proxy) delisted-firm rows, 2005–latest delisting<br>(DART) **2015+ structured only** | (proxy) `kr_delisted/delisting_calendar.csv` audit-rejection rows via `fdr_collect --seed-historical`<br>(DART) `accnutAdtorNmNdAdtOpinion.json` (DS002/2020009) | (proxy) ⚠️ window = [delist−180d, delist]<br>(DART) ✅ receipt_dt anchored | (proxy) ✅ delisted-only (by construction)<br>(DART) ✅ | **No structured DART data pre-2015**; pre-2015 still-listed firms with non-적정 opinions are not flagged. Would require parsing 외부감사보고서 filing HTML/PDFs |
 | `insincere`       | DART filing history (2005+) | `dart_insincere.py` → DART `list.json` title="불성실공시법인지정" | ✅ designation date | ✅ | Default release rule: `end_date = start_date + 12 months` (KRX standard); actual release filings vary |
 | `halt`            | **2004–2026** (marcap snapshots) | `marcap_halt_infer.py` via `ChangeCode=='0'` on `../marcap/data/marcap-YYYY.parquet` | ✅ per-day flags consolidated to `(start_date, end_date)` events; gap > 7d breaks a run | ✅ marcap includes delisted firms up to their last trading day | False positives from permanently-illiquid preferreds, pre-merger SPACs, dead-shell tickers (~1.6% of events span > 252 days). DART cross-check on a 60-sample 2020–2024: 100% of 31–60d halts and 78% of 11–30d halts had a DART-substantiable causing event (회생절차, 감자결정, 조회공시요구, etc.) in ±14d. KIND scrape would be needed for canonical halt boundaries. |
-| `alert`           | **2014–2026** (marcap.Dept first reliable in 2014) | `marcap_halt_infer.py` via `Dept~'투자주의환기'` on `../marcap/data/marcap-YYYY.parquet` | ✅ consolidated like `admin` | ✅ | Pre-2014 absent. KOSPI+KOSDAQ 2020–2024: 207 distinct tickers, 230 runs. |
+| `alert`           | **2011-05-02 – 2026** (the first marcap session carrying the label) | `marcap_halt_infer.py` via `Dept~'투자주의환기'` on `../marcap/data/marcap-YYYY.parquet` | ✅ consolidated like `admin` | ✅ | Nothing before 2011-05-02. KOSPI+KOSDAQ: 230 runs overlap 2020–2024, across 207 distinct tickers. |
 
 ## Hard known bounds
 
@@ -59,22 +59,22 @@ repurposed the bld to ELW master, and the replacement bld for the
 DevTools but not yet wired in. See `README.md § Deferred — direct KRX
 halt feed` for notes if anyone wants to revisit.
 
-### 3. 관리종목 pre-2014
+### 3. 관리종목 before 2011-05
 `marcap.Dept` is the canonical source for 관리종목 (and 투자주의환기종목):
 KRX publishes the classification daily, marcap captures both start and end
-dates exactly, and coverage is full back to 2014. The retired FDR
+dates exactly, and the label runs back to 2011-05-02. The retired FDR
 snapshot / DART harvest pipelines added no information for the years
-where marcap.Dept is populated.
+where marcap.Dept carries it.
 
-The remaining gap is **pre-2014**: marcap rows from 2004–2013 have
-`Dept = NaN`, so admin/alert events from that era are not recoverable
-from marcap. DART does not store 관리종목 designations either (KRX
+The remaining gap is **before 2011-05-02**: no marcap row before that
+session carries the label, so admin/alert events from that era are not
+recoverable from marcap. DART does not store 관리종목 designations either (KRX
 administrative action, not corporate-disclosure filing — `dart.list(corp=...)`
 returns zero hits across every filing kind, verified 0/8 known admin firms).
 The authoritative historical PIT source lives behind the `data.krx.co.kr`
 403 geofence; recovery would require Korean-IP infra (AWS Seoul / GCP
 `asia-northeast3` / paid proxy) or a paid feed (FnGuide, KOSCOM).
-Backtests with universe-start dates before 2014 must accept the gap.
+Backtests with universe-start dates before 2011-05 must accept the gap.
 
 ### 4. Insincere "active" window
 KRX's official 불성실공시법인 designation lasts 1 year, but the de-facto

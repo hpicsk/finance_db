@@ -7,8 +7,8 @@ daily by KRX in marcap:
   years 2004–2026. On KONEX this is stricter than the prior
   `(Volume==0) AND (Open==0)` mask, which over-counted illiquid no-trade days;
   on KOSPI/KOSDAQ the two agree to within ~0.1%.
-- ``status='admin'`` — `Dept.str.contains("관리종목")`. Dept is first populated
-  in 2011 and reliable from ~2014; earlier rows have `Dept = NaN`.
+- ``status='admin'`` — `Dept.str.contains("관리종목")`. The label first appears
+  on 2011-05-02; earlier rows carry none.
 - ``status='alert'`` — `Dept.str.contains("투자주의환기")`. Same coverage as admin.
 
 Consecutive flagged business days per ticker are consolidated into single
