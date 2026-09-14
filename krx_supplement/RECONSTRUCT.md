@@ -23,11 +23,11 @@ from the source that has it.
 
 KRX's `index_changes` log is **incomplete**. Measured:
 
-- KOSPI 200: 152 ISINs have an ADD and no REMOVE
-- KOSDAQ 150: the same pattern, many times
+- KOSPI 200: 132 ISINs have an ADD and no REMOVE
+- KOSDAQ 150: the same pattern, 104 times
 - Rolling the event log forward on its own therefore leaves *ghosts* at the
-  anchor — 12 names for KOSPI200 and 5 for KOSDAQ150 that are still counted as
-  members long after they left.
+  anchor — 12 names for KOSPI200 and 9 for KOSDAQ150 that are still counted as
+  members long after they left (the 21 synthetic events below).
 
 Cases the log misses:
 
@@ -115,7 +115,7 @@ The injected synthetic events, for audit.
 
 ---
 
-## Results on the current data (as of 2026-04-27)
+## Results on the current data (held by `test_assertions.py`)
 
 ```
 [코스피 200] 238 snapshots: 2004-01-30 ~ 2026-02-27 (200 anchor members)

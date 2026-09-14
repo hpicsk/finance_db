@@ -151,10 +151,76 @@ def test_foreign_ownership_empty_files_fall_on_non_sessions():
             f"calendar and are unchecked"), examined
 
 
+# ---- RECONSTRUCT.md: the event log alone cannot rebuild membership ---------
+def test_change_log_misses_removes():
+    """RECONSTRUCT.md, 'Why the two cannot simply be concatenated': KRX's event
+    log records ADDs whose REMOVE never arrives — 132 ISINs for KOSPI 200 and
+    104 for KOSDAQ 150 — which is why the month-end snapshots are the ground
+    truth and the log only supplies exact dates between them."""
+    ch = pd.read_parquet(REPO / "krx_supplement/output/index_changes.parquet")
+    got = {}
+    for idx, g in ch.groupby("index"):
+        added = set(g.loc[g["action"] == "ADD", "isin"])
+        removed = set(g.loc[g["action"] == "REMOVE", "isin"])
+        got[idx] = len(added - removed)
+    want = {"코스피 200": 132, "코스닥 150": 104}
+    assert got == want, (
+        f"RECONSTRUCT.md states '132 ISINs have an ADD and no REMOVE' for KOSPI 200 "
+        f"and 104 for KOSDAQ 150; the log now gives {got}")
+    return f"ADD without REMOVE: {got}, over {len(ch):,} log rows", len(ch)
+
+
+def test_reconstruction_results_block():
+    """RECONSTRUCT.md, 'Results on the current data': every number in the block
+    is read off the outputs — snapshots per index and their span, intervals,
+    synthetic events, the sanity match, the in_source / out_source split, and
+    the daily panel's rows and span."""
+    out = REPO / "krx_supplement/output"
+    mem = pd.read_parquet(out / "index_members.parquet")
+    mem["date"] = pd.to_datetime(mem["date"])
+    iv = pd.read_parquet(out / "index_membership_intervals.parquet")
+    pan = pd.read_parquet(out / "index_panel_daily.parquet", columns=["date", "index"])
+    pan["date"] = pd.to_datetime(pan["date"])
+    san = pd.read_csv(out / "index_reconstruction_sanity.csv")
+    got = {}
+    for idx in ("코스피 200", "코스닥 150"):
+        m, i, p = mem[mem["index"] == idx], iv[iv["index"] == idx], pan[pan["index"] == idx]
+        s = san[san["index"] == idx]
+        got[idx] = {
+            "snapshots": (int(m["date"].nunique()), str(m["date"].min().date()),
+                          str(m["date"].max().date())),
+            "intervals": len(i),
+            "synthetic": int((i["out_source"] == "synthetic").sum()),
+            "sanity": (int(((s["only_actual"] == 0) & (s["only_recon"] == 0)).sum()), len(s)),
+            "panel": (len(p), str(p["date"].min().date()), str(p["date"].max().date())),
+        }
+    want = {
+        "코스피 200": {"snapshots": (238, "2004-01-30", "2026-02-27"), "intervals": 730,
+                    "synthetic": 12, "sanity": (238, 238),
+                    "panel": (1_257_120, "1999-01-04", "2026-02-27")},
+        "코스닥 150": {"snapshots": (113, "2015-07-31", "2026-02-27"), "intervals": 656,
+                    "synthetic": 9, "sanity": (113, 113),
+                    "panel": (416_115, "2015-07-07", "2026-02-27")},
+    }
+    assert got == want, (
+        f"RECONSTRUCT.md 'Results on the current data' differs from the outputs: {got}")
+    sources = (iv["in_source"].value_counts().to_dict(),
+               iv["out_source"].fillna("NaN (still in)").value_counts().to_dict())
+    want_sources = ({"log": 1055, "initial": 331},
+                    {"log": 1015, "NaN (still in)": 350, "synthetic": 21})
+    assert sources == want_sources, (
+        f"RECONSTRUCT.md 'in_source / out_source distribution' is {want_sources}; "
+        f"the intervals now give {sources}")
+    return (f"{len(iv):,} intervals, {sources[1]['synthetic']} synthetic, every "
+            f"snapshot matched, {len(pan):,} panel rows"), len(iv)
+
+
 CHECKS = [
     test_kospi200_panel_inwindow_complete,
     test_sector_panel_covers_every_session,
     test_foreign_ownership_empty_files_fall_on_non_sessions,
+    test_change_log_misses_removes,
+    test_reconstruction_results_block,
 ]
 
 

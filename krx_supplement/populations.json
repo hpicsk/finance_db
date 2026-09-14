@@ -1,4 +1,8 @@
 {
+  "test_change_log_misses_removes": {
+    "bound": "monotone",
+    "n": 2070
+  },
   "test_foreign_ownership_empty_files_fall_on_non_sessions": {
     "bound": "monotone",
     "n": 14462
@@ -6,6 +10,10 @@
   "test_kospi200_panel_inwindow_complete": {
     "bound": "exact",
     "n": 5217
+  },
+  "test_reconstruction_results_block": {
+    "bound": "monotone",
+    "n": 1386
   },
   "test_sector_panel_covers_every_session": {
     "bound": "monotone",
