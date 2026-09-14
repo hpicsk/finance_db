@@ -19,10 +19,10 @@ carries a delisted name up to the date it left, and no survivorship overlay is
 needed on top.
 
     # what output/sector_mapping.parquet was built with
-    python collect_sector.py --start 20050101 --freq daily
+    python -m krx_supplement.collect_sector --start 20050101 --freq daily
 
-    python collect_sector.py     # defaults: 2015 onward, month-end snapshots
-    python collect_sector.py --start 20000104 --end 20260320 --freq monthly
+    python -m krx_supplement.collect_sector     # defaults: 2015 onward, month-end snapshots
+    python -m krx_supplement.collect_sector --start 20000104 --end 20260320 --freq monthly
 """
 
 import argparse
@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging, trading_dates
+from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging, trading_dates
 
 logger = setup_logging()
 

@@ -24,8 +24,8 @@ Output (``output/index_changes.parquet``)
     An event carrying both an entry and an exit becomes two rows. A one-sided
     event — a delisting, say — arrives with only its own side filled.
 
-    python collect_index_changes.py                  # both indices, whole history
-    python collect_index_changes.py --start 20200101
+    python -m krx_supplement.collect_index_changes                  # both indices, whole history
+    python -m krx_supplement.collect_index_changes --start 20200101
 """
 
 import argparse
@@ -36,7 +36,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import requests
 
-from krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging
+from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging
 
 logger = setup_logging()
 

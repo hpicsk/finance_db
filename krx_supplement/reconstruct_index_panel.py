@@ -80,10 +80,10 @@ Limits
     An ``initial`` member's start date is NaT rather than the index launch date,
     which is not the same claim.
 
-    python reconstruct_index_panel.py
-    python reconstruct_index_panel.py --no-daily          # skip the daily panel
-    python reconstruct_index_panel.py --start-kospi200 19940615 \
-                                      --start-kosdaq150 20150707
+    python -m krx_supplement.reconstruct_index_panel
+    python -m krx_supplement.reconstruct_index_panel --no-daily          # skip the daily panel
+    python -m krx_supplement.reconstruct_index_panel --start-kospi200 19940615 \
+                                                     --start-kosdaq150 20150707
 """
 
 import argparse
@@ -91,7 +91,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from krx_utils import save_with_csv, setup_logging
+from krx_supplement.krx_utils import save_with_csv, setup_logging
 
 log = setup_logging()
 

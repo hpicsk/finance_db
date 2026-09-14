@@ -183,14 +183,16 @@ to the other board that the event log never recorded (셀트리온, 카카오,
 
 ## Usage
 
+From the repository root:
+
 ```bash
-python reconstruct_index_panel.py
+python -m krx_supplement.reconstruct_index_panel
 
 # the daily panel is the large output; skip it when only spells are wanted
-python reconstruct_index_panel.py --no-daily
+python -m krx_supplement.reconstruct_index_panel --no-daily
 
 # custom panel bounds
-python reconstruct_index_panel.py \
+python -m krx_supplement.reconstruct_index_panel \
     --start-kospi200 19940615 \
     --start-kosdaq150 20150707 \
     --end 20251231

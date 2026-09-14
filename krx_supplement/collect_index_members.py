@@ -22,9 +22,9 @@ Index codes, which are KRX-internal and not published as a table
 Launch dates, before which a query returns nothing rather than failing
     KOSPI200 1994-06-15, KOSDAQ150 2015-07-07
 
-    python collect_index_members.py                 # month-end, 2001 to now
-    python collect_index_members.py --freq weekly
-    python collect_index_members.py --freq daily    # slow
+    python -m krx_supplement.collect_index_members                 # month-end, 2001 to now
+    python -m krx_supplement.collect_index_members --freq weekly
+    python -m krx_supplement.collect_index_members --freq daily    # slow
 """
 
 import argparse
@@ -34,7 +34,7 @@ from typing import Dict, Tuple
 
 import pandas as pd
 
-from krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging, trading_dates
+from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging, trading_dates
 
 logger = setup_logging()
 

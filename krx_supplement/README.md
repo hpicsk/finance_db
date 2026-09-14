@@ -34,7 +34,7 @@ export KRX_PW="your_krx_password"
 or inline, per run:
 
 ```bash
-KRX_ID="id" KRX_PW="pw" python collect_sector.py --start 20240101 --end 20260320
+KRX_ID="id" KRX_PW="pw" python -m krx_supplement.collect_sector --start 20240101 --end 20260320
 ```
 
 ---
@@ -49,23 +49,24 @@ pip install pykrx finance-datareader requests tqdm pandas pyarrow
 
 ## Quick start
 
-Each script runs on its own; there is no end-to-end wrapper.
+Each script runs on its own; there is no end-to-end wrapper. Run them
+from the repository root.
 
 ```bash
 # 1) sector mapping (business-daily snapshots, needs KRX_ID/PW)
-python collect_sector.py --start 20050101 --freq daily
+python -m krx_supplement.collect_sector --start 20050101 --freq daily
 
 # 2) index membership (KOSPI200 + KOSDAQ150, monthly snapshots, needs KRX_ID/PW)
-python collect_index_members.py --start 19940615 --end 20260320 --freq monthly
+python -m krx_supplement.collect_index_members --start 19940615 --end 20260320 --freq monthly
 
 # 3) index entry/exit event log (whole history in one call, no login)
-python collect_index_changes.py
+python -m krx_supplement.collect_index_changes
 
 # 4) combine 2 + 3 into the daily index panel
-python reconstruct_index_panel.py
+python -m krx_supplement.reconstruct_index_panel
 
 # 5) foreign ownership (daily all-issue snapshots, needs KRX_ID/PW)
-python collect_foreign_ownership.py --start 20050101
+python -m krx_supplement.collect_foreign_ownership --start 20050101
 ```
 
 Rough timings:
@@ -82,13 +83,13 @@ have to exist first.
 
 ```bash
 # 1) month-end snapshots (ground truth) — needs KRX_ID/KRX_PW
-python collect_index_members.py --start 20000101 --freq monthly
+python -m krx_supplement.collect_index_members --start 20000101 --freq monthly
 
 # 2) the entry/exit event log (exact change dates) — no login
-python collect_index_changes.py
+python -m krx_supplement.collect_index_changes
 
 # 3) 1 + 2 -> output/index_panel_daily.parquet
-python reconstruct_index_panel.py
+python -m krx_supplement.reconstruct_index_panel
 ```
 
 **Why both inputs.** KRX's event log is *incomplete*: a name removed
