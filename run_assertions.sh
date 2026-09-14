@@ -34,6 +34,20 @@ if [ "$(echo "$windows" | wc -l)" -ne 2 ]; then
   exit 1
 fi
 
+# The runner block at the foot of every test_assertions.py — the loop that
+# calls CHECKS, holds `n` against populations.json and decides the exit code —
+# is duplicated per package for the same reason the window is, and drifted the
+# same way: five copies sat at five revisions, and only one of them could
+# re-seed a population that had legitimately moved. The copies are compared
+# here, from `if __name__ == "__main__":` to end of file, before any check
+# runs. Edit one, then copy it to the rest.
+runner_of() { sed -n '/^if __name__ == "__main__":/,$p' "$1" | md5sum | cut -d' ' -f1; }
+if [ "$(for f in "${files[@]}"; do runner_of "$f"; done | sort -u | wc -l)" -ne 1 ]; then
+  echo "FAIL  the runner block differs between packages' test_assertions.py:" >&2
+  for f in "${files[@]}"; do echo "  $(runner_of "$f")  $f" >&2; done
+  exit 1
+fi
+
 # A check the runner never calls reports nothing and fails nothing, which reads
 # from the outside exactly like a check that passes. Every `def test_*` in a
 # package must therefore appear in a CHECKS list; the omission is invisible in

@@ -40,6 +40,11 @@ CHECKS = [
 
 
 if __name__ == "__main__":
+    # This block is the same in every package's test_assertions.py, and
+    # run_assertions.sh fails when the copies differ: edit it in one, then copy
+    # it to the rest. Nothing below is package-specific — it needs CHECKS,
+    # Skipped and POPULATIONS from above, and nothing else.
+    #
     # A check that skipped verified nothing, which is the state this runner
     # exists to tell apart from a pass — and a suite of nothing but skips used to
     # exit 0, which is the same confusion one layer up from the one `Skipped`
@@ -52,9 +57,10 @@ if __name__ == "__main__":
     # still passes. A population that *grew* is a re-pull and says nothing; one
     # that *shrank* means the check now reads less of the tree than it did, which
     # is the same silent weakening `n` was added to expose, one revision later.
-    # The bound is per check because a population clipped to coverage moves only
-    # when coverage does, while one open past it grows every time the vendor is
-    # re-pulled — a single rule would either fail every refresh or catch nothing.
+    # The bound is per check because a population clipped to a window moves only
+    # when the window does, while one open past it grows every time the vendor
+    # is re-pulled — a single rule would either fail every refresh or catch
+    # nothing.
     # Re-seeding is the documented path after a refresh, and it was unreachable:
     # a legitimately moved population fails its own guard, which counts as a
     # failure, which makes the re-seed refuse — so the path existed only while it
@@ -93,9 +99,9 @@ if __name__ == "__main__":
                     f"{want['n']:,} ({want['bound']}). A shrink means the check "
                     f"now reads less of the tree than it did, or the tree lost "
                     f"rows; a move under `exact` means a population clipped to "
-                    f"coverage changed, which a re-pull does only by moving "
-                    f"COVERAGE_END. Re-seed with --write-populations once the "
-                    f"change is understood")
+                    f"a window changed, which a re-pull does only by moving the "
+                    f"window. Re-seed with --write-populations once the change "
+                    f"is understood")
             print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
         except Skipped as e:
             skipped += 1

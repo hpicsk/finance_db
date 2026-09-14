@@ -6,9 +6,11 @@ from anywhere:
     python kr_delisted/test_assertions.py
 
 or run every package's assertions at once with `./run_assertions.sh` from the
-repo root. Each check prints PASS or FAIL along with `n`, the size of the
-population it examined; the script exits non-zero if any fail and if any
-examined nothing. `n` is held against `populations.json`, which records what
+repo root. Each check prints PASS, FAIL, or SKIP where a prerequisite
+artifact is absent, along with `n`, the size of the population it examined.
+The script exits non-zero if any check fails, if any examined nothing, and if
+any skipped — a skip verified nothing, so iterating without the artifact takes
+`--allow-skips`. `n` is held against `populations.json`, which records what
 each check last read; re-seed it with `--write-populations` after a refresh.
 
 The counts in README.md are properties of one KIND vintage, not constants, so
@@ -34,6 +36,15 @@ WIN_END = pd.Timestamp("2024-12-31")
 # than passing on a smaller one. Per package, not per repo: the root is a
 # container and holds no package's numbers.
 POPULATIONS = Path(__file__).with_name("populations.json")
+
+
+class Skipped(Exception):
+    """A prerequisite artifact is absent, so this check verified nothing.
+
+    Distinct from a pass because it is: it used to print as one, which is the
+    same confusion the population guard below exists to remove.
+    """
+
 
 # Imported rather than restated: the keyword sets are the classifier's, and a
 # second copy here would agree with the CSV while disagreeing with the code
@@ -234,18 +245,39 @@ CHECKS = [
 
 
 if __name__ == "__main__":
+    # This block is the same in every package's test_assertions.py, and
+    # run_assertions.sh fails when the copies differ: edit it in one, then copy
+    # it to the rest. Nothing below is package-specific — it needs CHECKS,
+    # Skipped and POPULATIONS from above, and nothing else.
+    #
+    # A check that skipped verified nothing, which is the state this runner
+    # exists to tell apart from a pass — and a suite of nothing but skips used to
+    # exit 0, which is the same confusion one layer up from the one `Skipped`
+    # fixed. Tolerable while iterating locally, never on the path that reproduces
+    # the tree, so the strict reading is the default and the loose one is asked
+    # for by name.
+    allow_skips = "--allow-skips" in sys.argv[1:]
     # The population a check examined fingerprints the tree it read, and non-zero
     # is only the floor of what that fingerprint catches: a count that halves
     # still passes. A population that *grew* is a re-pull and says nothing; one
     # that *shrank* means the check now reads less of the tree than it did, which
     # is the same silent weakening `n` was added to expose, one revision later.
-    # The bound is per check because a population clipped to the study window
-    # cannot legitimately move at all, while one open past the window grows every
-    # time the vendor is re-pulled — a single rule would either fail every
-    # refresh or catch nothing.
+    # The bound is per check because a population clipped to a window moves only
+    # when the window does, while one open past it grows every time the vendor
+    # is re-pulled — a single rule would either fail every refresh or catch
+    # nothing.
+    # Re-seeding is the documented path after a refresh, and it was unreachable:
+    # a legitimately moved population fails its own guard, which counts as a
+    # failure, which makes the re-seed refuse — so the path existed only while it
+    # was not needed. Under `--write-populations` the recorded numbers are being
+    # replaced on purpose, so the comparison against them is reported and not
+    # enforced. Every other assertion still has to pass, which is what stops a
+    # broken tree from being written down as the expectation.
+    reseed = "--write-populations" in sys.argv[1:]
     baseline = json.loads(POPULATIONS.read_text()) if POPULATIONS.exists() else {}
     observed = {}
-    failures = 0
+    drift = []
+    failures = skipped = 0
     for fn in CHECKS:
         try:
             # Every check returns the size of the population it examined. One that
@@ -264,31 +296,43 @@ if __name__ == "__main__":
             if want:
                 moved = (n != want["n"] if want["bound"] == "exact"
                          else n < want["n"])
+                if moved and reseed:
+                    drift.append(f"{fn.__name__} {want['n']:,} -> {n:,}")
+                    moved = False
                 assert not moved, (
                     f"examined {n:,} where {POPULATIONS.name} records "
                     f"{want['n']:,} ({want['bound']}). A shrink means the check "
                     f"now reads less of the tree than it did, or the tree lost "
                     f"rows; a move under `exact` means a population clipped to "
-                    f"the study window changed, which it cannot do from a "
-                    f"re-pull alone. Re-seed with --write-populations once the "
-                    f"change is understood")
+                    f"a window changed, which a re-pull does only by moving the "
+                    f"window. Re-seed with --write-populations once the change "
+                    f"is understood")
             print(f"PASS  {fn.__name__} [n={n:,}]: {msg}")
+        except Skipped as e:
+            skipped += 1
+            print(f"SKIP  {fn.__name__}: {e}")
         except AssertionError as e:
             failures += 1
             print(f"FAIL  {fn.__name__}: {e}")
         except Exception as e:  # missing data tree, etc. — report, don't hide
             failures += 1
             print(f"ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"\n{len(CHECKS) - failures}/{len(CHECKS)} checks passed")
+    print(f"\n{len(CHECKS) - failures - skipped}/{len(CHECKS)} checks passed"
+          + (f", {skipped} skipped" if skipped else ""))
+    if skipped and not allow_skips:
+        print(f"FAIL  {skipped} check(s) read an artifact that is not built, so "
+              f"they verified nothing. Build it, or pass --allow-skips to "
+              f"iterate without it.")
     unseeded = [f.__name__ for f in CHECKS if f.__name__ not in baseline]
     if unseeded:
         print(f"NOTE  {len(unseeded)} check(s) absent from {POPULATIONS.name}, so "
               f"their population is unbounded above zero: {', '.join(unseeded)}")
-    if "--write-populations" in sys.argv[1:]:
-        # Re-seeding is the maintenance path after a refresh, so it takes its
-        # numbers only from a run that passed — a baseline written from a broken
-        # tree records the breakage as the expectation.
-        if failures:
+    if reseed:
+        # Re-seeding takes its numbers only from a run that passed — a baseline
+        # written from a broken tree records the breakage as the expectation.
+        for d in drift:
+            print(f"MOVED {d}")
+        if failures or skipped:
             print("REFUSED to re-seed from a run that did not pass every check")
             failures += 1
         else:
@@ -297,4 +341,4 @@ if __name__ == "__main__":
                       for k, v in observed.items()}
             POPULATIONS.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n")
             print(f"wrote {POPULATIONS.name} for {len(merged)} checks")
-    sys.exit(1 if failures else 0)
+    sys.exit(1 if failures or (skipped and not allow_skips) else 0)
