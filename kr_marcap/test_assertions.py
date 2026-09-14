@@ -94,7 +94,12 @@ def test_adjust_heuristics_removed():
     assert not present, f"removed adjustment heuristics reintroduced: {present}"
     assert hasattr(A, "corp_actions") and hasattr(A, "load_oracle"), \
         "adjust.py must consume corp_actions (official breaks) + krx_adj_oracle (reset)"
-    return "adjustment heuristics removed; official sources wired", len(forbidden)
+    # PRICE_ADJUSTMENT.md, failure mode 3, "Fix": the one number the oracle reset
+    # override carries is a rounding tolerance, and the doc prints it.
+    assert A._ORACLE_RESET_TOL == 0.01, (
+        f"PRICE_ADJUSTMENT.md documents `_ORACLE_RESET_TOL = 0.01`; adjust.py "
+        f"holds {A._ORACLE_RESET_TOL}")
+    return "adjustment heuristics removed; official sources wired", len(forbidden) + 1
 
 
 # ---- Korea: adjusted series matches KRX official 수정주가 on the canonical cases -

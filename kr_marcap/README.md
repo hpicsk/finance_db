@@ -382,7 +382,7 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
   to <1 % every day **94.1 % → 96.5 %**, with no name worse and the splice/Samsung
   results unchanged. FnGuide-calibrated — 68/68 cross-checked cases agree exactly.
 
-## Files in `cache/` (gitignored)
+## Files in `cache/` (gitignored, except `krx_adj_oracle.parquet`)
 
 | File | What it is | How to regenerate |
 |---|---|---|

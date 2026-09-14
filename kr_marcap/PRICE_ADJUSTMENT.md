@@ -82,24 +82,27 @@ inputs) are unaffected beyond ~1e-4 because the anchor cancels.
 
 ## 2. Entity-change detection (`is_break`)
 
-The shares-outstanding (`Stocks`) ratio is used **only** to detect entity
-changes, never for the adjustment:
+The shares-outstanding (`Stocks`) ratio is used **only** to locate candidate
+entity changes, never for the adjustment:
 
 ```
 ratio[t] = Stocks[t-1] / Stocks[t]
 ```
 
-- A ratio outside `[0.1, 10]` (`_RATIO_FLAG_LOW/HIGH`) is a **big jump** —
-  candidate split or entity change.
-- It is a *genuine* corporate action only if the **same-day price moved
-  inversely** to the share count, i.e. the residual adjusted return it would
-  inject is near zero. Empirically (2026-06 diagnosis) genuine actions leave
-  `|residual| ≤ 0.495` and entity changes leave `|residual| ≥ 0.522`, so
-  `_CORROBORATION_TOL = 0.5` separates them cleanly.
-- A **non-corroborated** big jump is an `is_break`: the listing changed hands
-  (SPAC merger, reverse listing, ticker reuse). Every row **strictly before a
-  ticker's last break** is marked `valid = False`; loaders drop it, because that
-  history belongs to a different entity (the pre-merger shell / a prior listing).
+- A ratio outside `[0.1, 10]` (`corp_actions._MATERIAL_LOW/HIGH`) is a
+  **material jump** — a candidate worth classifying, not a verdict.
+- The verdict comes from an official source, never from a price, volume or gap
+  threshold ([`corp_actions.py`](corp_actions.py)): a marcap `Name` transition
+  out of `…스팩…` (SPAC merger), a first re-appearance after a genuine KIND
+  delisting (ticker reuse), a DART 회사합병 / 회사분할 / 회사분할합병 / 주식교환
+  inside the filing-to-effect window of a material jump (entity restructuring),
+  or a reviewed row in `corp_action_overrides.csv`. A material jump that a DART
+  증자/감자 filing explains is a genuine action; one no source explains is
+  written to `cache/corp_action_residuals.csv` and left continuous.
+- A break is an `is_break` day: the listing changed hands. Every row **strictly
+  before a ticker's last break** is marked `valid = False`; loaders drop it,
+  because that history belongs to a different entity (the pre-merger shell / a
+  prior listing).
 
 ---
 
@@ -212,27 +215,26 @@ the share count moved only modestly:
 448900 한국피아이엠      2025-04-04:  Close 19,590 → 16,100 (traded −18 %), ChangesRatio = +43.75,  Stocks ×1.18
 ```
 
-The modest `Stocks` change keeps the ratio inside `[0.1, 10]`, so the §2
-entity-break test never fires; the day follows no >365-day gap, so the gap test
-never fires; and the day *traded*, so none of the §3–§5 no-trade overrides apply.
-Compounding `gross = 1 + 205/100 = 3.05` instead of the +21 % real move injects a
-**×2.52 factor into all pre-2023-06-29 history** for 232830 (pre-event prices
-scaled to ×0.40 of FnGuide's).
+The modest `Stocks` change keeps the ratio inside `[0.1, 10]`, so the
+entity-change detection never sees the day; and the day *traded*, so none of
+the no-trade overrides apply. Compounding `gross = 1 + 205/100 = 3.05` instead of the +21 % real move
+injects a **×2.52 factor into all pre-2023-06-29 history** for 232830 (pre-event
+prices scaled to ×0.40 of FnGuide's).
 
-**Fix.** Trust the **traded close move** on these days: `gross = 1 + raw_ret`. The
-signature is a **resume-day volume explosion** (`volume / trailing-5d mean >
-_RESET_VOL_SPIKE = 30`) + an **in-band modest share change**
-(`_RESET_SHARE_MIN < |ratio − 1| < _RESET_SHARE_MAX`) + a CR that **materially
-differs** from the traded move (`|gross_CR/(1+raw_ret) − 1| > _RESET_DIVERGE`).
+**Fix.** Compare the compounded-CR return with KRX's own official adjusted
+return over the same two sessions (the 수정주가 oracle,
+`cache/krx_adj_oracle.parquet`, built by `krx_adj_oracle.py`). Where the two
+differ by more than `_ORACLE_RESET_TOL = 0.01` — a rounding tolerance, since
+ChangesRatio is published to 0.01 % — and no break, sentinel or phantom-CR
+guard fired, the official
+move is compounded instead: `gross = krx_adj_close[t] / krx_adj_close[t-1]`.
+There is no volume, share-band or gap threshold: the divergence from the
+official series is the signal. On ordinary days and on genuine corporate-action
+days (Samsung's split included) the two series agree, so the override never
+fires there; where the oracle has no row, nothing fires.
 
-**Why the volume explosion is the discriminator.** A naive "CR ≠ traded move →
-distrust CR" would destroy genuine corporate actions (Samsung's split *is* a
-CR ≠ close/prev day). The clean separator is that genuine same-day splits / free
-issues / 감자 do **not** trade on a 30× volume spike (and their CR is correct
-anyway), whereas a 거래재개 does. Samsung's 50:1 (`ratio` ×50, out of band) and
-entity breaks (`is_break`) are excluded outright.
-
-**Calibrated and verified against FnGuide ground truth (2026-06).** On **68 / 68**
+**What the earlier volume-spike rule showed against FnGuide (2026-06).** The
+rule this override replaced fired on the same class of days, and on **68 / 68**
 currently-listed-common candidate days, FnGuide's adjusted return equals the raw
 traded move *exactly* — i.e. FnGuide applies no factor on these days, so the
 override matches it every time, with **zero** cases where FnGuide instead applied a
@@ -327,20 +329,19 @@ All checks are ad-hoc (no CI). Rebuild factors, then re-run the scans:
 
 ```bash
 source /home/st/miniconda3/bin/activate
-python -u kr_marcap/adjust.py build        # ~35s → kr_marcap/cache/adj_factors.parquet
+python -m kr_marcap.adjust build           # ~35s → kr_marcap/cache/adj_factors.parquet
 ```
 
-Key assertions confirmed after the fixes:
+Key assertions confirmed after the fixes (2026-06):
 
 - Global worst valid `|adj_ret|`: **29.46** (003260), down from 66,999.
 - 008080 max valid `|adj_ret|`: **0.795** (was 66,999).
 - 016600 cross-1998 return corrected: `adj_ret 0.1390 → 0.4386` (== raw).
 - 267060 reference reset unchanged: `adj_close 3754.4 → 3754.4` (no phantom).
 - `phantom_cr` fires on exactly **77 rows / 75 tickers**, all pre-2004.
-- Samsung 005930 50:1 split still continuous (`python kr_marcap/adjust.py`).
-- `reset_cr` (§5b): 232830 2023-06-29 `adj_close` now flows 7,570 → 9,150 (the
-  +21 % traded move) with `cum_factor ≈ 1.0` — no ×2.52 pre-event step; FnGuide
-  post-2015 disagreement `> 0.3` band **12 → 0**, no name worse.
+- Samsung 005930 50:1 split still continuous (`python -m kr_marcap.adjust`).
+- 거래재개 reset (failure mode 3): 232830 2023-06-29 `adj_close` now flows 7,570 → 9,150 (the
+  +21 % traded move) with `cum_factor ≈ 1.0` — no ×2.52 pre-event step.
 
 ---
 
@@ -349,12 +350,12 @@ Key assertions confirmed after the fixes:
 - `sentinel_prev` guard — neutralises ₩1 ticker-reuse sentinel resumes (§4).
 - `phantom_cr` guard — neutralises carried-flat phantom-`ChangesRatio` no-trade
   days (§5).
-- `reset_cr` guard — on a 거래재개 administrative-reference reset, uses the traded
-  close move instead of the divergent CR (§5b); FnGuide-calibrated, 68/68 exact.
+- Oracle reset override — on a 거래재개 administrative-reference reset, compounds
+  KRX's official adjusted move instead of the divergent CR (failure mode 3).
 - All extend one principle: **the realized return is the one that traded** — the
   no-trade cases compound nothing (`gross = 1`); the 거래재개 reset, which *did*
-  trade, compounds the traded move (`gross = 1 + raw_ret`) rather than the CR
-  measured against an administrative reference.
+  trade, compounds the official adjusted move, which on these days is the traded
+  one, rather than the CR measured against an administrative reference.
 
 No research-impacting fabrication remains in `load_adjusted`. The residual large
 returns are real market events; the only genuinely defective class (phantom CR)

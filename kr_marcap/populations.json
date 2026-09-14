@@ -5,7 +5,7 @@
   },
   "test_adjust_heuristics_removed": {
     "bound": "monotone",
-    "n": 9
+    "n": 10
   },
   "test_adjust_provenance_stamp": {
     "bound": "monotone",
