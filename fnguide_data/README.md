@@ -910,7 +910,7 @@ for prices — but each one steps over a documented break:
    `fnguide_investor_inst-sell-fin-ins-trust_20260214`/Sheet16 and
    `fnguide_financials_annual_20260219`/Sheet13 are empty -- skip these.
 3. **NULL values:** Stocks not yet listed have None/NaN. Delisted stocks present in the universe (e.g. A117930 한진해운) carry values up to their delisting date and NaN afterward. 기타외국인 and 사모펀드 are NULL before their respective introduction dates (see above).
-4. **Survivorship bias:** all files were pulled with DataGuide's "all codes" filter — **effectively survivorship-bias-free** for KOSPI/KOSDAQ common stocks (~90% of genuine delistings present, ~99% from 2021+). Each delisted ticker carries data through its delisting date and goes NaN after. See `DELISTED_COVERAGE.md` for the full breakdown.
+4. **Survivorship bias:** nine of the eleven files were pulled with DataGuide's "all codes" filter (the two `*_exdelisted_*` files were not) — **effectively survivorship-bias-free** for KOSPI/KOSDAQ common stocks (~90% of genuine delistings present, ~99% from 2021+). Each delisted ticker carries data through its delisting date and goes NaN after. See `DELISTED_COVERAGE.md` for the full breakdown.
 5. **Slight column count differences:** Files downloaded on different dates have slightly different stock counts (3,903 vs 3,905).
 6. **Date column differences:** Row counts vary slightly (6,446--6,453) across investor trading files due to different download end dates (Feb 3--12, 2026).
 

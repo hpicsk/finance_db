@@ -260,12 +260,37 @@ def test_fnguide_sheets_documented_as_populated_carry_data():
     return (f"{len(populated)} annual sheets populated, 시가총액 empty"), sum(cells.values())
 
 
+def test_fnguide_price_panel_universe():
+    """README.md, the adjusted-close file's section: '1,284 KOSPI + 2,785
+    KOSDAQ; 3,590 tickers actually carry prices in-window (1,025 KOSPI, 2,551
+    KOSDAQ, 14 in both)' over '5,332 sessions, 2005-01-03 to 2026-08-12'. The
+    parquet is what research reads, so the counts are held on it, and
+    price_loader.py's docstring quotes the same 3,590."""
+    fp = REPO / "fnguide_data/cache/fnguide_price.parquet"
+    if not fp.exists():
+        raise Skipped("run fnguide_data.price_loader first")
+    df = pd.read_parquet(fp, columns=["date", "ticker", "market"])
+    got = (int(df["ticker"].nunique()),
+           {k: int(v) for k, v in df.groupby("market")["ticker"].nunique().items()},
+           int(df["date"].nunique()),
+           str(pd.Timestamp(df["date"].min()).date()),
+           str(pd.Timestamp(df["date"].max()).date()))
+    want = (3590, {"KOSPI": 1025, "KOSDAQ": 2551, "BOTH": 14}, 5332,
+            "2005-01-03", "2026-08-12")
+    assert got == want, (
+        f"README.md states 3,590 priced tickers (1,025 KOSPI, 2,551 KOSDAQ, 14 in "
+        f"both) over 5,332 sessions 2005-01-03 to 2026-08-12; the parquet now holds "
+        f"(tickers, by market, sessions, first, last) = {got}")
+    return f"{got[0]:,} tickers over {got[2]:,} sessions {got[3]}..{got[4]}", len(df)
+
+
 CHECKS = [
     test_fnguide_price_delisted_coverage,
     test_fnguide_price_segments_break_reissued_codes,
     test_fnguide_price_impossible_returns_are_all_inspected,
     test_fnguide_vintage_manifest_matches_disk,
     test_fnguide_sheets_documented_as_populated_carry_data,
+    test_fnguide_price_panel_universe,
 ]
 
 

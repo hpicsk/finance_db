@@ -12,7 +12,8 @@ KOSDAQ split into separate sheets:
 (The doubled underscore in ``수정주가(현금배당포함)__KOSPI`` is the vendor's,
 not a typo here.)
 
-Both conventions cover the same 4,052 tickers over 2005-01-03 – 2026-08-12, and
+Both conventions cover the same 3,590 tickers over 2005-01-03 – 2026-08-12 (the
+columns that carry a price in the window: 1,025 KOSPI, 2,551 KOSDAQ, 14 in both), and
 the export was pulled with the "all codes" (전체 / 상폐 포함) filter, so delisted
 names carry prices through their delisting date. It is the vendor's own
 series, and the reference any independently built adjusted Korean close is

@@ -7,6 +7,10 @@
     "bound": "monotone",
     "n": 10798640
   },
+  "test_fnguide_price_panel_universe": {
+    "bound": "monotone",
+    "n": 10802289
+  },
   "test_fnguide_price_segments_break_reissued_codes": {
     "bound": "monotone",
     "n": 10802289
