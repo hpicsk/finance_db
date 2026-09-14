@@ -12,11 +12,11 @@ Output columns: ticker,name,market,delisting_date,reason,is_genuine
 If is_genuine_overrides.csv (from build_is_genuine_overrides.py) exists it is
 applied as a final post-step.
 
-Usage:
-    python build_delisting_calendar.py                # KIND + proxy + overrides -> .regen.csv
-    python build_delisting_calendar.py --no-proxy     # KIND only                -> .kind.csv
-    python build_delisting_calendar.py --no-overrides
-    python build_delisting_calendar.py --from 2005-01-01 --to 2025-10-23
+Usage (from the repo root):
+    python -m kr_delisted.build_delisting_calendar                # KIND + proxy + overrides -> .regen.csv
+    python -m kr_delisted.build_delisting_calendar --no-proxy     # KIND only                -> .kind.csv
+    python -m kr_delisted.build_delisting_calendar --no-overrides
+    python -m kr_delisted.build_delisting_calendar --from 2005-01-01 --to 2025-10-23
 """
 from __future__ import annotations
 import argparse
@@ -30,7 +30,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-from _classify import classify
+from kr_delisted._classify import classify
 
 KIND_BASE        = "https://kind.krx.co.kr"
 KIND_FORM_URL    = f"{KIND_BASE}/investwarn/delcompany.do?method=searchDelCompanyMain"

@@ -134,14 +134,16 @@ What each side holds, and why the split matters for return-based work:
 
 ## Regenerating the calendar
 
+Run every command below from the repository root.
+
 ```bash
 # One-time, with a DART API key (sourced from repo-root .env):
-set -a; . ../.env; set +a            # exports OPEN_DART_API_KEY
-python build_is_genuine_overrides.py    # writes is_genuine_overrides.csv
+set -a; . .env; set +a                              # exports OPEN_DART_API_KEY
+python -m kr_delisted.build_is_genuine_overrides    # writes is_genuine_overrides.csv
 
 # Refresh whenever:
-python build_delisting_calendar.py      # writes delisting_calendar.regen.csv
-                                        # (or pass --out delisting_calendar.csv)
+python -m kr_delisted.build_delisting_calendar      # writes delisting_calendar.regen.csv
+                                                    # (or pass --out kr_delisted/delisting_calendar.csv)
 ```
 
 `build_delisting_calendar.py` takes ~20–30 s — a single KIND POST returns
@@ -164,10 +166,10 @@ followed a merger, which puts continuations into
 the output: every layer that ran, ran correctly.
 
 ```bash
-python build_delisting_calendar.py --no-proxy        # → delisting_calendar.kind.csv
-set -a; . ../.env; set +a
-python build_is_genuine_overrides.py                 # → is_genuine_overrides.csv
-python build_delisting_calendar.py --out delisting_calendar.csv
+python -m kr_delisted.build_delisting_calendar --no-proxy   # → delisting_calendar.kind.csv
+set -a; . .env; set +a
+python -m kr_delisted.build_is_genuine_overrides            # → is_genuine_overrides.csv
+python -m kr_delisted.build_delisting_calendar --out kr_delisted/delisting_calendar.csv
 ```
 
 This went wrong once — the intermediate sat at 2025-10-23 while the calendar

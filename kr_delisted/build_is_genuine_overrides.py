@@ -17,10 +17,10 @@ Output: is_genuine_overrides.csv with columns ticker, delisting_date, reason,
 is_genuine_keyword, is_genuine, rule, evidence. build_delisting_calendar.py
 applies it as a final post-step.
 
-Usage:
+Usage (from the repo root):
     export OPEN_DART_API_KEY=...
-    python build_is_genuine_overrides.py
-    python build_is_genuine_overrides.py --kind-csv path.csv --out path.csv
+    python -m kr_delisted.build_is_genuine_overrides
+    python -m kr_delisted.build_is_genuine_overrides --kind-csv path.csv --out path.csv
 """
 from __future__ import annotations
 import argparse
@@ -34,7 +34,7 @@ from pathlib import Path
 import pandas as pd
 import OpenDartReader
 
-from _classify import classify
+from kr_delisted._classify import classify
 
 MERGER_REPORT_RE = re.compile(r"(?:합병|주식의\s*포괄적\s*(?:교환|이전)|주식교환)")
 SPC_NAME_RE      = re.compile(r"(투자회사|리츠|REIT|기업구조조정)")

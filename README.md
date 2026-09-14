@@ -122,7 +122,7 @@ vintage, not the FnGuide pull.
 To rebuild the data trees from scratch: re-export FnGuide xlsx via
 DataGuide (subscription needed, "all codes" filter); pull marcap parquets from
 the upstream `FinanceData/marcap` repo; run `python -m finmind_data.collect.download` against
-your FinMind token; run `kr_delisted/build_delisting_calendar.py` against KIND.
+your FinMind token; run `python -m kr_delisted.build_delisting_calendar` against KIND.
 
 ## Verifying
 
