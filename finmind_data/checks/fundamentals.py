@@ -258,13 +258,14 @@ def test_taiwan_statement_trees_drop_old_delistings():
         held = {s for s in delist
                 if pq.ParquetFile(TREES / f"{sub}/{s}.parquet").metadata.num_rows
                 and len(_tree(TREES / f"{sub}/{s}.parquet", columns=["date"]))}
-        cover[sub] = (len(held), str(max(delist[s] for s in delist if s not in held).date()))
+        missing = [delist[s] for s in delist if s not in held]
+        cover[sub] = (len(held), str(max(missing).date()) if missing else None)
     assert {k: cover[k] for k in ("fin_cf", "fin_bs", "shares", "month_rev")} == {
             "fin_cf": (91, "2019-08-05"), "fin_bs": (97, "2019-03-29"),
-            "shares": (122, "2020-11-17"), "month_rev": (155, "2019-10-14")}, (
+            "shares": (123, "2020-05-28"), "month_rev": (155, "2019-10-14")}, (
         f"CAVEATS.md 10 says fin_cf/ carries rows for 91 of the 179, fin_bs/ "
-        f"for 97, shares/ for 122 and month_rev/ for 155, breaking on "
-        f"2019-08-05, 2019-03-29, 2020-11-17 and 2019-10-14; the trees give "
+        f"for 97, shares/ for 123 and month_rev/ for 155, breaking on "
+        f"2019-08-05, 2019-03-29, 2020-05-28 and 2019-10-14; the trees give "
         f"(names, break) {cover}"
     )
 
@@ -285,10 +286,10 @@ def test_taiwan_statement_trees_drop_old_delistings():
     )
 
     daily = (cover["per_pbr"][0], cover["instflow"][0])
-    assert daily == (177, 171), (
+    assert daily == (179, 171), (
         f"CAVEATS.md 10 localises the loss to the filing endpoints by "
-        f"contrast with the exchange's daily series, per_pbr/ covering 177 of "
-        f"the 179 and instflow/ 171; they now cover {daily}, and without the "
+        f"contrast with the exchange's daily series, per_pbr/ covering all "
+        f"179 and instflow/ 171; they now cover {daily}, and without the "
         f"contrast the loss could be a property of the delisted names themselves"
     )
     return (f"fin_is/ covers {len(have)}/{len(delist)} in-window delistings, "

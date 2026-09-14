@@ -283,6 +283,10 @@
     "bound": "monotone",
     "n": 21418
   },
+  "test_taiwan_vintage_fill_is_in_the_trees": {
+    "bound": "monotone",
+    "n": 145370
+  },
   "test_taiwan_volume_repair_matches_the_tape": {
     "bound": "monotone",
     "n": 6675773

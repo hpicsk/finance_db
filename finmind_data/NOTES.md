@@ -113,13 +113,35 @@ coverage ending early.
 
 The date-keyed sweep of 2026-09-13 (`collect/sweep.py`, `raw/2026-09-13/`)
 was the first reading of the whole market that did not go through the
-universe. A dry run of `repair/fill_from_vintage.py` against it, on the years
-the sweep had finished by 20:50 that day, found the trees complete: for
-`ohlcv/` over 2011-2015 the vintage carried no row the trees lacked, and the
-trees carried 1,134 stock-dates it did not, the post-delisting 興櫃 quotes of
-1107, 2341, 2381 and 2396 (CAVEATS.md 15). For `cap_red` the vintage lacked
-three filings the committed table holds, 2327's 2022-10-21, 3018's 2023-11-11
-and 6109's 2020-09-25, the duplicate filings `derive/adjust.py` already drops;
-the vendor has withdrawn them since the table was pulled. The repairs of
-2026-09-10..13 had therefore brought the per-stock trees to what the date-keyed
-endpoint serves, for the span checked.
+universe. A dry run of `repair/fill_from_vintage.py` on the evening it started,
+over the years the sweep had finished, found `ohlcv/` complete for 2011-2015:
+the vintage carried no row the tree lacked, and the tree carried 1,134
+stock-dates it did not, the post-delisting 興櫃 quotes of 1107, 2341, 2381 and
+2396 (CAVEATS.md 15). The sweep finished at 03:39 on 2026-09-14, and the dry
+run over the whole vintage found `ohlcv/`, `dividend/`, `div_result/`,
+`month_rev/` and `cap_red` complete and eight trees short of 82,669 rows:
+
+| tree | rows | names | what the rows are |
+|---|---|---|---|
+| `per_pbr/` | 47,617 | 52 | the daily history, 2011..2020, of delisted names whose per-stock files hold a partial one (one empty, the median 448 rows) |
+| `margin_short/` | 32,654 | 421 | 31,671 rows for 55 names delisted inside the window; the other 983 rows on 366 names are mostly the sessions of 2011-06-15, 2012-01-09, 2012-06-13 and 2012-09-17 |
+| `fin_is/` | 1,452 | 75 | `IncomeBeforeIncomeTax` and `NetIncome` on 701 company-periods of 2013..2019, lines the tree holds for most other names |
+| `fin_bs/` | 467 | 86 | line items on company-periods the tree holds, 334 of them on 2025-06-30 and 2025-12-31 |
+| `shares/` | 285 | 285 | 2026-07-06 for 284 names, and 1333's one row, 2020-11-16 |
+| `instflow/` | 90 | 18 | 2026-06-16, five investor rows per name |
+| `fin_cf/` | 75 | 41 | line items on company-periods the tree holds, 50 of them on 2025-06-30 |
+| `sec_lending/` | 29 | 26 | one or two dates per name, 2011..2020 |
+
+No statement row opens a company-period, and two of the `fin_is/` rows carry a
+line the tree holds under another label (`OtherComprehensiveIncomeAfterTax`
+beside `OtherComprehensiveIncomeAfterTaxThePeriod`). For the six daily trees,
+what the trees hold and the vintage does not is the set CAVEATS.md 15 records,
+within nine stock-dates: rows dated on days the exchange did not trade, which
+a session cadence never asks for, 787 make-up Saturdays `instflow/` has no
+flows for, and the four names' 興櫃 quotes. Beyond them the vintage lacks 236
+`div_result/` rows and one `dividend/` row dated on closed days, the three
+withdrawn capital-reduction filings (2327's 2022-10-21, 3018's 2023-11-11 and
+6109's 2020-09-25, the duplicates `derive/adjust.py` already drops), and 5,727
+balance-sheet company-periods, 4,387 of them on quarters before 2012-12-31,
+where the date-keyed balance sheet begins, the rest on quarters it answers
+without those names. The fill ran on 2026-09-14 and is caveat 18.

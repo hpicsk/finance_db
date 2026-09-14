@@ -201,7 +201,7 @@ finmind_data/
 │   ├── capital_reduction.parquet  unpriced_actions.parquet  exright_reference.parquet   (regenerable, ignored)
 │   └── delisting_*.{parquet,csv}  mops_reason.parquet  tender_offers.parquet  mops_*/   (the delisting study)
 ├── records/          tracked. What each repair added or replaced, old value beside new
-│   └── volume_repair.parquet  short_sale_repair.parquet  fin_bs_vintage*.parquet  date_keyed_fill/  repull_fill/
+│   └── volume_repair.parquet  short_sale_repair.parquet  fin_bs_vintage*.parquet  date_keyed_fill/  repull_fill/  fill_2026-09-13/
 └── _internal/        gitignored. Logs, run state, fingerprints
 ```
 
@@ -416,13 +416,21 @@ stretch in `margin_short/` is a download that failed, never a rule that changed
   the trees lacked (`CAVEATS.md` 15). The pull is not committed.
 - **Date-keyed sweep, 2026-09-13:** `collect/sweep.py` swept all 14 datasets
   date-keyed into `raw/2026-09-13/`, 2011-01-25..2026-09-12, every stock at
-  once per date, 4-digit codes only. `raw/2026-09-13/manifest.json` records per
-  (tree, year) the dates asked and answered, the rows and the time. It is the
+  once per date, 4-digit codes only: 38,571 requests and 70,781,092 rows
+  (889 MB), 20:26 to 03:39 the next morning under the 6,000/hr quota.
+  `raw/2026-09-13/manifest.json` records per (tree, year) the dates asked and
+  answered, the rows and the time, and every entry finished. The balance sheet
+  answers date-keyed from 2012-12-31, so 7 of its 62 quarter ends came back
+  empty; the trees hold 2012's quarters from the per-stock query. It is the
   first dated vintage of the raw store and the reference a later fill reads.
   The capital-reduction table came back 671 rows against the 674 committed in
   `data/capital_reduction.parquet`: the vendor has withdrawn 2327's 2022-10-21,
   3018's 2023-11-11 and 6109's 2020-09-25, the three duplicate filings
   `derive/adjust.py` already drops before building a factor.
+- **Fill from the vintage, 2026-09-14:** `repair/fill_from_vintage.py` added
+  the 82,669 rows the trees lacked and `raw/2026-09-13/` carries, in eight
+  trees; `records/fill_2026-09-13/` holds every added row and every stock-date
+  the vintage lacks (`CAVEATS.md` 18).
 
 ## Coverage and endpoint mapping
 
@@ -504,8 +512,9 @@ python -m finmind_data.repair.fill_from_vintage --vintage <today>         # adds
 The fill adds rows the trees lack under each tree's key and touches no row
 they hold; what the vintage no longer serves is recorded, not dropped, and a
 back-adjusted tree is skipped (`repair/fill_from_vintage.py`). Against the
-2026-09-13 vintage the daily price tree needed nothing for 2011-2015
-(`NOTES.md`).
+2026-09-13 vintage it added 82,669 rows in eight trees, most of them the daily
+PER and margin histories of delisted names, and nothing to the price, dividend,
+revenue and capital-reduction trees (`CAVEATS.md` 18).
 
 The per-stock route still exists and costs one request per file per dataset:
 `python -m finmind_data.collect.download --extend --end <YYYY-MM-DD>`. Rebuild

@@ -702,8 +702,8 @@ def test_taiwan_sec_lending_pairs_are_disclosed():
         days |= set(pd.to_datetime(d.loc[twin, "date"]).dt.date.astype(str))
 
     span = (min(days), max(days)) if days else None
-    assert (rows, paired, stocks, sizes) == (1_541_802, 172_004, 989, {2: 86_002}), (
-        f"CAVEATS.md 12 counts 172,004 of the 1,541,802 in-window sec_lending "
+    assert (rows, paired, stocks, sizes) == (1_541_831, 172_004, 989, {2: 86_002}), (
+        f"CAVEATS.md 12 counts 172,004 of the 1,541,831 in-window sec_lending "
         f"rows in 86,002 identical pairs, across 989 stocks; this tree gives "
         f"{paired:,} of {rows:,} in {stocks} stocks, groups by size {sizes}")
     assert span == ("2017-12-18", "2020-10-27"), (
@@ -931,6 +931,154 @@ def test_taiwan_date_keyed_fill_is_in_the_trees():
         sum(len(r) for r in rec.values())
 
 
+def test_taiwan_vintage_fill_is_in_the_trees():
+    """CAVEATS.md 18: some rows come from the date-keyed sweep of 2026-09-13,
+    and `fill_2026-09-13/` records what the fill found in both directions.
+
+    Read back the way caveat 15's record is: the rows the tree holds under the
+    recorded keys are the recorded ones and no others, value for value, and
+    where each sat is read against the tree minus the record. A tree whose rows
+    repeat under their key took each date whole, so its record is read back by
+    date. A statement row is asserted to sit on a company-period the tree held,
+    which is what separates this fill from caveat 14's.
+
+    `unserved.parquet` is asserted to be in the trees still, and its stock-dates
+    are sorted the way the caveat sorts them: on a session the exchange held,
+    which only the 興櫃 quotes and `instflow/`'s make-up Saturdays are, or off
+    one, which a session cadence never asks for; and for the balance sheet,
+    before or after the quarter the date-keyed endpoint begins at.
+    """
+    from finmind_data.datasets import BY_TREE
+    from finmind_data.repair.fill_from_vintage import _keys
+
+    record = RECORDS / "fill_2026-09-13"
+    names = set(_panel_ids())
+    d = pd.read_parquet(DATA / "delisted_universe.parquet")
+    gone = names & set(d.loc[pd.to_datetime(d["date"]).between(
+        COVERAGE_START, COVERAGE_END), "stock_id"].astype(str))
+    lo, hi = COVERAGE_START.strftime("%Y-%m-%d"), COVERAGE_END.strftime("%Y-%m-%d")
+    sessions = set(pd.read_parquet(DATA / "trading_sessions.parquet")
+                   ["date"].astype(str).str[:10])
+    rec, got, loose, merged, misplaced, off_session, opened = {}, {}, [], [], [], [], []
+    for p in sorted(record.glob("*.parquet")):
+        if p.stem not in BY_TREE:
+            continue
+        tree, ds = p.stem, BY_TREE[p.stem]
+        r = pd.read_parquet(p)
+        rec[tree] = r
+        out = r[~r["stock_id"].isin(names) | ~r["date"].between(lo, hi)]
+        loose += [(tree, s, x) for s, x in zip(out["stock_id"], out["date"])]
+        if ds.cadence == "session":
+            off_session += [(tree, s, x) for s, x in zip(r["stock_id"], r["date"])
+                            if x not in sessions]
+        for sid, x in r.groupby("stock_id"):
+            x = x.reset_index(drop=True)
+            # Read as written rather than through `_tree`: the claim is that the
+            # file holds these rows, and each of them is inside the window already.
+            f = pd.read_parquet(TREES / f"{tree}/{sid}.parquet")
+            added = (f["date"].isin(set(x["date"])) if ds.repeats
+                     else _keys(f, list(ds.key)).isin(_keys(x, list(ds.key))))
+            if not f[added].reset_index(drop=True).equals(
+                    x.drop(columns="place")[list(f.columns)]):
+                merged.append((tree, sid))
+                continue
+            before = set(f.loc[~added, "date"])
+            for dt, place in zip(x["date"], x["place"]):
+                sits = {"empty": not before,
+                        "same-day": dt in before,
+                        "before": bool(before) and dt < min(before),
+                        "after": bool(before) and dt > max(before),
+                        "interior": bool(before) and min(before) < dt < max(before)
+                                    and dt not in before}[place]
+                if not sits:
+                    misplaced.append((tree, sid, dt, place))
+            if ds.cadence == "quarter":
+                opened += [(tree, sid, dt) for dt in set(x["date"]) - before]
+        got[tree] = (len(r), r["stock_id"].nunique(), r["place"].value_counts().to_dict())
+    assert not loose, (
+        f"CAVEATS.md 18 says the fill added rows for universe names inside "
+        f"the window only; {len(loose)} recorded rows are not: {loose[:5]}")
+    assert not merged, (
+        f"CAVEATS.md 18 says a row the tree held keeps its own values and "
+        f"each added key holds the vintage's row alone; in {len(merged)} files the "
+        f"recorded keys read back otherwise: {merged[:5]}")
+    assert not misplaced, (
+        f"CAVEATS.md 18 counts the added rows by where each sat against the "
+        f"span its file held; {len(misplaced)} sit elsewhere: {misplaced[:5]}")
+    assert not off_session, (
+        f"CAVEATS.md 18 says a session-cadence tree took rows on sessions the "
+        f"exchange held only; {len(off_session)} are not: {off_session[:5]}")
+    assert not opened, (
+        f"CAVEATS.md 18 says every statement row added is a line on a "
+        f"company-period the tree held; {len(opened)} open one: {opened[:5]}")
+    assert got == {
+        "cap_red": (0, 0, {}), "div_result": (0, 0, {}), "dividend": (0, 0, {}),
+        "fin_bs": (467, 86, {"same-day": 467}),
+        "fin_cf": (75, 41, {"same-day": 75}),
+        "fin_is": (1_452, 75, {"same-day": 1_452}),
+        "instflow": (90, 18, {"interior": 90}),
+        "margin_short": (32_654, 421, {"interior": 30_497, "after": 1_911, "before": 246}),
+        "month_rev": (0, 0, {}), "ohlcv": (0, 0, {}),
+        "per_pbr": (47_617, 52, {"interior": 42_381, "after": 3_715, "before": 1_279,
+                                 "empty": 242}),
+        "sec_lending": (29, 26, {"interior": 27, "before": 2}),
+        "shares": (285, 285, {"interior": 284, "empty": 1})}, (
+        f"CAVEATS.md 18 says the fill added 82,669 rows: 47,617 to per_pbr/ for "
+        f"52 names, 32,654 to margin_short/ for 421, 1,452 to fin_is/ for 75, 467 "
+        f"to fin_bs/ for 86, 285 to shares/ for 285, 90 to instflow/ for 18, 75 to "
+        f"fin_cf/ for 41, 29 to sec_lending/ for 26 and none to ohlcv/, dividend/, "
+        f"div_result/, month_rev/ or cap_red; fill_2026-09-13/ gives "
+        f"(rows, names, places) {got}")
+    per = set(rec["per_pbr"]["stock_id"])
+    ms = rec["margin_short"]
+    on_gone = ms["stock_id"].isin(gone)
+    four = ms["date"].value_counts().head(4).to_dict()
+    split = (len(per), int(on_gone.sum()), ms.loc[on_gone, "stock_id"].nunique(), four)
+    assert per <= gone and split == (52, 31_671, 55, {
+        "2012-06-13": 295, "2012-01-09": 286, "2012-09-17": 280, "2011-06-15": 212}), (
+        f"CAVEATS.md 18 says the 52 per_pbr/ names are delistings inside the "
+        f"window, 31,671 of the margin_short/ rows belong to 55 such names, and "
+        f"the four sessions the rest mostly fall on are 2012-06-13, 2012-01-09, "
+        f"2012-09-17 and 2011-06-15; {sorted(per - gone)} are not delisted inside "
+        f"the window and margin_short/ gives {split}")
+
+    left = pd.read_parquet(record / "unserved.parquet")
+    dropped = []
+    for (tree, sid), x in left.groupby(["tree", "stock_id"]):
+        n = pd.read_parquet(TREES / f"{tree}/{sid}.parquet",
+                            columns=["date"])["date"].value_counts()
+        dropped += [(tree, sid, dt) for dt, rows in zip(x["date"], x["rows"])
+                    if n.get(dt, 0) != rows]
+    assert not dropped, (
+        f"CAVEATS.md 18 says a row the vintage does not carry is kept; "
+        f"{len(dropped)} recorded ones are gone or hold another count now: "
+        f"{dropped[:5]}")
+    by_tree = left.groupby("tree").size().to_dict()
+    assert (by_tree, len(left), int(left["rows"].sum())) == (
+        {"cap_red": 3, "div_result": 236, "dividend": 1, "fin_bs": 5_727,
+         "instflow": 3_187, "margin_short": 3_807, "ohlcv": 1_134, "per_pbr": 872,
+         "sec_lending": 3_463, "shares": 44_271}, 62_701, 483_536), (
+        f"CAVEATS.md 18 says the vintage carries no row for 62,701 stock-dates "
+        f"the trees hold; unserved.parquet gives {by_tree}, {len(left):,} "
+        f"stock-dates, {int(left['rows'].sum()):,} rows")
+    calendar = left[left["tree"].map(lambda t: BY_TREE[t].cadence).isin(["session", "day"])]
+    on_session = calendar[calendar["date"].isin(sessions)]
+    quotes = set(on_session.loc[on_session["tree"] == "ohlcv", "stock_id"])
+    early = int((left.loc[left["tree"] == "fin_bs", "date"] < "2012-12-31").sum())
+    sort = (len(on_session), on_session.groupby("tree").size().to_dict(), quotes, early)
+    assert sort == (1_921, {"instflow": 787, "ohlcv": 1_134},
+                    {"1107", "2341", "2381", "2396"}, 4_387), (
+        f"CAVEATS.md 18 says 1,921 of the unserved stock-dates fall on a session "
+        f"the exchange held, 1,134 of them the 興櫃 quotes of four names in ohlcv/ "
+        f"and 787 in instflow/, and 4,387 of the 5,727 fin_bs/ company-periods "
+        f"sit before 2012-12-31, where the date-keyed endpoint begins; the record "
+        f"gives {sort}")
+    added = sum(len(r) for r in rec.values())
+    return (f"{added:,} recorded rows read back whole from "
+            f"{sum(r['stock_id'].nunique() for r in rec.values()):,} files, "
+            f"{len(left):,} unserved stock-dates still held; {got}"), added + len(left)
+
+
 def test_taiwan_short_sale_series_has_no_regime_gap():
     """README "Two regime facts": a hole in margin_short is a failed download.
 
@@ -1066,6 +1214,7 @@ CHECKS = [
     test_taiwan_sec_lending_pairs_are_disclosed,
     test_taiwan_fin_bs_revision_follows_the_filing,
     test_taiwan_date_keyed_fill_is_in_the_trees,
+    test_taiwan_vintage_fill_is_in_the_trees,
     test_taiwan_short_sale_series_has_no_regime_gap,
     test_taiwan_short_sale_flows_match_the_balances,
 ]

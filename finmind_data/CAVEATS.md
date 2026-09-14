@@ -152,9 +152,9 @@ reports, so a name that left the board and stopped filing has an empty statement
 file however long it traded. The daily trees the exchange publishes show no such
 break.
 **How much.** Of the 179 in-window delistings, `fin_is/` carries rows for 84,
-`fin_cf/` 91, `fin_bs/` 97, `shares/` 122; `per_pbr/` 177 and `instflow/` 171.
-Every one of the 70 names delisted after 2020-06-19 has an income statement,
-against 14 of the 109 before it.
+`fin_cf/` 91, `fin_bs/` 97, `shares/` 123; `per_pbr/` all 179 and `instflow/`
+171. Every one of the 70 names delisted after 2020-06-19 has an income
+statement, against 14 of the 109 before it.
 **Pinned by.** `test_taiwan_statement_trees_drop_old_delistings`.
 **For a study.** A fundamental signal on this panel is survivorship-biased where
 a price signal is not, and the two are not separable by care in the join: the
@@ -178,7 +178,7 @@ open; a strategy on `close` is unaffected.
 **What.** Pairs identical in every column, all dated 2017-12-18..2020-10-27, in
 989 stocks; no row appears three times and no pair exists outside the span. The
 vendor still served them on 2026-09-12.
-**How much.** 172,004 of the 1,541,802 in-window rows, 53-58 % of each of
+**How much.** 172,004 of the 1,541,831 in-window rows, 53-58 % of each of
 2018, 2019 and 2020.
 **Pinned by.** `test_taiwan_sec_lending_pairs_are_disclosed`.
 **For a study.** `drop_duplicates()` keeps one of each; it would also merge a
@@ -228,9 +228,8 @@ the file's first row: the vendor now serves flows from years earlier), 8,399 to
 re-pull carried no row for 56,727 stock-dates the trees hold; those rows stay,
 and `records/repull_fill/unserved.parquet` lists them.
 **Pinned by.** `test_taiwan_repull_fill_is_in_the_trees`.
-**For a study.** Nothing; the trees carry the rows. The next such fill is
-`repair/fill_from_vintage.py`, which reads `raw/<vintage>/` instead of a
-per-stock snapshot.
+**For a study.** Nothing; the trees carry the rows. The next such fill read
+`raw/2026-09-13/` instead of a per-stock snapshot (caveat 18).
 
 ## 16. `margin_short`'s short-sale flows were crossed in the first pull
 
@@ -264,3 +263,33 @@ keeps every replaced count.
 **For a study.** Nothing now; `ohlcv/` matches the tape on every in-window row
 it holds. `ADJUSTED_PRICES.md` counts the make-up sessions the adjusted tree
 still lacks.
+
+## 18. Some rows come from the date-keyed sweep
+
+**What.** `raw/2026-09-13/` is the whole market read date-keyed, every stock at
+once per session, so it carries rows the per-stock query never answered: the
+daily history of a name that left the board, a session it skipped, a statement
+line it dropped. `repair/fill_from_vintage.py` added what the vintage carries
+under a key the tree held no row of, for universe names inside the window, and
+touched no row the trees held.
+**How much.** 82,669 rows. 47,617 to `per_pbr/` for 52 in-window delistings
+whose per-stock files held a partial history or none (one empty, the median 448
+rows); 32,654 to `margin_short/` for 421 names, 31,671 of them for 55 names
+delisted inside the window and most of the other 983 the sessions of 2011-06-15,
+2012-01-09, 2012-06-13 and 2012-09-17; 1,452 to `fin_is/` for 75 names, 467 to
+`fin_bs/` for 86 and 75 to `fin_cf/` for 41, every one a line on a
+company-period the tree held; 285 to `shares/`, 90 to `instflow/`, 29 to
+`sec_lending/`. Nothing to `ohlcv/`, `dividend/`, `div_result/`, `month_rev/` or
+`cap_red`, and `price_adj/` takes no row from another anchor. The vintage
+carries no row for 62,701 stock-dates the trees hold, 1,921 of them on a
+session: the 興櫃 quotes of caveat 15 and the make-up Saturdays `instflow/` has no
+flows for. The rest fall on days the exchange did not trade, which a session
+cadence never asks for, or in `fin_bs/`: 4,387 of its 5,727 on quarters before
+2012-12-31, where the date-keyed endpoint begins, the rest on quarters it
+answers without those names. Those rows stay, and
+`records/fill_2026-09-13/unserved.parquet` lists them.
+**Pinned by.** `test_taiwan_vintage_fill_is_in_the_trees`;
+`records/fill_2026-09-13/` holds every added row.
+**For a study.** Nothing; the trees carry the rows. A fresh per-stock clone
+lacks them, and lacks most of what `per_pbr/` and `margin_short/` hold for the
+names that left.
