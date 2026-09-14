@@ -9,8 +9,8 @@
 #   * conda env with pandas, pyarrow, requests, OpenDartReader on PATH
 #       e.g.  source /home/st/miniconda3/bin/activate
 #   * marcap/  populated from github.com/FinanceData/marcap (manual git clone)
-#   * API keys loaded from .env (gitignored). Includes OPEN_DART_API_KEY,
-#     ECOS_API_KEY, FMP_API_KEY, FRED_API_KEY.
+#   * OPEN_DART_API_KEY loaded from .env (gitignored) — the one key a step
+#     below reads.
 
 set -euo pipefail
 cd "$(dirname "$0")"

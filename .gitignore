@@ -19,7 +19,6 @@ docs_cache/
 
 # FnGuide DataGuide xlsx exports (200 MB – 1.4 GB each, > GitHub 100 MB limit)
 fnguide_data/*.xlsx
-fnguide_data/currently_listed/*.xlsx
 fnguide_data/raw/*.xlsx
 
 # FnGuide adjusted-price panel (수정주가 + 수정주가(현금배당포함)), regenerable from
@@ -68,12 +67,6 @@ finmind_data/data/exright_reference.parquet
 # kept below. adjusted_loader patches seven events off it, and
 # test_assertions.py regenerates it and fails if the committed copy has drifted.
 
-# Investor-aggregate generated CSV (regenerable via transform_investor_data.py)
-fnguide_data/investor_aggregate/investor_trading_data.csv
-
-# kr_delisted archived raw downloads (302 MB)
-kr_delisted/.archived_*/
-
 # kr_marcap built caches (regenerable from marcap/ via build_universe_panel()
 # and build_adjustment_factors()). Exception: krx_adj_oracle.parquet is a pykrx
 # snapshot (live KRX, hours to recollect, NOT regenerable from marcap) — archived
@@ -108,4 +101,4 @@ _internal/
 finmind_data/*.pdf
 
 # Tracked: everything else (code, README/docs, small index CSVs/parquets,
-# delisting_calendar.csv, missing_*.csv, krx_supplement/output/*, etc.)
+# delisting_calendar.csv, krx_supplement/output/*, etc.)
