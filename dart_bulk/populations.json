@@ -1,0 +1,30 @@
+{
+  "test_coverage_is_measured_from_disk": {
+    "bound": "monotone",
+    "n": 138
+  },
+  "test_groups_are_year_quarter_statement": {
+    "bound": "monotone",
+    "n": 6
+  },
+  "test_latest_vintage_wins_by_stamp": {
+    "bound": "monotone",
+    "n": 2
+  },
+  "test_prune_is_directional": {
+    "bound": "monotone",
+    "n": 6
+  },
+  "test_pruned_record_appends": {
+    "bound": "monotone",
+    "n": 2
+  },
+  "test_superseded_vintages_still_on_disk": {
+    "bound": "monotone",
+    "n": 122
+  },
+  "test_unparseable_name_stops": {
+    "bound": "monotone",
+    "n": 2
+  }
+}

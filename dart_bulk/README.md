@@ -27,7 +27,9 @@ print(dart_bulk.coverage())      # 행 (연도·보고서), 열 재무제표, �
 ```
 
 2026-08-25 기준: **FY2015–2025** 와 **분기(FQ·HY·TQ) 2016–2024** 가 BS·PL·CF 전부,
-그 밖에 2025 HY(BS·PL — CF 없음) 와 2026 FQ·HY. zip 138개.
+그 밖에 2025 HY(BS·PL — CF 없음) 와 2026 FQ·HY(BS·PL·CF). zip 138개. 그중 14개
+(연도·분기·재무제표)는 pruning 이 생기기 전에 받은 옛 빈티지를 아직 한 벌 더 갖고
+있고, `latest_vintages()` 의 `superseded` 열이 그 이름이다.
 
 비어 있는 칸은 "안 받음"이지 "발행처가 안 냄"이 아니다. 둘을 가르려면
 `download.catalog()` 로 사이트가 지금 제공하는 목록을 받아 이 표와 대조한다.
@@ -95,7 +97,7 @@ for p in latest_vintages("*_4Q_PL_*.zip"):      # (연도·분기·재무제표)
 ```bash
 python -m dart_bulk.download --list                                   # 사이트 목록만
 python -m dart_bulk.download --years 2015-2025 --reports FY           # 연간
-python -m dart_bulk.download --years 2016-2025 --reports FQ,HY,TQ     # 분기 (미수집)
+python -m dart_bulk.download --years 2016-2025 --reports FQ,HY,TQ     # 분기 (2016–2024 수집됨)
 ```
 
 주기: 사업보고서 시즌(3~4월) 이후와, 개정이 반영됐는지 확인하고 싶을 때. 다시
