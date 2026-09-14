@@ -8,8 +8,9 @@ assertions; what lives here is the map between them, the dependency-ordered
 refresh runbook, and the ignore policy.
 
 > **Licensing:** FnGuide DataGuide is a paid subscription. KRX/KIND data
-> is publicly accessible but rate-limited. FinMind is a free-tier API
-> (token required). The large raw data files are **not** committed to
+> is publicly accessible but rate-limited. FinMind is a token-gated API
+> whose tier and expiry `finmind_data/README.md` records. The large raw
+> data files are **not** committed to
 > this repo — see `.gitignore`. What's tracked is code, documentation,
 > and small index/calendar CSVs sufficient to reproduce universes.
 
@@ -19,16 +20,17 @@ refresh runbook, and the ignore policy.
 |---|---|---|
 | `dart_bulk/` | OpenDART 재무정보 일괄다운로드 archive — every listed company's BS/PL/CF, one zip per (fiscal year, report, statement) | [`README.md`](dart_bulk/README.md) |
 | `fnguide_data/` | FnGuide DataGuide export tree — investor flow, financials, short-selling, and the **adjusted-price benchmark** research reads | [`README.md`](fnguide_data/README.md), [`DELISTED_COVERAGE.md`](fnguide_data/DELISTED_COVERAGE.md) |
-| `kr_delisted/` | Korean delisting calendar (KIND + marcap + DART), 1,386 tickers with a genuine-vs-continuation flag | [`README.md`](kr_delisted/README.md) |
+| `kr_delisted/` | Korean delisting calendar (KIND + marcap + DART), every delisting since 2005 with a genuine-vs-continuation flag | [`README.md`](kr_delisted/README.md) |
 | `kr_marcap/` | KR OHLCV layer over marcap, plus the open-source reconstruction of FnGuide's 수정주가 and the unified PIT status panel | [`README.md`](kr_marcap/README.md), [`CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md), [`VERIFICATION.md`](kr_marcap/VERIFICATION.md) |
 | `kr_status/` | Per-source PIT collectors for KRX status flags (admin / halt / alert / audit / insincere), one parquet each | [`README.md`](kr_status/README.md) |
 | `krx_supplement/` | KRX/KOSPI200 panel reconstruction — index membership history, sector, foreign ownership | [`README.md`](krx_supplement/README.md), [`RECONSTRUCT.md`](krx_supplement/RECONSTRUCT.md) |
 | `finmind_data/` | Taiwan equity data via the FinMind API (TWSE + TPEx from **2011-01-25**, the first date the capital-reduction reference prices are published), raw and back-adjusted | [`README.md`](finmind_data/README.md), [`CAVEATS.md`](finmind_data/CAVEATS.md) |
 | `marcap/` | External clone of [`FinanceData/marcap`](https://github.com/FinanceData/marcap) — gitignored entirely, re-clone when setting up | delisted-coverage notes in [`kr_delisted/README.md`](kr_delisted/README.md) |
 
-Two files at this level, and nothing else: [`refresh.sh`](refresh.sh) (the
-dependency-ordered runbook) and [`run_assertions.sh`](run_assertions.sh) (runs
-every package's `test_assertions.py`).
+At this level, besides this map: [`refresh.sh`](refresh.sh) (the
+dependency-ordered runbook), [`run_assertions.sh`](run_assertions.sh) (runs
+every package's `test_assertions.py`), `.gitignore` (the ignore policy) and
+`CLAUDE.md`. Nothing else.
 
 ## Korean PIT pipeline — package dataflow
 
@@ -58,6 +60,10 @@ opendart 일괄파일 ──► dart_bulk/ ────────────�
 
 `kr_marcap.universe` and `kr_marcap.adjust.load_adjusted` read marcap
 parquets directly and don't depend on the kr_status / build_panel chain.
+Reads the diagram does not draw: `kr_status` reads `kr_delisted`'s calendar
+(the historical audit seed and the corp-code map), `kr_marcap` reads
+`fnguide_data`'s price panel for its benchmark, and the `fnguide_data`
+assertion suite reads the calendar too.
 
 Cadence per step: `kr_delisted` ~quarterly (when KIND publishes new
 delistings); `kr_status` per-collector (see
@@ -73,13 +79,13 @@ seconds after any kr_status run. Dependency-ordered runbook at
 | Tradable KR universe (PIT status + price/liquidity filters) | `kr_marcap.status.tradable_universe(date, ...)` |
 | Per-flag KR event history (admin/halt/audit/insincere/alert) | `kr_marcap/status/events.parquet` (built by `kr_marcap.status.build_panel`) |
 | **Adjusted KR close for research (price return + total return)** | `fnguide_data/price_loader.py::load_price_panel()` — the FnGuide series, 2005+ |
-| Adjusted KR close reconstructed from open sources, whole panel | `kr_marcap/adjusted_loader.py::load_adjusted_panel()` — agrees with FnGuide on 99.98 % of ticker-days ([`kr_marcap/CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md)) |
+| Adjusted KR close reconstructed from open sources, whole panel | `kr_marcap/adjusted_loader.py::load_adjusted_panel()` — how close it comes to FnGuide is in [`kr_marcap/CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md) |
 | Adjusted KR OHLCV for one ticker, reconstructed from open sources | `kr_marcap/adjust.py::load_adjusted(ticker)` |
 | Adjusted KR open/high/low from the vendor (currently-listed names only) | `fnguide_data/raw/fnguide_price_ohlc_{kospi,kosdaq}_exdelisted_20260323.xlsx` — no delisted coverage, read [§10](fnguide_data/README.md) first |
 | Raw KR OHLCV / market cap / shares | `kr_marcap.market_loader.load_market_data` over `marcap/data/marcap-YYYY.parquet` |
 | List Korean delisted tickers (with merger vs bankruptcy flag) | `kr_delisted/delisted_loader.py::universe()` |
 | Load one delisted ticker's *raw* (unadjusted) OHLCV | `kr_delisted/delisted_loader.py::load_delisted(ticker)` |
-| Every listed company's financial statements (FY/HY/Q, BS·PL·CF) | `dart_bulk/loader.py::latest_vintages` + `open_zip` / `sheets` — **never** the per-company API for a panel (3,300 calls vs 33) |
+| Every listed company's financial statements (FY/HY/Q, BS·PL·CF) | `dart_bulk/loader.py::latest_vintages` + `open_zip` / `sheets` — **never** the per-company API for a panel (its README counts the calls) |
 | Investor trading flow (granular, 14 types) | `fnguide_data/raw/fnguide_investor_*.xlsx` (6 files) |
 | Investor trading flow (3-category Smart Money) | `fnguide_data/investor_loader.py::load_investor_flow()` — 기관 / 개인 / 외국인, summed from the `raw/fnguide_investor_*` sheets |
 | Short-selling / lending / free-float | `fnguide_data/raw/fnguide_short-lending-float_20260615.xlsx` |
@@ -105,7 +111,7 @@ vintage, not the FnGuide pull.
 - All `*.py` code (loaders, downloaders, builders) and each package's
   `test_assertions.py`.
 - All `*.md` documentation, including methodology and integrity reports.
-- Small index files: `delisting_calendar.csv`, `missing_*.csv`,
+- Small index files: `delisting_calendar.csv`,
   `universe.parquet`, `delisted_universe.parquet`,
   `krx_supplement/output/*` (membership panels, sector mappings).
 - Small images / diagrams.
@@ -113,7 +119,7 @@ vintage, not the FnGuide pull.
 **Ignored (kept locally only — see `.gitignore`):**
 - All FnGuide xlsx files (200 MB – 1.4 GB each, exceed GitHub 100 MB
   per-file limit).
-- The entire `marcap/` directory (external clone of github.com/FinanceData/marcap, ~3.8 GB) — re-clone when setting up.
+- The entire `marcap/` directory (external clone of github.com/FinanceData/marcap) — re-clone when setting up.
 - All FinMind per-stock parquets (`ohlcv/`, `instflow/`, `shares/`,
   fundamentals dirs, ~1.6 GB).
 - Backup zips (`*.zip`), `*.bak` files, `__pycache__/`, `nohup.*`, `*.log`.

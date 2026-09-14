@@ -13,12 +13,13 @@ notebook runs.
 ## Keep the root a container, and each package self-contained
 
 New documentation goes in the package it describes, not here, and it describes
-*that* package only. A package's docs do not name another package's files,
-methods or findings — not as a pointer, not as a contrast, not as "the same
-question answered elsewhere". Those references read as free context and are
-not: they turn one package's rewrite into an edit in every package that
-mentioned it, and they go stale silently because nothing checks a prose
-cross-reference. `README.md` here is the map between packages and is the only
+*that* package only. A package's docs may name another package only as the
+interface it consumes — the module, function or file it reads, stated once
+where the dependency is introduced — and never that package's findings,
+numbers or methods: not as a contrast, not as "the same question answered
+elsewhere". Those references read as free context and are not: they turn one
+package's rewrite into an edit in every package that mentioned it, and they go
+stale silently because nothing checks a prose cross-reference. `README.md` here is the map between packages and is the only
 place a reader is told both exist. Likewise a new claim assertion goes in the
 `test_assertions.py` of the package whose documentation makes the claim.
 
