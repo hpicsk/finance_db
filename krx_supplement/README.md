@@ -397,9 +397,6 @@ krx_supplement/
 │                                 the default request delay)
 ├── test_assertions.py            executable checks behind this file's claims
 ├── populations.json              the population size each check last read
-├── sector_mapping.parquet        ⚠️ an old 2020-2025 monthly build. No collector
-│                                 writes here — `collect_sector.py` writes only
-│                                 to output/. Always read the output/ copy
 └── output/                       collected data
     ├── sector_mapping.parquet
     ├── index_members.parquet / .csv
