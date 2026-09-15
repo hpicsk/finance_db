@@ -1,9 +1,7 @@
 """Official corporate-action ground truth for price-adjustment series breaks.
 
-This replaces the *calibrated* entity-change heuristics that used to live in
-``adjust.py`` (``_CORROBORATION_TOL``, ``_GAP_DAYS`` and the share-ratio band)
-with deterministic lookups against official sources.  It answers one question for
-``build_adjustment_factors``: **on which (ticker, date) does the listing's
+It answers one question for ``build_adjustment_factors``, by deterministic
+lookups against official sources: **on which (ticker, date) does the listing's
 economic identity change, so that pre-date history belongs to a different entity
 and must be dropped (``valid = False``)?**
 
@@ -19,9 +17,8 @@ threshold tuned to a validation set:
   3. **Entity restructuring** — DART records a 회사합병 / 회사분할 / 회사분할합병 /
      주식교환 around a material share-count jump (reverse merger, 인적분할 재상장,
      지주사 전환).  (kr_status DART events, official.)
-  4. **Manual override** — ``corp_action_overrides.csv`` (version-controlled,
-     reviewed) for cases official sources do not cover, chiefly pre-2015 where
-     DART structured coverage is sparse.
+  4. **Manual override** — ``data/corp_action_overrides.csv`` (version-controlled,
+     reviewed) for cases official sources do not cover, chiefly pre-2015.
 
 Everything else — including genuine 감자/유상/무상증자, which ``ChangesRatio``
 already adjusts correctly — is **not** a break.  A *material* share-count jump

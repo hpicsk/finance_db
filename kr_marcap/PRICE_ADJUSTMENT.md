@@ -5,18 +5,10 @@ corporate-action-adjusted series, the silent-fabrication failure modes that were
 found and fixed, and the residual large returns that are **real and kept on
 purpose**.
 
-> **2026-06 update — calibrated heuristics replaced by official ground truth.**
-> The entity-break classification (was `_CORROBORATION_TOL`, §2) and the 거래재개
-> reset (was `_RESET_*`, §5b) no longer use thresholds tuned to FnGuide. Breaks
-> now come from [`kr_marcap.corp_actions`](corp_actions.py) (DART
-> 합병/분할/주식교환, SPAC name, KIND ticker-reuse, reviewed overrides) and resets
-> from the KRX 수정주가 oracle ([`krx_adj_oracle`](krx_adj_oracle.py)). The
-> ₩1-sentinel and phantom-CR *data-integrity* guards (§4, §5) are deterministic,
-> not calibrated, and are kept. The manual FnGuide cross-check is replaced by an
-> automated oracle gate ([`validate_against_oracle.py`](validate_against_oracle.py);
-> 99.8 % agreement with KRX official 수정주가). Sections §2 and §5b below are the
-> historical diagnosis that motivated the move; the live method is in
-> [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md).
+Breaks come from [`kr_marcap.corp_actions`](corp_actions.py) and 거래재개 resets
+from the KRX 수정주가 oracle ([`krx_adj_oracle`](krx_adj_oracle.py));
+[`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) is the refresh runbook
+for both.
 
 All code lives in `kr_marcap/adjust.py` (`build_adjustment_factors`,
 `load_adjusted`); the materialised factors are `kr_marcap/cache/adj_factors.parquet`.
@@ -232,18 +224,6 @@ There is no volume, share-band or gap threshold: the divergence from the
 official series is the signal. On ordinary days and on genuine corporate-action
 days (Samsung's split included) the two series agree, so the override never
 fires there; where the oracle has no row, nothing fires.
-
-**What the earlier volume-spike rule showed against FnGuide (2026-06).** The
-rule this override replaced fired on the same class of days, and on **68 / 68**
-currently-listed-common candidate days, FnGuide's adjusted return equals the raw
-traded move *exactly* — i.e. FnGuide applies no factor on these days, so the
-override matches it every time, with **zero** cases where FnGuide instead applied a
-real factor. After the fix the post-2015 FnGuide disagreement bands collapse:
-`> 0.3`: **12 → 0**; `0.1–0.3`: **35 → 1**; names agreeing to <1 % on every day:
-**94.1 % → 96.5 %**. No name's agreement got worse; the splice count (3 full-
-history / 0 post-2015) and Samsung's split are unchanged. (The 2 residuals are not
-resets: 089590 제주항공 is a 2015-11-09 IPO-week artifact, 219420 a 0.07
-sub-threshold case.)
 
 ---
 

@@ -51,8 +51,7 @@ filter, so delisted names carry prices to their delisting date. **622 / 625
 (99.5 %)** of genuine common KOSPI/KOSDAQ delistings since 2005 are present;
 the 4 absentees are closed-end funds and a resource trust, not ordinary
 commons. A benchmark that stopped at survivors would grade the easy half of
-the problem, which is what the previous FnGuide cross-check (currently-listed
-names, price return only) did.
+the problem.
 
 The overlap is bounded on our side, not FnGuide's: the factors file is built
 from a marcap vintage ending **2026-02-20**, so the comparison runs

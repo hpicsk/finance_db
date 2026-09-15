@@ -1,23 +1,21 @@
-# Corporate-action ground truth — replacing the calibrated adjustment heuristics
+# Corporate-action ground truth for the price adjustment
 
-This is the runbook for the de-heuristicised price adjustment. The old
-`kr_marcap/adjust.py` decided **entity breaks** and **거래재개 resets** from
-constants tuned to a validation set (`_CORROBORATION_TOL=0.5`, `_GAP_DAYS=365`,
-`_RESET_VOL_SPIKE=30`, …). Those are gone. Every break/reset verdict now comes
-from an **official source**; the only numbers left are rounding/materiality
+This is the runbook for the **entity breaks** and **거래재개 resets**
+`kr_marcap/adjust.py` applies. Every break/reset verdict comes from an
+**official source**; the only numbers in the pipeline are rounding/materiality
 bounds (documented inline), never classification thresholds.
 
 ---
 
 ## TL;DR — what grounds what
 
-| Old heuristic (removed) | Official replacement | Source | Reachable from dev host? |
+| Verdict | Official source | Read from | Reachable from dev host? |
 |---|---|---|---|
-| `_CORROBORATION_TOL` (split vs entity) | DART 회사합병/분할/주식교환 events + SPAC-name transition | DART API, marcap `Name` | ✅ |
-| `_GAP_DAYS` / `_GAP_*` (reuse behind a gap) | KIND delisting + marcap re-appearance | `kr_delisted/data/delisting_calendar.csv` | ✅ |
-| `_RESET_*` (거래재개 admin reset) | KRX 수정주가 oracle divergence | pykrx (`krx_adj_oracle`) | ✅ |
-| manual FnGuide cross-check | automated oracle validation gate | pykrx | ✅ |
-| (kept — *not* calibrated) | ₩1-sentinel & phantom-CR data-integrity guards | marcap structure | n/a |
+| entity break vs genuine corporate action | DART 회사합병/분할/주식교환 events + SPAC-name transition | DART API, marcap `Name` | ✅ |
+| a reused code's new occupant | KIND delisting + marcap re-appearance | `kr_delisted/data/delisting_calendar.csv` | ✅ |
+| 거래재개 reset | KRX 수정주가 oracle divergence | pykrx (`krx_adj_oracle`) | ✅ |
+| validation | automated oracle gate | pykrx | ✅ |
+| (not calibrated) | ₩1-sentinel & phantom-CR data-integrity guards | marcap structure | n/a |
 
 **Only one source is blocked from this host:** `data.krx.co.kr` (거래정지/거래재개),
 and it is **not needed** — the oracle already resolves resets, and marcap's
@@ -72,7 +70,7 @@ python -m kr_marcap.krx_adj_oracle --candidates   # ~10 min for the candidate se
 # ── 3. Rebuild factors with official ground truth ────────────────────────────
 python -m kr_marcap.adjust build
 
-# ── 4. Validate against KRX official 수정주가 (replaces manual FnGuide check) ──
+# ── 4. Validate against KRX official 수정주가 ──────────────────────────────
 python -m kr_marcap.validate_against_oracle
 #    review cache/oracle_validation.csv — any disagreement is a missed reset/break
 #    or an oracle artifact; add real misses to data/corp_action_overrides.csv and rebuild.
@@ -103,8 +101,8 @@ labels each from official sources, in precedence order:
    oracle validation (step 4) is the safety net that flags a residual that was
    actually a missed break.
 
-Breaks set `valid=False` for all rows before a ticker's **last** break, exactly
-as before — loaders (`kr_marcap/market_loader.py`) drop them.
+Breaks set `valid=False` for all rows before a ticker's **last** break;
+loaders (`kr_marcap/market_loader.py`) drop them.
 
 ---
 

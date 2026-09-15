@@ -65,8 +65,8 @@ only re-admit a window that is unusable for the other two reasons above. (The
 classifier handles the padded names safely regardless — security kind is decided
 by the code's terminal digit, not a name suffix; see [What "common stock" means](#what-common-stock-means-here).)
 
-Total return is no longer the binding constraint — SEIBro dividend events run
-from 2002, not fiscal 2014 as the old DART layer did. 2015 remains the
+Total return is not the binding constraint — SEIBro dividend events run from
+2002. 2015 remains the
 reliability floor for the price reasons above (liquidity, code/name corruption),
 with 2004 the one later year whose dividend coverage is knowingly partial.
 
@@ -204,8 +204,7 @@ official sources, no calibrated thresholds**:
 A *large* share-count jump no official source explains is written to
 `cache/corp_action_residuals.csv` (loud, for review) and defaults to **not** a
 break — the ChangesRatio backbone keeps the series continuous and the oracle
-validation below flags any real miss. The removed heuristics — price
-corroboration (`_CORROBORATION_TOL`) and the long-gap test (`_GAP_*`) — are gone.
+validation below flags any real miss.
 See [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) for the full pipeline.
 
 ### Why ChangesRatio, not the `Stocks` ratio
@@ -225,19 +224,15 @@ daily return.
 
 "Just drop the anomalies" doesn't work either: of the ~715 rows flagged outside
 `[0.1, 10]`, the majority are genuine splits / 무상증자 / 감자 (including Samsung's
-50:1) that must be *kept*. The earlier version separated them with a
-price-corroboration threshold (`_CORROBORATION_TOL = 0.5`) tuned to a validation
-set — exactly the kind of calibrated heuristic this layer no longer uses. The
-distinction is now made by **event type from official sources** (DART
-증자/감자/합병/분할, SPAC name, KIND delisting) rather than by how far the price
+50:1) that must be *kept*. The distinction is made by **event type from official
+sources** (DART 증자/감자/합병/분할, SPAC name, KIND delisting) rather than by how far the price
 moved; see [Entity-change detection](#entity-change-detection-series-breaks--official-ground-truth)
 above and [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md).
 
 ## Known limitations
 
 Splits, free/paid rights offerings (무상·유상증자), capital reductions (감자), and
-액면병합 are all handled correctly because they are already in 등락률 — including
-the 유상증자 case the previous Stocks-ratio method under-adjusted. The
+액면병합 are all handled correctly because they are already in 등락률. The
 2018-05-04 Samsung 50:1 split stays continuous (`adj_close` 52,900 → 51,800, the
 real −2.1 % move). What remains:
 
@@ -290,10 +285,10 @@ real −2.1 % move). What remains:
   that did *not* trade — ₩1 ticker-reuse sentinels and phantom-`ChangesRatio`
   no-trade days — which are neutralised (`gross = 1`), plus the one fabrication on
   a day that *did* trade: a 거래재개 resume whose `ChangesRatio` is measured against
-  an administrative reference and diverges from the traded close move. This is now
+  an administrative reference and diverges from the traded close move. This is
   detected against KRX's own official 수정주가 (the [`krx_adj_oracle`](krx_adj_oracle.py),
   reachable via pykrx) — where our compounded-CR return disagrees with KRX's, the
-  official move is used, with no volume/share heuristic (the removed `_RESET_*`).
+  official move is used, with no volume/share heuristic.
   See [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md) for the full failure-mode catalogue.
 
 ## Validation — two gates, and they ask different questions
@@ -319,39 +314,6 @@ ticker-days across 9 names where a stuck oracle value froze our series through a
 real move, 59.8 % of all disagreement, invisible to the oracle gate. Cause,
 worked example and the proposed guard are in
 [`CONSTRUCTION.md`](CONSTRUCTION.md).
-
-### Historical: the FnGuide cross-check that surfaced these fixes
-
-Superseded by [`validate_against_fnguide.py`](validate_against_fnguide.py), which
-runs the same comparison automatically against a strictly better export —
-delisted names included, and both conventions rather than one. Kept because it is
-what surfaced the two fixes below.
-
-The adjustment layer was first validated against professional FnGuide DataGuide
-수정주가 exports (KOSPI + KOSDAQ currently-listed common, 1998–2026) with
-return-based comparison (daily log returns are anchor-invariant). Three results:
-
-- **Dividend treatment agrees.** Across all 2,528 common names, none track a
-  total-return series — FnGuide 수정주가 reflects capital changes only, *not* cash
-  dividends, exactly like `adj_close`. This confirms the [cash-dividend
-  gap](#known-limitations) is a shared market convention, not a defect; use
-  `total_return=True` for the dividend-reinvested series. (FnGuide *does* publish
-  a dividend-inclusive series, as a separate item — 수정주가(현금배당포함),
-  `S410007700` — which is what `adj_close_tr` is now benchmarked against; it was
-  simply not in that export.)
-- **It surfaced the long-gap splice class.** The cross-check flagged entity
-  changes the break detector missed; the gap-triggered break above cut splice
-  tickers (`max_abs > 1` vs. FnGuide) from 9 to 3, the 3 remaining being gap-free
-  1999-01-04 early-data artifacts inside the gated pre-2015 window. No false
-  breaks; the Samsung 50:1 split is unaffected.
-- **It surfaced the 거래재개 reset class** (2026-06 re-check, extending the scan
-  below the splice band). On a 거래재개 KRX sometimes measures `ChangesRatio`
-  against an administrative reference, so compounding it mis-scaled pre-event
-  history for ~60 currently-listed names (e.g. 232830 by ×2.5). The `reset_cr`
-  override (uses the traded close move on these days; see `PRICE_ADJUSTMENT.md`
-  §5b) closes it: post-2015 disagreement `> 0.3` band **12 → 0**, names agreeing
-  to <1 % every day **94.1 % → 96.5 %**, with no name worse and the splice/Samsung
-  results unchanged. FnGuide-calibrated — 68/68 cross-checked cases agree exactly.
 
 ## Files in `cache/` (gitignored)
 

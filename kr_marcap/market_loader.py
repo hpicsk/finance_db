@@ -1,16 +1,15 @@
 """Survivorship-bias-free, split-adjusted Korean OHLCV/market-cap loader.
 
-Drop-in replacement for ``fnguide_data.market_loader.load_market_data``: same
-positional signature, same output schema (``date, ticker, close, volume,
-market_cap, listed_shares``), so downstream pipeline code is unchanged.
+``load_market_data`` returns ``date, ticker, close, volume, market_cap,
+listed_shares`` for the common stocks listed on each date.
 
-Why this exists
----------------
-The FnGuide ``currently_listed/`` Excel exports are a snapshot taken at the
-export date. Stocks that were trading historically but delisted between the
-data window and the export date silently disappear — a look-ahead survivorship
-bias. marcap stores a per-date KRX snapshot for every year, so each historical
-date carries every stock that was actually listed and trading on that date.
+Why marcap
+----------
+An export filtered to currently-listed names is a snapshot taken on its export
+date: a stock delisted between the data window and that date is missing from
+it, a look-ahead survivorship bias. marcap stores a per-date KRX snapshot for
+every year, so each historical date carries every stock that was actually
+listed and trading on that date.
 
 Sources
 -------

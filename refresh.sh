@@ -40,8 +40,8 @@ fi
 # python -m kr_status.dart_audit                              # annually (post-Mar); DART
 
 # ── 3. kr_marcap price adjustment — official corporate-action ground truth ─
-#    Cadence: after a marcap refresh. Replaces the old calibrated heuristics
-#    with DART/KIND/KRX-수정주가 sources. See kr_marcap/CORPORATE_ACTIONS_SPEC.md.
+#    Cadence: after a marcap refresh. Every break/reset verdict comes from
+#    DART/KIND/KRX-수정주가 sources. See kr_marcap/CORPORATE_ACTIONS_SPEC.md.
 #    Two-pass bootstrap (the DART collector keys off the candidate list the
 #    build writes); collectors are resume-safe.
 # python -m kr_marcap.adjust build                              # pass 0: seed candidates

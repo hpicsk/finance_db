@@ -17,12 +17,10 @@ Series breaks (where the listing's economic identity changes, so pre-break
 history belongs to a different entity and is marked ``valid=False``) come from
 ``kr_marcap.corp_actions`` — deterministic lookups against official sources
 (SPAC-name transitions in marcap, KIND ticker-reuse, DART 회사합병/분할/주식교환),
-plus a reviewed ``corp_action_overrides.csv``. The old price-corroboration
-(``_CORROBORATION_TOL``) and gap (``_GAP_DAYS``) heuristics, which were tuned to a
-validation set rather than to ground truth, have been removed. A material share
-jump no official source explains is reported to ``corp_action_residuals.csv``
-(loud, not silently guessed) and defaults to *not* a break — the ChangesRatio
-backbone keeps the series continuous and the oracle validation below flags misses.
+plus a reviewed ``data/corp_action_overrides.csv``. A material share jump no
+official source explains is reported to ``corp_action_residuals.csv`` (loud, not
+silently guessed) and defaults to *not* a break — the ChangesRatio backbone
+keeps the series continuous and the oracle validation below flags misses.
 
 거래재개 administrative-reset override — KRX 수정주가 oracle, no heuristics
 ---------------------------------------------------------------------------
@@ -30,11 +28,10 @@ On a 거래재개 (resume after a suspension) KRX sometimes measures ChangesRati
 against an evaluation reference price rather than the corporate-action 기준가, so
 the CR diverges from the actual traded move (e.g. 232830 2023-06-29: CR +205%
 while it traded +21%); compounding it fabricates a return and mis-scales all
-pre-event history. Such a day is now identified by comparing our compounded-CR
+pre-event history. Such a day is identified by comparing our compounded-CR
 return to KRX's own official adjusted return (the ``kr_marcap.krx_adj_oracle``,
 reachable from this host via pykrx) — where they disagree (and no data-integrity
-guard fired) the official move is trusted (``gross = 1 + oracle_ret``). The old
-volume-spike / share-band heuristic (``_RESET_*``) has been removed; the
+guard fired) the official move is trusted (``gross = 1 + oracle_ret``). The
 divergence from the official series *is* the signal. On ordinary and genuine
 corporate-action days the two series agree, so the override never fires there.
 
