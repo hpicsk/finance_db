@@ -49,7 +49,7 @@ that the build itself writes.
 source /home/st/miniconda3/bin/activate
 export OPEN_DART_API_KEY=...            # already in .env
 
-# ── Pass 0: seed the candidate list (uses whatever sources exist now) ─────────
+# ── Pass 0: seed the candidate list (needs the tracked DART events and oracle) ─
 python -m kr_marcap.adjust build        # writes cache/adjust_anomalies.csv (candidates)
 
 # ── 1. DART corporate-action events (official entity/genuine classification) ──

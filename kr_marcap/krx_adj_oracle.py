@@ -174,9 +174,15 @@ def _append_empty(sidecar: Path, tickers: list[str]) -> None:
 
 @lru_cache(maxsize=1)
 def load_oracle(path: str = str(ORACLE_PATH)) -> pd.DataFrame:
-    """Load the cached oracle (date, code, krx_adj_close). Empty if uncollected."""
+    """Load the oracle snapshot (date, code, krx_adj_close).
+
+    The snapshot is tracked, so a missing file is a broken tree: without it every
+    거래재개 reset would go unapplied, and the build would not say so.
+    """
     if not Path(path).exists():
-        return pd.DataFrame(columns=_COLS)
+        raise FileNotFoundError(
+            f"{path} not found — restore it from git, or recollect it (hours) with "
+            f"python -m kr_marcap.krx_adj_oracle --all")
     f = pd.read_parquet(path)
     f["date"] = pd.to_datetime(f["date"])
     f["code"] = f["code"].astype(str).str.zfill(6)

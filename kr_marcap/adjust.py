@@ -169,12 +169,8 @@ def build_adjustment_factors(
     bk = (breaks_df.rename(columns={'code': 'Code', 'date': 'Date', 'source': '_break_source'})
           [['Code', 'Date', '_break_source']])
     df = df.merge(bk, on=['Code', 'Date'], how='left')
-    oracle = load_oracle()
-    if len(oracle):
-        om = oracle.rename(columns={'code': 'Code', 'date': 'Date'})[['Code', 'Date', 'krx_adj_close']]
-        df = df.merge(om, on=['Code', 'Date'], how='left')
-    else:
-        df['krx_adj_close'] = np.nan
+    om = load_oracle().rename(columns={'code': 'Code', 'date': 'Date'})[['Code', 'Date', 'krx_adj_close']]
+    df = df.merge(om, on=['Code', 'Date'], how='left')
     df = df.sort_values(['Code', 'Date']).reset_index(drop=True)
     is_break = df['_break_source'].notna().to_numpy()
 

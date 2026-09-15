@@ -101,7 +101,9 @@ def _load_delistings() -> dict[str, list[pd.Timestamp]]:
     a *different* issuer (ticker reuse). Excludes preferred-share proxy rows (last-
     trade dates, not exits) and same-entity transfers/relistings."""
     if not DELISTING_CSV.exists():
-        return {}
+        raise FileNotFoundError(
+            f"{DELISTING_CSV} not found — without it no ticker-reuse break is found; "
+            f"it is tracked in kr_delisted, so restore it from git")
     df = pd.read_csv(DELISTING_CSV, dtype={"ticker": str})
     df["ticker"] = df["ticker"].str.zfill(6)
     df["d"] = pd.to_datetime(df["delisting_date"], errors="coerce")
@@ -114,7 +116,10 @@ def _load_delistings() -> dict[str, list[pd.Timestamp]]:
 
 def _load_dart_events() -> pd.DataFrame:
     if not DART_EVENTS_PATH.exists():
-        return pd.DataFrame(columns=["ticker", "category", "event", "rcept"])
+        raise FileNotFoundError(
+            f"{DART_EVENTS_PATH} not found — without it no DART entity break is found; "
+            f"it is tracked in kr_status, so restore it from git or rebuild it with "
+            f"python -m kr_status.dart_corp_actions")
     d = pd.read_parquet(DART_EVENTS_PATH)
     d = d[d["category"] != "none"].copy()
     d["ticker"] = d["ticker"].astype(str).str.zfill(6)
@@ -124,7 +129,9 @@ def _load_dart_events() -> pd.DataFrame:
 
 def _load_overrides() -> pd.DataFrame:
     if not OVERRIDES_CSV.exists():
-        return pd.DataFrame(columns=["ticker", "date", "kind", "note"])
+        raise FileNotFoundError(
+            f"{OVERRIDES_CSV} not found — the reviewed overrides are tracked, so "
+            f"restore the file from git (a header-only file means no overrides)")
     o = pd.read_csv(OVERRIDES_CSV, dtype={"ticker": str})
     o["ticker"] = o["ticker"].str.zfill(6)
     o["date"] = pd.to_datetime(o["date"], errors="coerce")

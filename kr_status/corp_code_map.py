@@ -55,7 +55,8 @@ def _save_cache() -> None:
 
 def _load_delisted_names() -> dict[str, str]:
     if not DELISTING_CSV.exists():
-        return {}
+        raise FileNotFoundError(
+            f"{DELISTING_CSV} not found — it is tracked in kr_delisted; restore it from git")
     df = pd.read_csv(DELISTING_CSV, dtype={"ticker": str})
     df["ticker"] = df["ticker"].str.zfill(6)
     # if a ticker appears multiple times (rare; reuse), take the latest name
