@@ -27,6 +27,10 @@
     "bound": "exact",
     "n": 4940
   },
+  "test_pre_2015_share_jumps_are_residuals": {
+    "bound": "monotone",
+    "n": 715
+  },
   "test_seibro_zero_is_non_payment": {
     "bound": "monotone",
     "n": 35999

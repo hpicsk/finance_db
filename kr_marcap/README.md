@@ -204,7 +204,13 @@ official sources, no calibrated thresholds**:
 A *large* share-count jump no official source explains is written to
 `cache/corp_action_residuals.csv` (loud, for review) and defaults to **not** a
 break — the ChangesRatio backbone keeps the series continuous and the oracle
-validation below flags any real miss.
+validation below flags a real miss on the days KRX's 수정주가 covers.
+**The DART lookup finds nothing before 2015**: the DART event table it reads has
+no earlier receipt, so a pre-2015 entity change is a break only if a SPAC name,
+a ticker reuse or an override finds it. All 570 pre-2015 candidates in
+`cache/adjust_anomalies.csv` are residuals, against 18 of the 145 from 2015 on.
+The oracle validation compares the return on 253 of the 570 and agrees on all
+of them; the other 317 are unchecked, below the 2015 reliability floor.
 See [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) for the full pipeline.
 
 ### Why ChangesRatio, not the `Stocks` ratio

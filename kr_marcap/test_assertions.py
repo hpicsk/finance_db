@@ -129,6 +129,57 @@ def test_adjust_canonical_cases():
             f"232830 reset adj_ret={r:+.3f}"), sum(read)
 
 
+# ---- before 2015 no DART filing explains a share jump -----------------------
+# README "Entity-change detection": every pre-2015 material share jump is a
+# residual, and the oracle is the only check on one, where it covers the day.
+PRE_2015 = (570, 570, 253)   # candidates, residuals, returns the oracle compares
+FROM_2015 = (145, 18)        # candidates, residuals
+
+
+def test_pre_2015_share_jumps_are_residuals():
+    sys.path.insert(0, str(REPO))
+    from kr_marcap import corp_actions
+    from kr_marcap.adjust import CANDIDATES_PATH, FACTORS_PATH
+    from kr_marcap.krx_adj_oracle import load_oracle
+    from kr_marcap.universe import RELIABLE_START
+    from kr_marcap.validate_against_oracle import DEFAULT_TOL
+    if not CANDIDATES_PATH.exists():
+        raise Skipped(f"{CANDIDATES_PATH.name} not built (python -m kr_marcap.adjust build)")
+    first = corp_actions._load_dart_events()["rcept"].min()
+    assert first >= RELIABLE_START, (
+        f"README: 'The DART lookup finds nothing before 2015' — the DART event table "
+        f"has a receipt dated {first.date()}")
+    cand = pd.read_csv(CANDIDATES_PATH, dtype={"Code": str}, parse_dates=["Date"])
+    pre = cand["Date"] < RELIABLE_START
+    # Each pre-2015 candidate day's return against the oracle's, as
+    # validate_against_oracle compares them: valid rows both sides hold, each
+    # against the previous such row of its code.
+    days = cand.loc[pre, ["Code", "Date"]].set_axis(["code", "date"], axis=1)
+    codes = sorted(set(days["code"]))
+    fac = pd.read_parquet(FACTORS_PATH, columns=["date", "code", "adj_close", "valid"],
+                          filters=[("code", "in", codes)])
+    fac = fac[fac["valid"] & (fac["adj_close"] > 0)]
+    ora = load_oracle()
+    m = fac.merge(ora[ora["code"].isin(codes)], on=["code", "date"]).sort_values(["code", "date"])
+    g = m.groupby("code", sort=False)
+    m["diff"] = (m["adj_close"] / g["adj_close"].shift(1)
+                 - m["krx_adj_close"] / g["krx_adj_close"].shift(1)).abs()
+    compared = days.merge(m.dropna(subset=["diff"]), on=["code", "date"])
+    got = (int(pre.sum()), int(cand.loc[pre, "residual"].sum()), len(compared),
+           int((~pre).sum()), int(cand.loc[~pre, "residual"].sum()))
+    assert got == PRE_2015 + FROM_2015, (
+        f"README: 'All {PRE_2015[0]} pre-2015 candidates in cache/adjust_anomalies.csv are "
+        f"residuals, against {FROM_2015[1]} of the {FROM_2015[0]} from 2015 on. The "
+        f"oracle validation compares the return on {PRE_2015[2]} of the {PRE_2015[0]}' "
+        f"— (pre-2015 candidates, residuals, compared, 2015+ candidates, residuals) is {got}")
+    worst = compared["diff"].max()
+    assert worst <= DEFAULT_TOL, (
+        f"README: 'agrees on all of them' — a pre-2015 candidate day differs from "
+        f"the oracle by {worst:.4f}, beyond the validation tolerance {DEFAULT_TOL}")
+    return (f"{got[1]} of {got[0]} pre-2015 share jumps residual, {got[4]} of {got[3]} "
+            f"from 2015; the oracle agrees on the {got[2]} it compares "
+            f"(worst {worst:.4f})"), len(cand)
+
 # ---- a SEIBro ₩0 dividend means non-payment, not a lost amount --------------
 def test_seibro_zero_is_non_payment():
     """`load_cash_events` keeps only `dps > 0`, so every ₩0 cash-kind event is
@@ -396,6 +447,7 @@ CHECKS = [
     test_kr_kospi_common_count,
     test_adjust_heuristics_removed,
     test_adjust_canonical_cases,
+    test_pre_2015_share_jumps_are_residuals,
     test_adjust_provenance_stamp,
     test_fnguide_benchmark_agreement,
     test_fnguide_disagreement_is_the_stuck_oracle,

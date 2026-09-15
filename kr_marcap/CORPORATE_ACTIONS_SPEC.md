@@ -95,11 +95,15 @@ labels each from official sources, in precedence order:
    filing→effect window ⇒ **break** (`dart_entity`).
 4. **Override** `kind=break` in `data/corp_action_overrides.csv` ⇒ **break**.
 5. **DART genuine event** (유상/무상/유무상증자, 감자) ⇒ **genuine** (CR adjusts; not a break).
-6. **Else** ⇒ **residual**: 액면분할/병합 (not in DART's event API) and true
-   unknowns. Defaults to *not a break* (the ChangesRatio backbone stays
-   continuous); written to `cache/corp_action_residuals.csv` for review. The
-   oracle validation (step 4) is the safety net that flags a residual that was
-   actually a missed break.
+6. **Else** ⇒ **residual**: 액면분할/병합 (not in DART's event API), true
+   unknowns, and every pre-2015 jump steps 1, 2 and 4 miss, because the DART
+   event table has no receipt before 2015. Defaults to *not a break* (the
+   ChangesRatio backbone stays continuous); written to
+   `cache/corp_action_residuals.csv` for review. The oracle validation (step 4)
+   is the safety net that flags a residual that was actually a missed break, on
+   the days KRX's 수정주가 covers; the README's
+   [entity-change section](README.md#entity-change-detection-series-breaks--official-ground-truth)
+   counts the pre-2015 residuals it leaves unchecked.
 
 Breaks set `valid=False` for all rows before a ticker's **last** break;
 loaders (`kr_marcap/market_loader.py`) drop them.
