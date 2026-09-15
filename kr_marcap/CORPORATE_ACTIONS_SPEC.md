@@ -21,7 +21,7 @@ bounds (documented inline), never classification thresholds.
 
 **Only one source is blocked from this host:** `data.krx.co.kr` (거래정지/거래재개),
 and it is **not needed** — the oracle already resolves resets, and marcap's
-`ChangeCode == '0'` already flags halt *days* (see `kr_status/marcap_halt_infer.py`).
+`ChangeCode == '0'` already flags halt *days*.
 Only the official halt *reason* text lives behind `data.krx.co.kr`; no in-repo
 collector ships for it, and it would require a KR-resident IP.
 

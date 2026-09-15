@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Resumable dart_audit harvester. Run daily until the events parquet appears.
+# Resumable dart_audit harvester. Run daily until it exits 0.
 # Exits 0 on success, non-zero when DART quota tripped (status 020/021) — that
 # is the normal end-of-day exit; rerun tomorrow and it picks up from cache.
 #
-# Cache:  kr_status/data/dart_audit_opinions.parquet
-# Output: kr_status/data/dart_audit_events.parquet  (only on full completion)
+# Output: kr_status/data/dart_audit_opinions.parquet  (also the resume cache)
 # Log:    kr_status/runtime/_log_audit.txt
 #
 # Runs from the repo root it sits under, with the interpreter on PATH (activate

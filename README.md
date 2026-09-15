@@ -21,8 +21,8 @@ refresh runbook, and the ignore policy.
 | `dart_bulk/` | OpenDART 재무정보 일괄다운로드 archive — every listed company's BS/PL/CF, one zip per (fiscal year, report, statement) | [`README.md`](dart_bulk/README.md) |
 | `fnguide_data/` | FnGuide DataGuide export tree — investor flow, financials, short-selling, and the **adjusted-price benchmark** research reads | [`README.md`](fnguide_data/README.md), [`DELISTED_COVERAGE.md`](fnguide_data/DELISTED_COVERAGE.md) |
 | `kr_delisted/` | Korean delisting calendar (KIND + marcap + DART), every delisting since 2005 with a genuine-vs-continuation flag | [`README.md`](kr_delisted/README.md) |
-| `kr_marcap/` | KR OHLCV layer over marcap, plus the open-source reconstruction of FnGuide's 수정주가 and the unified PIT status panel | [`README.md`](kr_marcap/README.md), [`CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md), [`VERIFICATION.md`](kr_marcap/VERIFICATION.md) |
-| `kr_status/` | Per-source PIT collectors for KRX status flags (admin / halt / alert / audit / insincere), one parquet each | [`README.md`](kr_status/README.md) |
+| `kr_marcap/` | KR OHLCV layer over marcap, plus the open-source reconstruction of FnGuide's 수정주가 | [`README.md`](kr_marcap/README.md), [`CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md), [`VERIFICATION.md`](kr_marcap/VERIFICATION.md) |
+| `kr_status/` | DART collectors — 감사의견 (FY2015+) and corporate-action filings, one parquet each | [`README.md`](kr_status/README.md) |
 | `krx_supplement/` | KRX/KOSPI200 panel reconstruction — index membership history, sector, foreign ownership | [`README.md`](krx_supplement/README.md), [`RECONSTRUCT.md`](krx_supplement/RECONSTRUCT.md) |
 | `finmind_data/` | Taiwan equity data via the FinMind API (TWSE + TPEx from **2011-01-25**, the first date the capital-reduction reference prices are published), raw and back-adjusted | [`README.md`](finmind_data/README.md), [`CAVEATS.md`](finmind_data/CAVEATS.md) |
 | `marcap/` | External clone of [`FinanceData/marcap`](https://github.com/FinanceData/marcap) — gitignored entirely, re-clone when setting up | delisted-coverage notes in [`kr_delisted/README.md`](kr_delisted/README.md) |
@@ -46,29 +46,23 @@ marcap parquets ─────────────────────�
        └────────┐  ┌─► kr_delisted/ ─────────────────────────►    delisted_loader.universe()
                 ├──┤                                              delisted_loader.load_delisted(t)
 KIND scrape ────┤  │
-                │  └─► kr_status/  ─► data/*_events.parquet
-DART API ───────┘                              │
-                                               │
-opendart 일괄파일 ──► dart_bulk/ ──────────────┼──►   dart_bulk.latest_vintages(...)
-  (전 상장사 재무제표)                          │      dart_bulk.open_zip / sheets
-                                               ▼
-                                    kr_marcap.status.build_panel
-                                               │
-                                               ▼
-                                    kr_marcap.status.tradable_universe(date)
+                │  └─► kr_status/  ─► data/dart_audit_opinions.parquet
+DART API ───────┘                     data/dart_corp_action_events.parquet
+
+opendart 일괄파일 ──► dart_bulk/ ─────────────────►   dart_bulk.latest_vintages(...)
+  (전 상장사 재무제표)                                 dart_bulk.open_zip / sheets
 ```
 
 `kr_marcap.universe` and `kr_marcap.adjust.load_adjusted` read marcap
-parquets directly and don't depend on the kr_status / build_panel chain.
+parquets directly.
 Reads the diagram does not draw: `kr_status` reads `kr_delisted`'s calendar
-(the historical audit seed and the corp-code map), `kr_marcap` reads
-`fnguide_data`'s price panel for its benchmark, and the `fnguide_data`
-assertion suite reads the calendar too.
+(the corp-code map), `kr_marcap`'s price adjustment reads `kr_status`'s
+corporate-action table, `kr_marcap` reads `fnguide_data`'s price panel for its
+benchmark, and the `fnguide_data` assertion suite reads the calendar too.
 
 Cadence per step: `kr_delisted` ~quarterly (when KIND publishes new
 delistings); `kr_status` per-collector (see
-[`kr_status/README.md`](kr_status/README.md)); `kr_marcap.status` rebuilds in
-seconds after any kr_status run. Dependency-ordered runbook at
+[`kr_status/README.md`](kr_status/README.md)). Dependency-ordered runbook at
 [`refresh.sh`](refresh.sh).
 
 ## Quick start
@@ -76,8 +70,6 @@ seconds after any kr_status run. Dependency-ordered runbook at
 | Task | Where to look |
 |---|---|
 | Point-in-time KR common-stock universe | `kr_marcap/universe.py::universe(date, 'common')` (add `strict=True` to match fnguide exactly) |
-| Tradable KR universe (PIT status + price/liquidity filters) | `kr_marcap.status.tradable_universe(date, ...)` |
-| Per-flag KR event history (admin/halt/audit/insincere/alert) | `kr_marcap/status/events.parquet` (built by `kr_marcap.status.build_panel`) |
 | **Adjusted KR close for research (price return + total return)** | `fnguide_data/price_loader.py::load_price_panel()` — the FnGuide series, 2005+ |
 | Adjusted KR close reconstructed from open sources, whole panel | `kr_marcap/adjusted_loader.py::load_adjusted_panel()` — how close it comes to FnGuide is in [`kr_marcap/CONSTRUCTION.md`](kr_marcap/CONSTRUCTION.md) |
 | Adjusted KR OHLCV for one ticker, reconstructed from open sources | `kr_marcap/adjust.py::load_adjusted(ticker)` |

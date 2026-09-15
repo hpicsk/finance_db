@@ -10,7 +10,7 @@ This module layers a fallback:
      name-based corp directory.
   3. Cache misses to data/corp_code_misses.csv for manual triage.
 
-Hits are memoised in data/corp_code_cache.parquet so re-runs of Phase B
+Hits are memoised in data/corp_code_cache.parquet so re-runs of the DART
 collectors are cheap.
 """
 from __future__ import annotations

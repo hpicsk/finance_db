@@ -27,11 +27,9 @@ place a reader is told both exist. Likewise a new claim assertion goes in the
 
 - `kr_delisted/` exposes `delisted_loader.universe()` and
   `load_delisted(ticker)` as a public research API (see Quick Start).
-- `kr_status/` is per-source PIT event collectors writing one parquet
-  each to `kr_status/data/`.
-- `kr_marcap/` is a thin price-layer over the marcap parquets, plus
-  `kr_marcap.status/` which unifies kr_status events into a single panel
-  and exposes `tradable_universe(date)`.
+- `kr_status/` is DART collectors writing one parquet each to
+  `kr_status/data/`.
+- `kr_marcap/` is a thin price-layer over the marcap parquets.
 
 The boundaries are intentional. The newcomer-discoverability concern is
 addressed by the dataflow diagram in `README.md` and `refresh.sh` — not
@@ -41,8 +39,7 @@ by collapsing packages.
 
 KONEX rows are collected and kept filterable (`market == 'KONEX'`) but
 are not the analysis target, and per-package methodology choices optimize for
-KOSPI+KOSDAQ accuracy (see `kr_status/CLAUDE.md` for the halt mask, which is
-the case where it matters most).
+KOSPI+KOSDAQ accuracy.
 
 Filter to common stock with `kr_marcap.universe(date, kind='common')`
 and `len(ticker) == 6` (drops warrants / rights / ETNs / ETFs / funds).

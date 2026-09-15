@@ -1,4 +1,4 @@
-"""Shared working universe loader for DART-based status collectors."""
+"""Shared working universe loader for the DART collectors."""
 
 from pathlib import Path
 import pandas as pd

@@ -35,19 +35,11 @@ fi
 # python -m dart_bulk.download --years 2015-2025 --reports FY
 # python -m dart_bulk.download --years 2016-2025 --reports FQ,HY,TQ   # 분기 (2016-2024 수집됨)
 
-# ── 2. kr_status — per-source PIT event collectors ────────────────────────
-#    Cadence: see kr_status/README.md. Each writes one parquet to data/,
-#    independent of the others.
-# python -m kr_status.marcap_halt_infer                       # after each marcap refresh
-# python -m kr_status.fdr_collect --seed-historical           # after kr_delisted refresh
-# python -m kr_status.dart_insincere                          # quarterly; DART
+# ── 2. kr_status — DART 감사의견 ─────────────────────────────────────────────
+#    Cadence: see kr_status/README.md.
 # python -m kr_status.dart_audit                              # annually (post-Mar); DART
 
-# ── 3. kr_marcap.status — unify event parquets into a single panel ────────
-#    Cadence: after any kr_status collector runs. Pure local read.
-# python -m kr_marcap.status.build_panel
-
-# ── 4. kr_marcap price adjustment — official corporate-action ground truth ─
+# ── 3. kr_marcap price adjustment — official corporate-action ground truth ─
 #    Cadence: after a marcap refresh. Replaces the old calibrated heuristics
 #    with DART/KIND/KRX-수정주가 sources. See kr_marcap/CORPORATE_ACTIONS_SPEC.md.
 #    Two-pass bootstrap (the DART collector keys off the candidate list the
@@ -58,7 +50,7 @@ fi
 # python -m kr_marcap.adjust build                             # rebuild with ground truth
 # python -m kr_marcap.validate_against_oracle                  # inside gate vs KRX 수정주가
 
-# ── 5. Benchmark the reconstruction against the paid FnGuide series ───────
+# ── 4. Benchmark the reconstruction against the paid FnGuide series ───────
 #    Cadence: after any adjust rebuild, or a new DataGuide 수정주가 export.
 #    The oracle gate above cannot see reset-override failures — adjust.py
 #    assigns from the oracle there, so the two agree by construction. Only an
@@ -68,14 +60,14 @@ fi
 # python -m fnguide_data.price_loader                          # adjusted-price export → parquet (~1m)
 # python -m kr_marcap.validate_against_fnguide                 # outside gate (~5m)
 
-# ── 5b. Re-pulled any DataGuide export? Re-stamp the vintage manifest ─────
+# ── 4b. Re-pulled any DataGuide export? Re-stamp the vintage manifest ─────
 #    Cadence: after replacing ANY file in fnguide_data/raw/. Each sheet has its
 #    own pull date and its own universe; vintages.csv is what makes those
 #    readable without parsing 6.5 GB, and run_assertions.sh fails until it
 #    matches what is on disk. ~30s — it streams headers, it does not read data.
 # python -m fnguide_data.vintages
 
-# ── 6. Re-run every package's claim assertions ────────────────────────────
+# ── 5. Re-run every package's claim assertions ────────────────────────────
 #    Cadence: after ANY step above. Regenerated data invalidates the claims
 #    the package documentation makes about it; this is the only gate (no CI).
 # ./run_assertions.sh

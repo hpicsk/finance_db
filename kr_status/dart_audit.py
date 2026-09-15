@@ -1,4 +1,4 @@
-"""DART harvest of 감사의견 (DS002/2020009) → audit_qualified event panel.
+"""DART harvest of 감사의견 (DS002/2020009) → one opinion row per (ticker, bsns_year).
 
 Endpoint: ``opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json``
 (wrapped by OpenDartReader.report('accnutAdtorNmNdAdtOpinion', ...) or by
@@ -8,10 +8,7 @@ the raw `fnltt_singl_acnt` API depending on OpenDartReader version).
 외부감사보고서 filings; structured extraction is not currently supported.
 
 Iterates over (corp_code, year) pairs, skipping already-cached pairs.  Raw
-opinion rows are persisted to ``data/dart_audit_opinions.parquet``; non-적정
-opinions are projected to event rows in ``data/dart_audit_events.parquet``
-with ``start_date = receipt_dt`` and ``end_date`` = the ticker's next non-적정
-``receipt_dt``, or one year on when none follows (never NaT).
+opinion rows are persisted to ``data/dart_audit_opinions.parquet``.
 
 Usage:
     export OPEN_DART_API_KEY=...
@@ -31,28 +28,16 @@ import time
 import pandas as pd
 import requests
 
-from kr_status.schema import STATUS_COLUMNS, events_path
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
 )
 
 OPINIONS_PATH = DATA_DIR / "dart_audit_opinions.parquet"
-EVENTS_PATH   = events_path("dart_audit")
 
 AUDIT_REPORT_CODE = "11011"   # 사업보고서 (annual)
 MIN_YEAR = 2015               # DART structured endpoint floor
 
-# An annual audit opinion is valid for one fiscal year.  When a qualified
-# opinion has no subsequent filing in the cache (the most recent one), bound
-# its window to one annual cycle instead of leaving end_date NaT — a NaT end
-# is read as "+∞" by the query layer and would exclude the ticker on every
-# future date forever.
-AUDIT_OPINION_VALIDITY = pd.DateOffset(years=1)
 _DART_AUDIT_URL = "https://opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json"
-
-# Non-적정 opinion labels DART returns.  Anything not in 적정 family is treated
-# as `audit_qualified` for the tradable_universe filter.
-QUALIFIED_OPINIONS = {"한정", "부적정", "의견거절"}
 
 
 def _working_universe() -> pd.DataFrame:
@@ -229,48 +214,8 @@ def harvest(api_key: str | None = None,
     _save_cache(full)
     flush_cache()
     flush_misses()
-
-    events = build_events(full)
-    EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    events.to_parquet(EVENTS_PATH, index=False)
     print(f"wrote {len(full)} opinions → {OPINIONS_PATH}", file=sys.stderr)
-    print(f"wrote {len(events)} audit_qualified events → {EVENTS_PATH}", file=sys.stderr)
-    return events
-
-
-def build_events(opinions: pd.DataFrame) -> pd.DataFrame:
-    """Project the opinions cache to an ``audit_qualified`` event panel.
-
-    Reclassifies opinion_code from the cached raw text (so classifier fixes
-    apply without re-harvesting DART) and orders each ticker's filings by
-    ``receipt_dt`` — not ``bsns_year`` — so each qualified opinion's window is
-    ``[receipt_dt, next filing's receipt_dt)``.  Sorting on bsns_year produced
-    garbage windows when filings arrived out of chronological order (late /
-    bulk re-filings): negative spans and multi-year stale flags.
-    """
-    full = opinions.copy()
-    full["opinion_code"] = full["raw"].map(_classify)
-    full["receipt_dt"] = pd.to_datetime(full["receipt_dt"])
-    full = full.sort_values(["ticker", "receipt_dt", "bsns_year"])
-    quals = full[full["opinion_code"].isin(QUALIFIED_OPINIONS)].copy()
-    # Compute next_receipt on qualified-only rows so each qualified opinion's window
-    # ends at the next qualified opinion (not any intervening non-qualified filing).
-    quals["next_receipt"] = quals.groupby("ticker")["receipt_dt"].shift(-1)
-    # Bound the open (most-recent) qualified opinion to one annual cycle so it
-    # doesn't read as an indefinite exclusion (NaT → +∞) downstream.
-    quals["end_date"] = quals["next_receipt"].fillna(
-        quals["receipt_dt"] + AUDIT_OPINION_VALIDITY)
-    fetched = pd.Timestamp.now()
-    events = pd.DataFrame({
-        "ticker":     quals["ticker"].values,
-        "status":     "audit_qualified",
-        "start_date": quals["receipt_dt"].values,
-        "end_date":   quals["end_date"].values,
-        "source":     [f"dart_audit:{y}" for y in quals["bsns_year"].values],
-        "fetched_at": fetched,
-        "detail":     [f"{c} ({r})" for c, r in zip(quals["opinion_code"], quals["raw"])],
-    }, columns=STATUS_COLUMNS)
-    return events.sort_values(["start_date", "ticker"]).reset_index(drop=True)
+    return full
 
 
 def main(argv=None) -> int:
@@ -282,18 +227,7 @@ def main(argv=None) -> int:
                     help="limit number of tickers (test runs)")
     ap.add_argument("--tickers",   default=None)
     ap.add_argument("--restart",   action="store_true")
-    ap.add_argument("--rebuild-events", action="store_true",
-                    help="re-project events from the cached opinions parquet (no DART)")
     args = ap.parse_args(argv)
-    if args.rebuild_events:
-        cache = _load_cache()
-        if cache.empty:
-            raise SystemExit(f"no cached opinions at {OPINIONS_PATH} to rebuild from")
-        events = build_events(cache)
-        EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        events.to_parquet(EVENTS_PATH, index=False)
-        print(f"rebuilt {len(events)} audit_qualified events → {EVENTS_PATH}", file=sys.stderr)
-        return 0
     tickers = [t.strip() for t in args.tickers.split(",")] if args.tickers else None
     harvest(api_key=args.api_key, year_from=args.year_from, year_to=args.year_to,
             limit_tickers=args.limit, tickers=tickers, restart=args.restart)
