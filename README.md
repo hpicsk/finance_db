@@ -30,7 +30,9 @@ refresh runbook, and the ignore policy.
 At this level, besides this map: [`refresh.sh`](refresh.sh) (the
 dependency-ordered runbook), [`run_assertions.sh`](run_assertions.sh) (runs
 every package's `test_assertions.py`), `.gitignore` (the ignore policy) and
-`CLAUDE.md`. Nothing else.
+`CLAUDE.md`. Nothing else is tracked at this level. `.env` (the credentials)
+and `docs_cache/` (OpenDartReader's cache, which it writes into the working
+directory) also sit here, both ignored.
 
 ## Korean PIT pipeline — package dataflow
 
@@ -125,8 +127,8 @@ describes.
   FnGuide xlsx files (200 MB – 1.4 GB each, over GitHub's 100 MB per-file
   limit).
 - The entire `marcap/` directory (external clone of github.com/FinanceData/marcap) — re-clone when setting up.
-- All FinMind per-stock parquets (`ohlcv/`, `instflow/`, `shares/`,
-  fundamentals dirs, ~1.6 GB).
+- FinMind's per-stock trees under `finmind_data/trees/` (~1.6 GB) and its
+  dated raw vintages under `finmind_data/raw/`.
 - Backup zips (`*.zip`), `*.bak` files, `__pycache__/`, `nohup.*`, `*.log`.
 - Credentials: `.token`, `krx_id`, `*.key`, `.env`.
 

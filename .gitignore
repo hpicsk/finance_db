@@ -98,7 +98,8 @@ __pycache__/
 runtime/
 
 # Per-package instruments and run logs: audit tables, fingerprints, nohup output.
-# Nothing a reader needs; research CLAUDE.md §1 puts every instrument here.
+# Nothing a reader needs; research CLAUDE.md ("Audit instruments stay in the
+# repo") puts every instrument here.
 _internal/
 
 # Stray PDFs
