@@ -38,6 +38,7 @@ fi
 # ── 2. kr_status — DART 감사의견 ─────────────────────────────────────────────
 #    Cadence: see kr_status/README.md.
 # python -m kr_status.dart_audit                              # annually (post-Mar); DART
+# python -m kr_status.dart_audit_first                        # after dart_audit; DART
 
 # ── 3. kr_marcap price adjustment — official corporate-action ground truth ─
 #    Cadence: after a marcap refresh. Every break/reset verdict comes from

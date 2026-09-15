@@ -6,9 +6,10 @@ parquet under `data/`:
 | Collector | Output |
 |---|---|
 | `dart_audit.py` | `dart_audit_opinions.parquet` — 감사의견, one row per (ticker, bsns_year), FY2015+ |
+| `dart_audit_first.py` | `dart_audit_first_filings.parquet` — the same rows, read from each 사업보고서's first filing |
 | `dart_corp_actions.py` | `dart_corp_action_events.parquet` — the 증자 / 감자 / 합병 / 분할 / 주식교환 filings that move a share count |
 
-Both call DART and need `OPEN_DART_API_KEY`, loaded from the repo-root `.env`:
+All three call DART and need `OPEN_DART_API_KEY`, loaded from the repo-root `.env`:
 
 ```bash
 set -a; . .env; set +a               # exports OPEN_DART_API_KEY; run from the repo root
@@ -27,18 +28,48 @@ opinion_code, receipt_dt, raw)`. DART's structured endpoint is populated for
 `bsns_year ≥ 2015` only; earlier opinions live inside free-text 외부감사보고서
 filings, which this collector does not parse.
 
-The cache holds bsns_year 2015–2024. Each row is what the endpoint served for
+The cache holds bsns_year 2015–2025. Each row is what the endpoint served for
 that (ticker, year) at harvest time, and two things follow:
 
-- **`receipt_dt` is not always the first filing's.** 702 rows (3.1 %) are
-  stamped more than a year after the 31 March filing deadline, and 015540's
-  rows for FY2019–2022 all carry receipt dates in 2023: the endpoint appears to
-  serve each report as last amended (정정), with that version's opinion in
-  `raw`. Such a row is not what the market read when the report first came out.
-- **`opinion_code` is the classifier's label, not a closed set.** 1,688 rows
-  carry a label other than 적정 / 한정 / 부적정 / 의견거절: 1,185 have no
+- **An amended report comes back as amended.** When a 사업보고서 was corrected
+  (정정), the row usually carries the correction — its receipt date in
+  `receipt_dt`, its opinion in `raw` — not what the market read first. 702 rows
+  (2.7 %) are stamped more than a year after the 31 March filing deadline, and
+  015540's rows for FY2019–2022 all carry receipt dates in 2023.
+  `dart_audit_first_filings.parquet` holds the first filing of every row, and
+  its section below counts how often the two differ.
+- **`opinion_code` is the classifier's label, not a closed set.** 1,754 rows
+  carry a label other than 적정 / 한정 / 부적정 / 의견거절: 1,251 have no
   opinion text, and 22 are disclaimers the keyword match misses (`거절`,
   `의견 거절` and misspellings). Classify from `raw` where the label matters.
+
+### `dart_audit_first.py` — each opinion as first filed
+
+```bash
+python -m kr_status.dart_audit_first  # after dart_audit; list.json + document.xml
+```
+
+Writes `data/dart_audit_first_filings.parquet` — one row per row of the
+opinions cache: `(ticker, bsns_year, rcept_no, receipt_dt, opinion_code, raw,
+n_amendments)`, where `rcept_no` and `receipt_dt` (the 접수일자) belong to the
+사업보고서's first filing and `raw` is its 당기 감사의견. `list.json` lists every
+version of each report; `[첨부추가]` marks the original itself, and every other
+bracket an amendment. A report never amended is the filing `dart_audit` read,
+so its cached opinion is copied. For an amended one the collector fetches the
+first filing and reads the cell DART tags `OPN_CMT1` (`OPN_CMT1_A`, the
+감사보고서 row, in the form used since the FY2024 reports). A 2026-09-15 check on
+100 never-amended filings found that cell equal to the structured endpoint's
+opinion in all 96 where either carried text.
+
+Use this table, not the opinions cache, for what the market read and when:
+
+- 6,060 of the 25,608 rows (23.7 %) were amended at least once. In 5,468 of
+  them the opinions cache carries a receipt number dated after the first
+  filing's: the endpoint served the correction.
+- 111 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
+  served — 015540's FY2020–2022 among them — and 13 go the other way.
+- 319 amended rows' first filings carry no readable opinion cell, so their
+  `opinion_code` is empty. Every row found its first filing in `list.json`.
 
 ### `dart_corp_actions.py` — corporate-action ground truth
 
@@ -86,10 +117,12 @@ fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
 |---|---|---|
 | DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it via `requests.get` directly |
 | DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Nothing filed before 2015 |
+| DART 공시검색 | `opendart.fss.or.kr/api/list.json` | every 사업보고서 of a corp_code, original and 정정 (`last_reprt_at=N`); used by `dart_audit_first` |
+| DART 공시서류원본 | `opendart.fss.or.kr/api/document.xml` | the first filing's main document, read at the `OPN_CMT1` cell; used by `dart_audit_first` |
 
-DART rate cap: ~10,000 req/day per API key; `run_dart_audit_resume.sh` runs one
+DART rate cap: 20,000 req/day per API key; `run_dart_audit_resume.sh` runs one
 day's batch and logs to `runtime/`. `dart_audit` for ~4,300 tickers
-× ~10 years ≈ 43,000 req → batch across ~5 days (resumable via the
+× ~10 years ≈ 43,000 req → batch across ~3 days (resumable via the
 `dart_audit_opinions.parquet` cache).
 
 ## Rerun cadence
@@ -97,4 +130,5 @@ day's batch and logs to `runtime/`. `dart_audit` for ~4,300 tickers
 | Collector | Cadence | Why |
 |---|---|---|
 | `dart_audit`                | annually (post-Mar audit-filing season) | annual cadence by nature |
+| `dart_audit_first`          | after each `dart_audit` run | reads the rows `dart_audit` wrote; resume-safe |
 | `dart_corp_actions`         | after a marcap refresh, once the candidate share-jump list has been rebuilt | new corporate actions land continuously; resume-safe, so a re-run only fetches what is new |

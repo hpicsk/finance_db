@@ -25,6 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from kr_status.corp_code_map import DATA_DIR  # noqa: E402
 from kr_status.dart_audit import MIN_YEAR, OPINIONS_PATH  # noqa: E402
+from kr_status.dart_audit_first import FIRST_PATH  # noqa: E402
 
 # Each check's population, recorded so a tree that lost rows fails rather
 # than passing on a smaller one. Per package, not per repo: the root is a
@@ -50,14 +51,23 @@ ENTITY_EVENTS = {"회사합병", "회사분할", "회사분할합병", "주식�
 # README § dart_audit: the span the cache holds, and the two consequences of
 # reading the endpoint at harvest time. A row is "stamped late" when its receipt
 # falls more than a year after 31 March of bsns_year + 1, the filing deadline.
-LAST_YEAR = 2024
+LAST_YEAR = 2025
 STAMPED_LATE = 702
 AMENDED_EXAMPLE = ("015540", range(2019, 2023), 2023)
 FOUR_OPINIONS = {"적정", "한정", "부적정", "의견거절"}
-UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS = 1688, 1185, 22
+UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS = 1754, 1251, 22
 
 # README § dart_corp_actions: the first receipt DART's event API served.
 FIRST_EVENT = pd.Timestamp("2015-01-07")
+
+# README § dart_audit_first: the first-filings table against the opinions cache.
+# A re-harvest that moves them fails the check, which carries the new numbers into
+# the README in the same commit.
+FIRST_COLUMNS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code", "raw",
+                 "n_amendments"]
+QUALIFIED = {"한정", "부적정", "의견거절"}
+AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL = 6060, 5468, 111, 13, 319, 0
+HIDDEN_EXAMPLE = ("015540", range(2020, 2023))
 
 
 # ---- README § dart_audit ------------------------------------------------------
@@ -87,7 +97,7 @@ def test_audit_rows_are_what_dart_serves_at_harvest():
     deadline = pd.to_datetime((op["bsns_year"] + 1).astype(str) + "-03-31")
     late = int((op["receipt_dt"] > deadline + pd.DateOffset(years=1)).sum())
     assert late == STAMPED_LATE, (
-        f"README § dart_audit: '{STAMPED_LATE} rows (3.1 %) are stamped more than a "
+        f"README § dart_audit: '{STAMPED_LATE} rows (2.7 %) are stamped more than a "
         f"year after the 31 March filing deadline' — {late} are")
     ticker, years, stamp = AMENDED_EXAMPLE
     ex = op[(op["ticker"] == ticker) & op["bsns_year"].isin(years)]
@@ -108,6 +118,47 @@ def test_audit_rows_are_what_dart_serves_at_harvest():
     return (f"{late} of {len(op):,} rows stamped more than a year past the deadline; "
             f"{got[0]:,} outside the four labels, {got[1]:,} of them without text and "
             f"{got[2]} missed disclaimers"), len(op)
+
+
+# ---- README § dart_audit_first ------------------------------------------------
+
+def test_first_filings_match_the_opinions_row_for_row():
+    if not FIRST_PATH.exists():
+        raise Skipped(f"{FIRST_PATH.name} not built (python -m kr_status.dart_audit_first)")
+    first = pd.read_parquet(FIRST_PATH)
+    served = pd.read_parquet(OPINIONS_PATH)
+    assert list(first.columns) == FIRST_COLUMNS, (
+        f"README § dart_audit_first: the table is {FIRST_COLUMNS} — found {list(first.columns)}")
+    keys = sorted(zip(first["ticker"], first["bsns_year"]))
+    assert keys == sorted(zip(served["ticker"], served["bsns_year"])), (
+        "README § dart_audit_first: one row per row of dart_audit_opinions.parquet — "
+        "the (ticker, bsns_year) sets differ")
+    m = first.merge(served, on=["ticker", "bsns_year"], suffixes=("_first", "_served"))
+    amended = m["n_amendments"] > 0
+    number_dt = pd.to_datetime(m["rcept_no"].str[:8], format="%Y%m%d")
+    later = amended & (m["receipt_dt_served"] > number_dt)
+    label = {s: m[f"opinion_code_{s}"].fillna("").astype(str).str.replace(r"\s+", "", regex=True)
+             for s in ("first", "served")}
+    hidden = label["first"].isin(QUALIFIED) & (label["served"] == "적정")
+    revealed = (label["first"] == "적정") & label["served"].isin(QUALIFIED)
+    unread = amended & m["rcept_no"].notna() & m["raw_first"].isna()
+    no_original = m["rcept_no"].isna()
+    got = (int(amended.sum()), int(later.sum()), int(hidden.sum()), int(revealed.sum()),
+           int(unread.sum()), int(no_original.sum()))
+    want = (AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL)
+    assert got == want, (
+        f"README § dart_audit_first: (amended, served later than the first filing, "
+        f"qualified first and 적정 served, the reverse, unreadable first filing, no "
+        f"original listed) is {want} in the README — {got} on disk")
+    ticker, years = HIDDEN_EXAMPLE
+    ex = m[(m["ticker"] == ticker) & m["bsns_year"].isin(years)]
+    assert len(ex) == len(years) and hidden[ex.index].all(), (
+        f"README § dart_audit_first: {ticker}'s FY{years[0]}–{years[-1]} first filings read "
+        f"의견거절 and the served rows 적정 — found "
+        f"{list(zip(ex['bsns_year'], ex['opinion_code_first'], ex['opinion_code_served']))}")
+    return (f"{len(first):,} rows: {got[0]:,} amended, {got[1]:,} served from a later "
+            f"filing; {got[2]} qualified-then-적정, {got[3]} the reverse; {got[4]} "
+            f"unreadable, {got[5]} with no original listed"), len(first)
 
 
 # ---- README § dart_corp_actions -----------------------------------------------
@@ -170,6 +221,7 @@ def test_corp_code_cache_records_its_misses():
 CHECKS = [
     test_audit_opinions_start_at_2015,
     test_audit_rows_are_what_dart_serves_at_harvest,
+    test_first_filings_match_the_opinions_row_for_row,
     test_corp_actions_split_genuine_from_entity,
     test_corp_code_cache_records_its_misses,
 ]

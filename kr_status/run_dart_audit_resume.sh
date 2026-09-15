@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Resumable dart_audit harvester. Run daily until it exits 0.
+# Resumable dart_audit harvester, then the first-filing pass over its rows.
+# Run daily until it exits 0.
 # Exits 0 on success, non-zero when DART quota tripped (status 020/021) — that
 # is the normal end-of-day exit; rerun tomorrow and it picks up from cache.
 #
 # Output: kr_status/data/dart_audit_opinions.parquet  (also the resume cache)
+#         kr_status/data/dart_audit_first_filings.parquet
 # Log:    kr_status/runtime/_log_audit.txt
 #
 # Runs from the repo root it sits under, with the interpreter on PATH (activate
@@ -20,8 +22,8 @@ if [ -f .env ]; then
 fi
 mkdir -p kr_status/runtime
 {
-  echo "[$(date -Iseconds)] dart_audit (resume)"
-  python -m kr_status.dart_audit
+  echo "[$(date -Iseconds)] dart_audit + dart_audit_first (resume)"
+  python -m kr_status.dart_audit && python -m kr_status.dart_audit_first
   rc=$?
   echo "[$(date -Iseconds)] exit=$rc"
   exit "$rc"

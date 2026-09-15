@@ -1,11 +1,11 @@
 {
   "test_audit_opinions_start_at_2015": {
     "bound": "monotone",
-    "n": 22958
+    "n": 25608
   },
   "test_audit_rows_are_what_dart_serves_at_harvest": {
     "bound": "monotone",
-    "n": 22958
+    "n": 25608
   },
   "test_corp_actions_split_genuine_from_entity": {
     "bound": "monotone",
@@ -13,6 +13,10 @@
   },
   "test_corp_code_cache_records_its_misses": {
     "bound": "monotone",
-    "n": 4340
+    "n": 4354
+  },
+  "test_first_filings_match_the_opinions_row_for_row": {
+    "bound": "monotone",
+    "n": 25608
   }
 }

@@ -49,7 +49,8 @@ marcap parquets ─────────────────────�
                 ├──┤                                              delisted_loader.load_delisted(t)
 KIND scrape ────┤  │
                 │  └─► kr_status/  ─► data/dart_audit_opinions.parquet
-DART API ───────┘                     data/dart_corp_action_events.parquet
+DART API ───────┘                     data/dart_audit_first_filings.parquet
+                                      data/dart_corp_action_events.parquet
 
 opendart 일괄파일 ──► dart_bulk/ ─────────────────►   dart_bulk.latest_vintages(...)
   (전 상장사 재무제표)                                 dart_bulk.open_zip / sheets
