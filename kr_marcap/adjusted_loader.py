@@ -19,8 +19,8 @@ at once rather than per ticker: each SEIBro cash event is reinvested on its
 multiply, and the result is normalised to 1 on the ticker's last row exactly as
 the per-ticker loader does. The two agree to 3.6e-15 on the shared panel; the
 vectorised form exists because the per-ticker path is a Python loop over ~3,900
-tickers. Any change to the reinvestment rule must land in both (repo CLAUDE.md
-§5, atomic propagation).
+tickers. Any change to the reinvestment rule must land in both (repo CLAUDE.md,
+Commit discipline, atomic propagation).
 
 This is the *reconstruction*, not the research input. Panels for research read
 FnGuide's series via ``fnguide_data.price_loader.load_price_panel``; how close

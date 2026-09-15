@@ -27,7 +27,7 @@ published anywhere this account can reach. So this script detects and reports; i
 never synthesises a factor. ``adjusted_loader.py`` marks the history behind each
 detection ``is_valid = False`` rather than guessing a step for it.
 
-Parameters (see CLAUDE.md §6.1):
+Parameters (see CLAUDE.md, Premises):
   MEASURED  none — no parameter here is fitted to a target.
   CHOSEN    ``_MIN_SHARE_DROP`` 5 % — a materiality floor, so ordinary buyback
             cancellations and rounding in the share count do not register.
