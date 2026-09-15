@@ -27,6 +27,19 @@ opinion_code, receipt_dt, raw)`. DART's structured endpoint is populated for
 `bsns_year ≥ 2015` only; earlier opinions live inside free-text 외부감사보고서
 filings, which this collector does not parse.
 
+The cache holds bsns_year 2015–2024. Each row is what the endpoint served for
+that (ticker, year) at harvest time, and two things follow:
+
+- **`receipt_dt` is not always the first filing's.** 702 rows (3.1 %) are
+  stamped more than a year after the 31 March filing deadline, and 015540's
+  rows for FY2019–2022 all carry receipt dates in 2023: the endpoint appears to
+  serve each report as last amended (정정), with that version's opinion in
+  `raw`. Such a row is not what the market read when the report first came out.
+- **`opinion_code` is the classifier's label, not a closed set.** 1,688 rows
+  carry a label other than 적정 / 한정 / 부적정 / 의견거절: 1,185 have no
+  opinion text, and 22 are disclaimers the keyword match misses (`거절`,
+  `의견 거절` and misspellings). Classify from `raw` where the label matters.
+
 ### `dart_corp_actions.py` — corporate-action ground truth
 
 `dart_corp_actions` harvests DART 주요사항보고서 events that move a share count
@@ -43,8 +56,8 @@ Reached through `OpenDartReader.dart_event.event`, one call per (ticker,
 event). Preferred shares have no `corp_code` of their own and resolve to the
 parent common (`code[:5] + '0'`); 액면분할/병합 are absent from the event API and
 are deliberately omitted, since a 액면 change always moves the price inversely
-and is never misread as a break. DART's structured coverage is reliable from
-~2015; earlier events are sparse and fall to the manual-override path.
+and is never misread as a break. DART's event API serves nothing filed before
+2015; the earliest receipt here is 2015-01-07.
 
 ```bash
 set -a; . .env; set +a
@@ -72,7 +85,7 @@ fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
 | Source | URL | Notes |
 |---|---|---|
 | DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it via `requests.get` directly |
-| DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Reliable from ~2015 |
+| DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Nothing filed before 2015 |
 
 DART rate cap: ~10,000 req/day per API key; `run_dart_audit_resume.sh` runs one
 day's batch and logs to `runtime/`. `dart_audit` for ~4,300 tickers

@@ -47,6 +47,18 @@ CORP_ACTION_COLUMNS = ["ticker", "parent", "corp_code", "event", "category",
 GENUINE_EVENTS = {"유상증자", "무상증자", "유무상증자", "감자"}
 ENTITY_EVENTS = {"회사합병", "회사분할", "회사분할합병", "주식교환"}
 
+# README § dart_audit: the span the cache holds, and the two consequences of
+# reading the endpoint at harvest time. A row is "stamped late" when its receipt
+# falls more than a year after 31 March of bsns_year + 1, the filing deadline.
+LAST_YEAR = 2024
+STAMPED_LATE = 702
+AMENDED_EXAMPLE = ("015540", range(2019, 2023), 2023)
+FOUR_OPINIONS = {"적정", "한정", "부적정", "의견거절"}
+UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS = 1688, 1185, 22
+
+# README § dart_corp_actions: the first receipt DART's event API served.
+FIRST_EVENT = pd.Timestamp("2015-01-07")
+
 
 # ---- README § dart_audit ------------------------------------------------------
 
@@ -61,8 +73,41 @@ def test_audit_opinions_start_at_2015():
         f"README § dart_audit: DART's structured audit-opinion endpoint is populated "
         f"for bsns_year ≥ {MIN_YEAR} only — the cache starts at "
         f"{opinions['bsns_year'].min()}")
+    assert int(opinions["bsns_year"].max()) == LAST_YEAR, (
+        f"README § dart_audit: 'The cache holds bsns_year {MIN_YEAR}–{LAST_YEAR}' — "
+        f"it runs to {opinions['bsns_year'].max()}")
     return (f"{len(opinions):,} opinions on bsns_year {MIN_YEAR}–"
             f"{int(opinions['bsns_year'].max())}"), len(opinions)
+
+
+def test_audit_rows_are_what_dart_serves_at_harvest():
+    if not OPINIONS_PATH.exists():
+        raise Skipped(f"{OPINIONS_PATH.name} not harvested")
+    op = pd.read_parquet(OPINIONS_PATH)
+    deadline = pd.to_datetime((op["bsns_year"] + 1).astype(str) + "-03-31")
+    late = int((op["receipt_dt"] > deadline + pd.DateOffset(years=1)).sum())
+    assert late == STAMPED_LATE, (
+        f"README § dart_audit: '{STAMPED_LATE} rows (3.1 %) are stamped more than a "
+        f"year after the 31 March filing deadline' — {late} are")
+    ticker, years, stamp = AMENDED_EXAMPLE
+    ex = op[(op["ticker"] == ticker) & op["bsns_year"].isin(years)]
+    assert len(ex) == len(years) and (ex["receipt_dt"].dt.year == stamp).all(), (
+        f"README § dart_audit: '{ticker}'s rows for FY{years[0]}–{years[-1]} all carry "
+        f"receipt dates in {stamp}' — found "
+        f"{sorted(zip(ex['bsns_year'], ex['receipt_dt'].dt.date))}")
+    text = op["raw"].fillna("").astype(str)
+    outside = ~op["opinion_code"].isin(FOUR_OPINIONS)
+    no_text = text.str.strip().isin(["", "nan"])
+    missed = outside & ~no_text & text.str.replace(r"\s+", "", regex=True).str.contains("거절")
+    got = (int(outside.sum()), int(no_text.sum()), int(missed.sum()))
+    assert got == (UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS), (
+        f"README § dart_audit: '{UNLABELLED:,} rows carry a label other than 적정 / 한정 "
+        f"/ 부적정 / 의견거절: {NO_TEXT:,} have no opinion text, and "
+        f"{MISSED_DISCLAIMERS} are disclaimers the keyword match misses' — "
+        f"(other label, no text, missed disclaimer) is {got}")
+    return (f"{late} of {len(op):,} rows stamped more than a year past the deadline; "
+            f"{got[0]:,} outside the four labels, {got[1]:,} of them without text and "
+            f"{got[2]} missed disclaimers"), len(op)
 
 
 # ---- README § dart_corp_actions -----------------------------------------------
@@ -91,8 +136,14 @@ def test_corp_actions_split_genuine_from_entity():
         "common (code[:5] + '0')")
     assert (ca.loc[~pref, "parent"] == ca.loc[~pref, "ticker"]).all(), (
         "README § dart_corp_actions: a common is its own parent")
+    first = pd.to_datetime(ca.loc[ca["category"] != "none", "rcept_dt"]).min()
+    assert first == FIRST_EVENT, (
+        f"README § dart_corp_actions: 'DART's event API serves nothing filed before "
+        f"2015; the earliest receipt here is {FIRST_EVENT.date()}' — the earliest is "
+        f"{first.date()}")
     return (f"{len(ca):,} rows split {want.value_counts().to_dict()}; "
-            f"{int(pref.sum())} preferred rows resolve to their parent common"), len(ca)
+            f"{int(pref.sum())} preferred rows resolve to their parent common; first "
+            f"receipt {first.date()}"), len(ca)
 
 
 # ---- README § Shared utility ------------------------------------------------
@@ -118,6 +169,7 @@ def test_corp_code_cache_records_its_misses():
 
 CHECKS = [
     test_audit_opinions_start_at_2015,
+    test_audit_rows_are_what_dart_serves_at_harvest,
     test_corp_actions_split_genuine_from_entity,
     test_corp_code_cache_records_its_misses,
 ]

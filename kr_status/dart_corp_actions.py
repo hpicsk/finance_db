@@ -1,9 +1,8 @@
 """DART harvest of corporate-action events → ground truth for price adjustment.
 
-This replaces the *calibrated* entity-vs-genuine classification heuristics in
-``kr_marcap/adjust.py`` (``_CORROBORATION_TOL``) with official DART filings.
-For every candidate ticker it pulls the 주요사항보고서 events that move the share
-count, split into two categories:
+It gives the price adjustment in ``kr_marcap`` official DART filings to classify
+a share-count jump by: for every candidate ticker it pulls the 주요사항보고서
+events that move the share count, split into two categories:
 
   GENUINE  (price-affecting corporate action — KRX ChangesRatio already adjusts
             it correctly, so the marcap share-count jump must NOT be read as an
@@ -20,9 +19,8 @@ Note on coverage:
   - Preferred shares (codes not ending in '0') have no own corp_code; they are
     resolved to their parent common share (``code[:5] + '0'``) — the issuer's
     events apply to every share class.
-  - DART structured coverage is reliable from ~2015; pre-2015 events are sparse,
-    so pre-2015 share jumps with no DART match fall to the manual-override path
-    (see ``kr_marcap/corp_actions.py``). The post-2015 research window is covered.
+  - DART's event API serves nothing filed before 2015, so a pre-2015 share
+    jump has no DART match.
 
 Output (``data/dart_corp_action_events.parquet``): one row per (ticker, event,
 filing), columns: ticker, parent, corp_code, event, category, rcept_dt, rcept_no.

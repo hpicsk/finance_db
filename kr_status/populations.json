@@ -3,6 +3,10 @@
     "bound": "monotone",
     "n": 22958
   },
+  "test_audit_rows_are_what_dart_serves_at_harvest": {
+    "bound": "monotone",
+    "n": 22958
+  },
   "test_corp_actions_split_genuine_from_entity": {
     "bound": "monotone",
     "n": 2769

@@ -20,8 +20,8 @@ if [ -f .env ]; then
 fi
 mkdir -p kr_status/runtime
 {
-  echo "[$(date -Iseconds)] dart_audit --year-from 2015 --year-to 2024 (resume)"
-  python -m kr_status.dart_audit --year-from 2015 --year-to 2024
+  echo "[$(date -Iseconds)] dart_audit (resume)"
+  python -m kr_status.dart_audit
   rc=$?
   echo "[$(date -Iseconds)] exit=$rc"
   exit "$rc"
