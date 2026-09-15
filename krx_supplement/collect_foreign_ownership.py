@@ -13,9 +13,11 @@ Output, partitioned by year and safe to re-run
     ``raw/foreign_ownership_daily/year=YYYY/{YYYYMMDD}_{MKT}.parquet``
 
     One file is one (date, market) snapshot of every issue. An existing file is
-    skipped, so an interrupted sweep resumes where it stopped. A non-trading day
-    is written as a zero-row parquet, which is what stops it being retried on
-    every later pass.
+    skipped, so an interrupted sweep resumes where it stopped. An empty answer is
+    read against marcap's session calendar: on a day the market was shut it is
+    written as a zero-row parquet, which stops it being retried on every later
+    pass; on a session, or past the calendar's last session, nothing is written
+    and the run lists it and exits non-zero.
 
 Columns
     ``ticker``, ``name``, ``shares_outstanding``, ``foreign_held``,
@@ -39,6 +41,7 @@ from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging
 logger = setup_logging()
 
 RAW_DIR = Path(__file__).parent / "raw" / "foreign_ownership_daily"
+MARCAP_DIR = Path(__file__).resolve().parents[1] / "marcap" / "data"
 DEFAULT_MARKETS = ("STK", "KSQ", "KNX")
 KONEX_START = pd.Timestamp("2013-07-01")
 DEFAULT_START = "20041001"
@@ -85,8 +88,24 @@ def _normalise(raw: pd.DataFrame, date: pd.Timestamp, market: str) -> pd.DataFra
     return df[list(_EMPTY_SCHEMA.columns)]
 
 
+def _sessions() -> set[pd.Timestamp]:
+    """Every KRX session the marcap clone carries, at day resolution."""
+    sessions: set[pd.Timestamp] = set()
+    for fp in sorted(MARCAP_DIR.glob("marcap-*.parquet")):
+        d = pd.to_datetime(pd.read_parquet(fp, columns=["Date"])["Date"])
+        sessions |= set(d.dt.normalize().unique())
+    if not sessions:
+        raise FileNotFoundError(f"no marcap-*.parquet under {MARCAP_DIR}; its session "
+                                f"calendar is what tells a holiday from a failed answer")
+    return sessions
+
+
 def _fetch(date: pd.Timestamp, market: str) -> pd.DataFrame | None:
-    """Returns normalised frame, or None if the day was non-trading / empty."""
+    """Returns normalised frame, or None when KRX answered no rows.
+
+    pykrx raises KeyError both on a holiday's empty answer and when the response
+    schema moved, so None does not say which; the caller reads the session
+    calendar to decide."""
     dd = date.strftime("%Y%m%d")
     try:
         raw = 외국인보유량_전종목().fetch(trdDd=dd, mktId=market, isuLmtRto=0)
@@ -103,6 +122,9 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     n_written = n_empty = n_skipped = 0
     failed: list[tuple[str, str]] = []
+    empty_on_session: list[tuple[str, str]] = []
+    unclassified: list[tuple[str, str]] = []
+    sessions: set[pd.Timestamp] | None = None     # read on the first empty answer
     for i, date in enumerate(dates):
         for market in markets:
             if market == "KNX" and date < KONEX_START:
@@ -127,8 +149,16 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
                     failed.append((str(date.date()), market))
                     continue
             if df is None:
-                _EMPTY_SCHEMA.to_parquet(out, index=False)
-                n_empty += 1
+                if sessions is None:
+                    sessions = _sessions()
+                key = (str(date.date()), market)
+                if date > max(sessions):
+                    unclassified.append(key)          # the calendar cannot say
+                elif date in sessions:
+                    empty_on_session.append(key)      # open market, no rows: not a holiday
+                else:
+                    _EMPTY_SCHEMA.to_parquet(out, index=False)
+                    n_empty += 1
             else:
                 df.to_parquet(out, index=False)
                 n_written += 1
@@ -137,9 +167,13 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
             logger.info("progress: %s  written=%d empty=%d skipped=%d",
                         date.date(), n_written, n_empty, n_skipped)
     logger.info("done. written=%d empty=%d skipped=%d", n_written, n_empty, n_skipped)
-    if failed:
-        raise RuntimeError(f"{len(failed)} (date, market) fetches failed twice and were "
-                           f"left out; rerun to fetch them: {failed}")
+    if failed or empty_on_session or unclassified:
+        raise RuntimeError(
+            f"left out, rerun to fetch again: {len(failed)} (date, market) fetches failed "
+            f"twice {failed}; {len(empty_on_session)} answered empty on a KRX session, "
+            f"so the response schema may have moved {empty_on_session}; "
+            f"{len(unclassified)} answered empty after the marcap calendar ends — "
+            f"refresh marcap/ to classify them {unclassified}")
     return n_written, n_empty, n_skipped
 
 

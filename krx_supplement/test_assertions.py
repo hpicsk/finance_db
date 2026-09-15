@@ -81,15 +81,14 @@ def _marcap_sessions() -> set[pd.Timestamp]:
     return sessions
 
 
-# ---- Sector panel: a failed fetch is absent from it, not raised -------------
+# ---- Sector panel: every session is in it, in both markets -----------------
 def test_sector_panel_covers_every_session():
-    """`fetch_sector_snapshot` catches `Exception` per (date, market), logs a
-    warning and moves on, so a fetch that failed leaves that cell out of
-    sector_mapping.parquet rather than stopping the run (limitation 6). Nothing
-    downstream can tell that absence from "the exchange listed nothing that
-    day", and the log is long gone by the time anyone reads the panel. The
-    absence itself is checkable: every session the calendar carries inside the
-    panel's span appears in it, in both markets.
+    """`collect_sector` leaves a date out whole when either market's fetch
+    fails, and exits non-zero listing it (README, "A failed fetch is left out,
+    listed, and fails the run"). A listed date nobody re-fetched is still
+    missing, and nothing downstream can tell that absence from "the exchange
+    listed nothing that day". The absence itself is checkable: every session
+    the calendar carries inside the panel's span appears in it, in both markets.
     """
     fp = REPO / "krx_supplement/data/sector_mapping.parquet"
     df = pd.read_parquet(fp, columns=["date", "market"])
@@ -119,12 +118,14 @@ def test_sector_panel_covers_every_session():
 
 # ---- Foreign-ownership dailies: an empty file is the failure and the record --
 def test_foreign_ownership_empty_files_fall_on_non_sessions():
-    """`_fetch` maps `KeyError` to `None`, which is right when KRX returns an
-    empty `output` array on a holiday and wrong when the response schema moved,
-    and `None` writes an `_EMPTY_SCHEMA` parquet either way (limitation 6). That
-    file is a real artifact, so the `out.exists()` resume check skips the date on
-    every later run and the gap never refills. An empty file therefore has to
-    fall on a day the market was shut.
+    """pykrx raises the same `KeyError` on a holiday's empty answer and on a
+    moved response schema, so `collect_foreign_ownership` writes an empty file
+    only on a day marcap's calendar says the market was shut (README, "A failed
+    fetch is left out, listed, and fails the run"). An empty file on a session
+    would be a schema change written as a holiday — files written before the
+    collector read the calendar could be one — and the `out.exists()` resume
+    check would skip it forever. Every empty file has to fall on a day the
+    market was shut.
     """
     base = REPO / "krx_supplement/raw/foreign_ownership_daily"
     sessions = _marcap_sessions()

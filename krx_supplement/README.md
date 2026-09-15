@@ -363,12 +363,11 @@ r = requests.get(
    out the whole date when either market failed — and the collector lists every
    failure when it finishes and exits non-zero. A resumed run fetches them again.
 
-   One gap still does not raise. `collect_foreign_ownership`'s `_fetch` maps
-   `KeyError` to `None`, folding *a non-trading day* and *a changed response
-   schema* into one value, and `None` writes an `_EMPTY_SCHEMA` parquet. The
-   resume check (`out.exists()`) then skips that file forever, so a span
-   collected while the schema differed stays empty no matter how often the
-   collector is re-run. Delete those files to re-fetch them.
+   `collect_foreign_ownership` also reads an empty answer against marcap's
+   session calendar, because pykrx raises the same `KeyError` on a holiday and
+   on a changed response schema. It writes a zero-row file only on a day the
+   market was shut; an empty answer on a session, or past the calendar's last
+   session, is left out and listed with the failures.
 
    The gaps are also checkable, and three assertions read for them:
    `test_kospi200_panel_inwindow_complete` bounds daily
