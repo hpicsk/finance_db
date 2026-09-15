@@ -12,7 +12,8 @@ amended. This collector finds each report's first filing and its opinion:
   3. For an amended report, ``document.xml`` fetches the first filing, and the
      opinion is read from its opinion table — the cells DART tags ``OPN_CMTk``,
      the ones the structured endpoint reports, or in older untagged forms the
-     table whose header names 사업연도 and 감사의견 — on the current-period row.
+     table whose header names 사업연도 and 감사의견 (where none does, 감사(검토)의견
+     or 사업년도) — on the current-period row.
 
 Output (``data/dart_audit_first_filings.parquet``): one row per (ticker,
 bsns_year) of ``data/dart_audit_opinions.parquet`` — ticker, bsns_year,
@@ -126,7 +127,10 @@ def _current(rows: list[tuple[str, str]]) -> str:
 def opinion_from_document(text: str) -> str | None:
     """The current-period 감사의견 in a 사업보고서's main document, or None when it
     has no opinion table. Tagged cells are read first; an untagged table is the
-    first with a header row whose cells are 사업연도 and 감사의견…."""
+    first with a header row whose cells are 사업연도 and 감사의견…, and where no
+    table has one, 감사(또는 검토)의견, 감사(검토)의견 or 감사 및 검토 의견 — a
+    header that can also stand over a review conclusion — with 사업연도 in its
+    older spelling 사업년도."""
     tagged: dict[int, list[str | None]] = {}
     for _, kind, k, body in _TAG_RE.findall(text):
         row = tagged.setdefault(int(k), ["", None])
@@ -137,20 +141,25 @@ def opinion_from_document(text: str) -> str | None:
     rows = [(label, opinion) for _, (label, opinion) in sorted(tagged.items()) if opinion is not None]
     if rows:
         return _current(rows)
-    for table in re.findall(r"<TABLE\b.*?</TABLE>", text, re.S):
-        trs = [[_clean(c) for _, c in _CELL_ANY_RE.findall(tr)]
-               for tr in re.findall(r"<TR\b.*?</TR>", table, re.S)]
-        # A header cell is the label itself; a listing-requirements table also has a
-        # row mentioning "최근 사업연도 감사의견 적정", which is not a header.
-        norm = [[re.sub(r"\s+", "", c) for c in r] for r in trs]
-        head = next((i for i, r in enumerate(norm)
-                     if "사업연도" in r and any(c.startswith("감사의견") for c in r)), None)
-        if head is None:
-            continue
-        col = next(j for j, c in enumerate(norm[head]) if c.startswith("감사의견"))
-        rows = [(r[0], r[col]) for r in trs[head + 1:] if len(r) > col and r[0]]
-        if rows:
-            return _current(rows)
+    tables = re.findall(r"<TABLE\b.*?</TABLE>", text, re.S)
+    for loose in (False, True):
+        for table in tables:
+            trs = [[_clean(c) for _, c in _CELL_ANY_RE.findall(tr)]
+                   for tr in re.findall(r"<TR\b.*?</TR>", table, re.S)]
+            # A header cell is the label itself; a listing-requirements table also has
+            # a row mentioning "최근 사업연도 감사의견 적정", which is not a header.
+            norm = [[re.sub(r"\s+", "", c) for c in r] for r in trs]
+            if loose:
+                norm = [[re.sub(r"\(.*?\)|및검토", "", c).replace("사업년도", "사업연도")
+                         for c in r] for r in norm]
+            head = next((i for i, r in enumerate(norm)
+                         if "사업연도" in r and any(c.startswith("감사의견") for c in r)), None)
+            if head is None:
+                continue
+            col = next(j for j, c in enumerate(norm[head]) if c.startswith("감사의견"))
+            rows = [(r[0], r[col]) for r in trs[head + 1:] if len(r) > col and r[0]]
+            if rows:
+                return _current(rows)
     return None
 
 

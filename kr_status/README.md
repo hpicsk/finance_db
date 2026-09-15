@@ -71,10 +71,13 @@ else the highest 제N기, since some filers list the oldest year first. The
 table's cells are tagged `OPN_CMTk` (`OPN_CMTk_A`, the 감사보고서 row, in the
 form used since the FY2024 reports); older forms leave them untagged, and the
 collector then takes the first table whose header cells are 사업연도 and
-감사의견. On 105 never-amended filings sampled across 2015–2025 on 2026-09-15,
-the tagged cell matched the structured endpoint's opinion every time. The
-untagged forms are mostly reports the structured endpoint could not read
-either, so few have an endpoint opinion to compare with.
+감사의견. Where no table has them, it accepts 감사(또는 검토)의견, 감사(검토)의견
+or 감사 및 검토 의견 — headers that can also stand over a review conclusion, so
+the exact 감사의견 wins — and the older spelling 사업년도. On 105 never-amended
+filings sampled across 2015–2025 on 2026-09-15, the tagged cell matched the
+structured endpoint's opinion every time. The untagged forms are mostly reports
+the structured endpoint could not read either, so few have an endpoint opinion
+to compare with.
 
 Use this table, not the opinions cache, for what the market read and when:
 
@@ -83,9 +86,9 @@ Use this table, not the opinions cache, for what the market read and when:
   filing's: the endpoint served the correction.
 - 120 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
   served — 015540's FY2020–2022 among them — and 13 go the other way.
-- Of the 921 never-amended rows the endpoint gave no opinion text for, 764
+- Of the 921 never-amended rows the endpoint gave no opinion text for, 809
   read one of 적정 / 한정 / 부적정 / 의견거절 in the document.
-- 92 rows' first filings — 31 amended, 61 never amended — have no opinion
+- 31 rows' first filings — 16 amended, 15 never amended — have no opinion
   table the collector reads, so their `opinion_code` is empty. Every row found
   its first filing in `list.json`.
 

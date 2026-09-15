@@ -67,8 +67,8 @@ FIRST_COLUMNS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code"
                  "n_amendments"]
 QUALIFIED = {"한정", "부적정", "의견거절"}
 AMENDED, SERVED_LATER, HIDDEN, REVEALED, NO_ORIGINAL = 6060, 5468, 120, 13, 0
-UNREAD = (31, 61)            # first filings with no readable opinion table: (amended, never amended)
-ENDPOINT_BLANK = (921, 764)  # never-amended rows the endpoint gave no text for, and those read to a label
+UNREAD = (16, 15)            # first filings with no readable opinion table: (amended, never amended)
+ENDPOINT_BLANK = (921, 809)  # never-amended rows the endpoint gave no text for, and those read to a label
 HIDDEN_EXAMPLE = ("015540", range(2020, 2023))
 
 
