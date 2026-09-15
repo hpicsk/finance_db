@@ -36,7 +36,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import requests
 
-from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging
+from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging
 
 logger = setup_logging()
 
@@ -166,7 +166,7 @@ def collect_index_changes(
     out["date"] = pd.to_datetime(out["date"], errors="coerce")
     out = out.sort_values(["index", "date", "action", "ticker"]).reset_index(drop=True)
 
-    save_with_csv(out, output_path)
+    out.to_parquet(output_path, index=False)
     logger.info("Saved: %s  (%d rows)", output_path, len(out))
     return out
 

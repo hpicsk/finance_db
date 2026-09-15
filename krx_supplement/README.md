@@ -23,18 +23,18 @@ an anonymous request returns `LOGOUT (400)`.
 
 1. Open [https://data.krx.co.kr](https://data.krx.co.kr) and register — 회원가입,
    top right. The account is free.
-2. Put the credentials in the environment:
+2. Put the credentials in the repo-root `.env` (gitignored), next to
+   `OPEN_DART_API_KEY`, and export them from the repo root before a run:
 
 ```bash
-# in ~/.bashrc or ~/.zshrc
-export KRX_ID="your_krx_id"
-export KRX_PW="your_krx_password"
+# .env — single quotes, because the shell sources this file
+KRX_ID='your_krx_id'
+KRX_PW='your_krx_password'
 ```
 
-or inline, per run:
-
 ```bash
-KRX_ID="id" KRX_PW="pw" python -m krx_supplement.collect_sector --start 20240101 --end 20260320
+set -a; . .env; set +a
+python -m krx_supplement.collect_sector --start 20240101 --end 20260320
 ```
 
 ---
@@ -108,9 +108,9 @@ the exact date a change took effect. `RECONSTRUCT.md` carries the algorithm.
 ```
 data/                                       # tracked
 ├── sector_mapping.parquet                  # sector mapping (business-daily snapshots)
-├── index_members.parquet / .csv            # index membership (monthly snapshots)
-├── index_changes.parquet / .csv            # index entry/exit event log
-├── index_membership_intervals.parquet/.csv # per-ticker membership spells
+├── index_members.parquet                   # index membership (monthly snapshots)
+├── index_changes.parquet                   # index entry/exit event log
+├── index_membership_intervals.parquet      # per-ticker membership spells
 ├── index_panel_daily.parquet               # the reconstructed business-daily panel
 ├── index_reconstruction_sanity.csv         # reconstruction agreement report (audit)
 └── index_reconstruction_synthetic.csv      # the injected events (audit)
@@ -121,8 +121,8 @@ raw/                                        # gitignored
 
 > `raw/foreign_ownership_daily/` is gitignored for its size (613 MB across 14.6k
 > files) and is rebuilt by `collect_foreign_ownership.py`. Every file under
-> `data/` is tracked. `sector_mapping` is written as parquet only: the
-> business-daily snapshot's csv mirror is a 584 MB duplicate that nothing reads.
+> `data/` is tracked. Every table is parquet; the two CSV files are the
+> reconstruction's reports.
 
 > **Cadence per file:**
 > - `sector_mapping.parquet` — **business-daily snapshots** (`--freq daily`;
@@ -394,15 +394,14 @@ krx_supplement/
 ├── collect_foreign_ownership.py  foreign ownership (daily all-issue snapshots)
 ├── reconstruct_index_panel.py    month-end snapshots + event log -> daily panel
 ├── krx_utils.py                  scaffolding the scripts share (logging /
-│                                 business-day lists / parquet+csv writing /
-│                                 the default request delay)
+│                                 business-day lists / the default request delay)
 ├── test_assertions.py            executable checks behind this file's claims
 ├── populations.json              the population size each check last read
 ├── data/                         collected tables (tracked)
 │   ├── sector_mapping.parquet
-│   ├── index_members.parquet / .csv
-│   ├── index_changes.parquet / .csv
-│   ├── index_membership_intervals.parquet / .csv
+│   ├── index_members.parquet
+│   ├── index_changes.parquet
+│   ├── index_membership_intervals.parquet
 │   ├── index_panel_daily.parquet
 │   ├── index_reconstruction_sanity.csv
 │   └── index_reconstruction_synthetic.csv

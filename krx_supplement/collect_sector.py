@@ -132,10 +132,6 @@ def collect_sector_mapping(
     result = pd.concat(frames, ignore_index=True)
     result["date"] = pd.to_datetime(result["date"].astype(str), format="%Y%m%d", errors="coerce")
     result = result.sort_values(["date","market","ticker"]).reset_index(drop=True)
-    # parquet only, without the csv mirror `save_with_csv` writes: a
-    # business-daily sweep is ~12 million rows, so the mirror is a 584 MB
-    # duplicate that nothing reads. The index_* collectors keep the mirror
-    # because their output is small and the csv is tracked.
     result.to_parquet(output_path, index=False)
     logger.info("written: %s  (%d rows)", output_path, len(result))
     return result

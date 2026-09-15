@@ -34,7 +34,7 @@ from typing import Dict, Tuple
 
 import pandas as pd
 
-from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, setup_logging, trading_dates
+from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging, trading_dates
 
 logger = setup_logging()
 
@@ -155,7 +155,7 @@ def collect_index_members(
                                     format="%Y%m%d", errors="coerce")
     result = result.sort_values(["index","date","ticker"]).reset_index(drop=True)
 
-    save_with_csv(result, output_path)
+    result.to_parquet(output_path, index=False)
     logger.info("written: %s  (%d rows)", output_path, len(result))
     return result
 

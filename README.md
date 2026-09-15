@@ -129,7 +129,7 @@ describes.
 - FinMind's per-stock trees under `finmind_data/trees/` (~1.6 GB) and its
   dated raw vintages under `finmind_data/raw/`.
 - Backup zips (`*.zip`), `*.bak` files, `__pycache__/`, `nohup.*`, `*.log`.
-- Credentials: `.token`, `krx_id`, `*.key`, `.env`.
+- Credentials: `.env` (the DART key and the KRX login) and `finmind_data/.token`.
 
 To rebuild the data trees from scratch: re-export FnGuide xlsx via
 DataGuide (subscription needed, "all codes" filter); pull marcap parquets from

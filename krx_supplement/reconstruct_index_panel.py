@@ -91,7 +91,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from krx_supplement.krx_utils import save_with_csv, setup_logging
+from krx_supplement.krx_utils import setup_logging
 
 log = setup_logging()
 
@@ -368,7 +368,7 @@ def main():
     sn_df = pd.concat(all_sn, ignore_index=True) if all_sn else pd.DataFrame()
 
     out_iv = DATA_DIR / "index_membership_intervals.parquet"
-    save_with_csv(iv_df, out_iv)
+    iv_df.to_parquet(out_iv, index=False)
     log.info("Saved: %s  (%d intervals)", out_iv, len(iv_df))
 
     out_sn = DATA_DIR / "index_reconstruction_sanity.csv"
