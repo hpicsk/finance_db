@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 from kr_status.corp_code_map import open_dart, get_corp_code, flush_cache, flush_misses
 
@@ -65,25 +66,38 @@ def _pick(df, item):
     return (com if not com.empty else sub).iloc[0]
 
 
-def yields_for(dart, corp, sleep_s=0.03):
-    """Return {fiscal_year: (yield_pct, dps)} for one DART corp_code/ticker.
+def _alot_matter(api_key: str, corp_code: str, year: int) -> pd.DataFrame:
+    """DART's 배당에 관한 사항 (alotMatter) of one 사업보고서; empty when DART has
+    none (status 013). Any other status raises, and so does a success missing the
+    columns read below: OpenDartReader's `report` returns an empty frame on every
+    error status, which read a quota stop as a company that paid nothing."""
+    r = requests.get("https://opendart.fss.or.kr/api/alotMatter.json", params={
+        "crtfc_key": api_key, "corp_code": corp_code, "bsns_year": str(year),
+        "reprt_code": "11011"}, timeout=30)
+    r.raise_for_status()
+    j = r.json()
+    status = str(j.get("status"))
+    if status == "013":
+        return pd.DataFrame()
+    if status != "000":
+        raise RuntimeError(f"DART status={status} msg={j.get('message')} ({corp_code} {year})")
+    df = pd.DataFrame(j.get("list", []))
+    missing = {"se", "stock_knd", "thstrm", "frmtrm", "lwfr"} - set(df.columns)
+    if len(df) and missing:
+        raise RuntimeError(f"alotMatter answered without {sorted(missing)} ({corp_code} {year})")
+    return df
+
+
+def yields_for(dart, corp_code, sleep_s=0.03):
+    """Return {fiscal_year: (yield_pct, dps)} for one DART corp_code.
 
     A year seen in the report whose own fiscal year == that year (the `thstrm`
     column) is preferred over the same year read as a prior-year column.
-
-    A DART request that fails is swallowed and that report window is skipped,
-    so a network failure and a company that filed nothing look identical here.
-    Tolerable only because this module is a cross-check on
-    ``dividend_events.py`` rather than a total-return input: a swallowed year
-    weakens the reconciliation rate, it does not enter a price series.
     """
     out = {}  # year -> (yield_pct, dps, is_thstrm)
     for ry in REPORT_WINDOWS:
-        try:
-            df = dart.report(corp, '배당', ry)
-        except Exception:
-            df = None
-        if not isinstance(df, pd.DataFrame) or len(df) == 0 or 'se' not in df.columns:
+        df = _alot_matter(dart.api_key, corp_code, ry)
+        if len(df) == 0:
             continue
         yrow = _pick(df, '현금배당수익률(%)')
         drow = _pick(df, '주당 현금배당금(원)')
@@ -120,12 +134,13 @@ def build_dividends(restart: bool = False, limit: int | None = None) -> pd.DataF
     if limit:
         uni = uni.head(limit)
 
-    # Canary: a known payer must return a recent dividend, else key/quota is bad.
-    canary = yields_for(dart, '005930')          # Samsung Electronics
+    # Canary: a known payer must parse to a recent dividend, else the 배당 item
+    # labels _pick reads have changed (a bad key or a quota stop raises by itself).
+    canary = yields_for(dart, get_corp_code(dart, '005930'))   # Samsung Electronics
     if not any(v[0] for v in canary.values()):
         raise RuntimeError(
-            'DART canary failed (Samsung 005930 returned no dividend) — '
-            'check OPEN_DART_API_KEY / daily quota'
+            'DART canary failed (Samsung 005930 parsed no dividend) — '
+            'check the 배당 report\'s item labels'
         )
 
     existing = pd.DataFrame()
@@ -141,25 +156,40 @@ def build_dividends(restart: bool = False, limit: int | None = None) -> pd.DataF
 
     rows = []
     n_hit = 0
-    for i, r in todo.iterrows():
-        y = yields_for(dart, get_corp_code(dart, r['code'], r['name']) or r['code'])
-        if any(v[0] for v in y.values()):
-            n_hit += 1
-        for fy, (yv, dv) in y.items():
-            rows.append((r['code'], fy, yv, dv))
-        if (i + 1) % CHECKPOINT == 0 or (i + 1) == len(todo):
-            part = pd.DataFrame(rows, columns=['code', 'fiscal_year', 'yield_pct', 'dps'])
-            pd.concat([existing, part], ignore_index=True).to_parquet(DIVIDENDS_PATH, index=False)
-            flush_cache()
-            flush_misses()
-            print(f'  {i+1}/{len(todo)} crawled, {n_hit} payers, '
-                  f'{len(rows)} stock-years', file=sys.stderr, flush=True)
+    unresolved: list[str] = []
 
-    # Guard against silent mid-run quota exhaustion (every ticker returning empty).
+    def checkpoint():
+        part = pd.DataFrame(rows, columns=['code', 'fiscal_year', 'yield_pct', 'dps'])
+        pd.concat([existing, part], ignore_index=True).to_parquet(DIVIDENDS_PATH, index=False)
+        flush_cache()
+        flush_misses()
+
+    try:
+        for i, r in todo.iterrows():
+            cc = get_corp_code(dart, r['code'], r['name'])
+            if not cc:
+                unresolved.append(r['code'])
+                continue
+            y = yields_for(dart, cc)
+            if any(v[0] for v in y.values()):
+                n_hit += 1
+            for fy, (yv, dv) in y.items():
+                rows.append((r['code'], fy, yv, dv))
+            if (i + 1) % CHECKPOINT == 0:
+                checkpoint()
+                print(f'  {i+1}/{len(todo)} crawled, {n_hit} payers, '
+                      f'{len(rows)} stock-years', file=sys.stderr, flush=True)
+    finally:            # a DART error stops the crawl; what it fetched is kept
+        checkpoint()
+    if unresolved:
+        print(f'{len(unresolved)} tickers have no corp_code in DART\'s directory and '
+              f'were not crawled: {unresolved}', file=sys.stderr, flush=True)
+
+    # Guard against a parse that stopped finding payers (relabelled items) midway.
     if len(todo) > 50 and n_hit / len(todo) < 0.10:
         raise RuntimeError(
             f'implausibly low dividend hit-rate ({n_hit}/{len(todo)}) — '
-            'likely DART quota exhausted mid-run; re-run to resume from checkpoint'
+            'check the 배당 report\'s item labels before trusting the crawl'
         )
 
     out = pd.read_parquet(DIVIDENDS_PATH)
