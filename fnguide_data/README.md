@@ -11,14 +11,13 @@
   section before joining any two of them.
 - **Layout:** Raw vendor exports live under `raw/`, the parquet parsed from them
   under `cache/` (gitignored), and the per-sheet pull dates in
-  `data/vintages.csv`. Loader modules sit at
-  the directory root: `price_loader.py` (adjusted close — the one research
-  reads), plus `fnguide_io.py`, `investor_loader.py` and
-  `subinvestor_loader.py`, flat and sys.path-imported for backward
-  compatibility with older research projects. **Beyond the price panel,
-  new projects should parse the sheets inline rather than depending on
-  these helpers** — the layout is simple enough that centralizing the
-  parsers earns little. All of them read xlsx through `engine="calamine"`.
+  `data/vintages.csv`. Loader modules sit at the directory root:
+  `price_loader.py` (adjusted close — the one research reads), plus
+  `fnguide_io.py`, `investor_loader.py` and `subinvestor_loader.py`, imported
+  as `fnguide_data.<module>`. **Beyond the price panel, new projects should
+  parse the sheets inline rather than depending on these helpers** — the
+  layout is simple enough that centralizing the parsers earns little. All of
+  them read xlsx through `engine="calamine"`.
 - **Coverage:** ~3,900 Korean listed stocks (KOSPI / KOSDAQ) for
   investor trading & financials.
 - **Adjusted prices live here; raw OHLCV does not.**
@@ -219,7 +218,7 @@ to ~1,843 (Mon 2023-10-23) in a single session and then climbed back via IPOs.
 late-Oct-2023 onward and **only 10 of them are genuine delistings**, so a
 `kr_delisted/` overlay cannot recover them — the export had been pulled in two
 phases under different universe filters and concatenated horizontally. That
-batch has been removed (see the historical note in `integrity_report.md`); for
+batch has been removed; for
 OHLCV / market cap / shares, the repo root's `README.md` maps where they live.
 
 ## Data Summary
@@ -305,11 +304,8 @@ reads in ~4 s a sheet against ~45 s — and it is a prerequisite of this
 package, not an optional accelerator. Install with `pip install
 python-calamine`; the repo's dependency list is in `../CLAUDE.md`.
 
-Helper modules ship in this directory for the common cases. The flat ones
-have no package boilerplate — put `~/research/finance_db/fnguide_data/` on
-`sys.path` and import them by module name. **These exist for backward
-compat with current research projects; new projects should prefer
-inline parsing using the documented 14-row layout.**
+Helper modules ship in this directory for the common cases. Import them as
+`fnguide_data.<module>`, with the repository root on `sys.path`.
 
 - `fnguide_io.py` — `load_fnguide_sheet(filepath, sheet_name)` returns
   a date-indexed wide DataFrame; `melt_fnguide_wide(df, value_name)`
@@ -331,8 +327,7 @@ inline parsing using the documented 14-row layout.**
   (Smart Money, default) restricts 외국인 to registered foreigners;
   `'외국인계'` adds 기타외국인. Sibling helper `to_wide_net(flow)`
   pivots to wide `(date, ticker, institutional, individual, foreign)`
-  net columns. `integrity_report.md` grades these exports against the
-  legacy `qf_next/investor_data/` data1229/data1230 export.
+  net columns.
 - `subinvestor_loader.py` —
   `load_subinvestor_flow(start, end, *, raw_dir, subinvestor_types=<all 8>, cache_dir=None)`
   returns a long `(date, ticker, subinvestor_type, buy_value, sell_value,
@@ -828,15 +823,6 @@ The pre-computed 외국인계 aggregate was not downloaded. It can be computed:
 ```
 
 **Note:** 기타외국인 data is NULL before 2003-12-01 (see "Investor Type Introduction Dates" below). For those periods, 외국인계 = 등록외국인 (since 기타외국인 did not exist as a category).
-
-### Verification
-
-Both formulas were verified by cross-checking against `qf_next/investor_data/` (which has pre-computed 전체 and 외국인계 from a separate FnGuide download covering 2020-01-02 to 2025-12-26, 5 stocks × 1,472 dates):
-- All non-zero diffs were **exact multiples of 10,000원** — purely 만원 rounding artifacts from the reference data (stored in 만원 units)
-- The fnguide component sums (all in 원) are the **more precise** values
-- **Conclusion: manual summation is correct**
-
-See `integrity_report.md` for full details.
 
 ## Investor Type Introduction Dates
 

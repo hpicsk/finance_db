@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from fnguide_io import (
+from fnguide_data.fnguide_io import (
     cache_is_fresh,
     cache_path,
     load_fnguide_sheet,
@@ -86,7 +86,7 @@ def load_subinvestor_flow(
     start_date, end_date : str
         Inclusive ``YYYY-MM-DD`` bounds.
     raw_dir : path-like
-        Path to ``~/research/finance_db/fnguide_data/raw/``.
+        Path to ``fnguide_data/raw/`` under the repository root.
     subinvestor_types : tuple of str
         Subset of :data:`SUBINVESTOR_SOURCES` keys. Default: all 8.
     cache_dir, cache_filename : path-like, optional

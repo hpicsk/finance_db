@@ -24,7 +24,7 @@ from typing import Literal
 
 import pandas as pd
 
-from fnguide_io import (
+from fnguide_data.fnguide_io import (
     cache_is_fresh,
     cache_path,
     load_fnguide_sheet,
@@ -105,7 +105,7 @@ def load_investor_flow(
     start_date, end_date : str
         Inclusive ``YYYY-MM-DD`` window bounds.
     raw_dir : path-like
-        Path to ``~/research/finance_db/fnguide_data/raw/``.
+        Path to ``fnguide_data/raw/`` under the repository root.
     investor_types : tuple
         Subset of ``('기관', '개인', '외국인')``.
     foreign_definition : ``'등록외국인'`` or ``'외국인계'``

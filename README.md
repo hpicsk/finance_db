@@ -115,7 +115,7 @@ describes.
 **Tracked (committed to git):**
 - All `*.py` code (loaders, downloaders, builders) and each package's
   `test_assertions.py`.
-- All `*.md` documentation, including methodology and integrity reports.
+- All `*.md` documentation.
 - Every Korean package's `data/`, and the small tables under
   `finmind_data/data/` except the regenerable ones `.gitignore` names.
 - Small images / diagrams.
