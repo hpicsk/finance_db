@@ -83,8 +83,11 @@ def _classify(opinion_text: str) -> str:
     audit. Only the explicit labeled form short-circuits; long free-text
     disclaimers (which repeat "감사의견" in prose, e.g. "감사의견의 근거를…") fall
     through to the keyword scan so genuine 의견거절 are still caught. A text with
-    none of the four words but "거절" ("거절", "의결거절") is a disclaimer. No text
-    ("", "nan", "-") is ``unknown``; any other text is returned as its own label.
+    none of the four words but "거절" or the misspelling "겨절" is a disclaimer, and
+    one stating fair presentation ("공정", "공정하게 표시하고 있음", the opinion
+    paragraph itself) with no exception, negation or "공정가치" (fair value) is 적정.
+    No text ("", "nan", "-") is ``unknown``; any other text is returned as its own
+    label.
     """
     text = str(opinion_text or "").strip()
     s = re.sub(r"\s+", "", text)
@@ -96,8 +99,13 @@ def _classify(opinion_text: str) -> str:
     for k in ("의견거절", "부적정", "한정", "적정"):
         if k in s:
             return k
-    if "거절" in s:
+    if "거절" in s or "겨절" in s:       # "의결거절", "의겨거절", "의견겨절"
         return "의견거절"
+    # The unqualified opinion says the statements present fairly (공정하게 표시하고
+    # 있습니다); a qualified one adds "…을 제외하고는", an adverse one negates it, and
+    # a review conclusion finds no misstatement "발견되지 아니함" — hence the exclusions.
+    if "공정" in s and not re.search(r"제외|않|아니|공정가치", s):
+        return "적정"
     return text
 
 

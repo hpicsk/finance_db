@@ -40,11 +40,15 @@ that (ticker, year) at harvest time, and two things follow:
   its section below counts how often the two differ.
 - **`opinion_code` is read from `raw`, ignoring whitespace.** A
   `감사의견 : <verdict>` line wins; otherwise the first of 의견거절 / 부적정 /
-  한정 / 적정 found in the text, and a text with none of them but `거절`
-  (`거절`, `의결거절`) is 의견거절. 1,251 rows carry no opinion text
-  (`unknown`), and 229 carry text with none of those words — 공정하게 표시하고
-  있음, 지적사항 없음, an auditor's name — which is kept as its own label. Both
-  collectors re-derive the label from `raw` whenever they write, and
+  한정 / 적정 found in the text. A text with none of them but `거절` or the
+  misspelling `겨절` is 의견거절. One stating fair presentation — `공정`,
+  `공정하게 표시하고 있음`, the opinion paragraph itself — is 적정 unless it
+  carries an exception (`제외`), a negation (`않`, `아니`) or `공정가치` (fair
+  value): a qualified opinion adds "…을 제외하고는", and a review conclusion
+  finds nothing "발견되지 아니함". 1,251 rows carry no opinion text
+  (`unknown`), and 109 carry other text — a review conclusion such as 예외사항
+  없음, an auditor's name, a footnote mark — which is kept as its own label.
+  Both collectors re-derive the label from `raw` whenever they write, and
   `python -m kr_status.dart_audit --relabel` does it for the cache without
   calling DART.
 
@@ -77,9 +81,9 @@ Use this table, not the opinions cache, for what the market read and when:
 - 6,060 of the 25,608 rows (23.7 %) were amended at least once. In 5,468 of
   them the opinions cache carries a receipt number dated after the first
   filing's: the endpoint served the correction.
-- 118 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
+- 120 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
   served — 015540's FY2020–2022 among them — and 13 go the other way.
-- Of the 921 never-amended rows the endpoint gave no opinion text for, 760
+- Of the 921 never-amended rows the endpoint gave no opinion text for, 764
   read one of 적정 / 한정 / 부적정 / 의견거절 in the document.
 - 92 rows' first filings — 31 amended, 61 never amended — have no opinion
   table the collector reads, so their `opinion_code` is empty. Every row found

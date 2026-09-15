@@ -55,7 +55,7 @@ LAST_YEAR = 2025
 STAMPED_LATE = 702
 AMENDED_EXAMPLE = ("015540", range(2019, 2023), 2023)
 FOUR_OPINIONS = {"적정", "한정", "부적정", "의견거절"}
-NO_TEXT, OTHER_TEXT = 1251, 229
+NO_TEXT, OTHER_TEXT = 1251, 109
 
 # README § dart_corp_actions: the first receipt DART's event API served.
 FIRST_EVENT = pd.Timestamp("2015-01-07")
@@ -66,9 +66,9 @@ FIRST_EVENT = pd.Timestamp("2015-01-07")
 FIRST_COLUMNS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code", "raw",
                  "n_amendments"]
 QUALIFIED = {"한정", "부적정", "의견거절"}
-AMENDED, SERVED_LATER, HIDDEN, REVEALED, NO_ORIGINAL = 6060, 5468, 118, 13, 0
+AMENDED, SERVED_LATER, HIDDEN, REVEALED, NO_ORIGINAL = 6060, 5468, 120, 13, 0
 UNREAD = (31, 61)            # first filings with no readable opinion table: (amended, never amended)
-ENDPOINT_BLANK = (921, 760)  # never-amended rows the endpoint gave no text for, and those read to a label
+ENDPOINT_BLANK = (921, 764)  # never-amended rows the endpoint gave no text for, and those read to a label
 HIDDEN_EXAMPLE = ("015540", range(2020, 2023))
 
 
@@ -116,7 +116,7 @@ def test_audit_rows_are_what_dart_serves_at_harvest():
     got = (int((label == "unknown").sum()), int((~label.isin(FOUR_OPINIONS | {"unknown"})).sum()))
     assert got == (NO_TEXT, OTHER_TEXT), (
         f"README § dart_audit: '{NO_TEXT:,} rows carry no opinion text (unknown), and "
-        f"{OTHER_TEXT} carry text with none of those words' — (unknown, other text) is {got}")
+        f"{OTHER_TEXT} carry other text' — (unknown, other text) is {got}")
     return (f"{late} of {len(op):,} rows stamped more than a year past the deadline; "
             f"every label is _classify(raw); {got[0]:,} unknown, {got[1]} other text"), len(op)
 
