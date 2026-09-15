@@ -33,6 +33,7 @@ from kr_status.corp_code_map import (
 )
 
 OPINIONS_PATH = DATA_DIR / "dart_audit_opinions.parquet"
+_COLUMNS = ["ticker", "bsns_year", "opinion_code", "receipt_dt", "raw"]
 
 AUDIT_REPORT_CODE = "11011"   # 사업보고서 (annual)
 MIN_YEAR = 2015               # DART structured endpoint floor
@@ -58,7 +59,7 @@ def _years_for_ticker(row: dict, year_from: int, year_to: int) -> list[int]:
 def _load_cache() -> pd.DataFrame:
     if OPINIONS_PATH.exists():
         return pd.read_parquet(OPINIONS_PATH)
-    return pd.DataFrame(columns=["ticker", "bsns_year", "opinion_code", "receipt_dt", "raw"])
+    return pd.DataFrame(columns=_COLUMNS)
 
 
 def _save_cache(df: pd.DataFrame) -> None:
@@ -104,10 +105,9 @@ def _fetch_one(dart, corp_code: str, year: int) -> pd.DataFrame | None:
     """Return raw rows from accnutAdtorNmNdAdtOpinion for (corp_code, year).
 
     OpenDartReader does not wrap this endpoint, so we hit the raw JSON API.
-    Returns None for genuine "no data" responses (status 013) and other
-    non-success codes the caller can treat as terminal. Raises on quota/rate
-    failures (020/021) so the harvester halts cleanly instead of marking
-    every remaining pair as done.
+    Returns None for a genuine "no data" response (status 013). Raises on every
+    other non-success status — a quota stop (020/021), maintenance, a key error
+    — so the harvester halts instead of reading the pair as empty.
 
     The response rows carry `rcept_no` (filing receipt no.) but no separate
     receipt-date field; we synthesise a `rcept_dt` column from the leading
@@ -131,8 +131,11 @@ def _fetch_one(dart, corp_code: str, year: int) -> pd.DataFrame | None:
         raise RuntimeError(
             f"DART quota/rate failure: status={status} msg={payload.get('message')}"
         )
-    if status != "000":
-        return None
+    if status != "000":           # maintenance, a key error: not an empty year
+        raise RuntimeError(
+            f"DART answered status={status} msg={payload.get('message')} "
+            f"for corp_code {corp_code} bsns_year {year}"
+        )
     rows = payload.get("list") or []
     if not rows:
         return None
@@ -173,58 +176,59 @@ def harvest(api_key: str | None = None,
     print(f"harvest 감사의견 {year_from}..{year_to}: {n_tickers} tickers", file=sys.stderr)
 
     processed = 0
-    for _, row in universe.head(n_tickers).iterrows():
-        ticker = row["ticker"]
-        name = row["name"]
-        years = _years_for_ticker(row, year_from, year_to)
-        years = [y for y in years if (ticker, y) not in done_pairs]
-        if not years:
-            continue
-        corp_code = get_corp_code(dart, ticker, name)
-        if not corp_code:
-            continue
+    try:
+        for _, row in universe.head(n_tickers).iterrows():
+            ticker = row["ticker"]
+            name = row["name"]
+            years = _years_for_ticker(row, year_from, year_to)
+            years = [y for y in years if (ticker, y) not in done_pairs]
+            if not years:
+                continue
+            corp_code = get_corp_code(dart, ticker, name)
+            if not corp_code:
+                continue
 
-        for y in years:
-            df = _fetch_one(dart, corp_code, y)
-            if df is None or len(df) == 0:
+            for y in years:
+                df = _fetch_one(dart, corp_code, y)
+                if df is None or len(df) == 0:
+                    done_pairs.add((ticker, y))
+                    time.sleep(sleep_s)
+                    continue
+                # The endpoint returns one row per (auditor, opinion); for our
+                # purposes the consolidated-statement (CFS) opinion suffices.
+                # Take the first row's opinion text.
+                opinion_text = str(df.iloc[0].get("adt_opinion", "")
+                                   or df.iloc[0].get("opinion", "")
+                                   or "")
+                receipt_dt = df.iloc[0].get("rcept_dt")
+                if receipt_dt is None:
+                    print(f"  rcept_dt missing for ticker {ticker} year {y}, skipping", file=sys.stderr)
+                    continue
+                new_rows.append({
+                    "ticker":      ticker,
+                    "bsns_year":   y,
+                    "opinion_code": _classify(opinion_text),
+                    "receipt_dt":  pd.to_datetime(receipt_dt) if receipt_dt else pd.NaT,
+                    "raw":         opinion_text,
+                })
                 done_pairs.add((ticker, y))
                 time.sleep(sleep_s)
-                continue
-            # The endpoint returns one row per (auditor, opinion); for our
-            # purposes the consolidated-statement (CFS) opinion suffices.
-            # Take the first row's opinion text.
-            opinion_text = str(df.iloc[0].get("adt_opinion", "")
-                               or df.iloc[0].get("opinion", "")
-                               or "")
-            receipt_dt = df.iloc[0].get("rcept_dt")
-            if receipt_dt is None:
-                print(f"  rcept_dt missing for ticker {ticker} year {y}, skipping", file=sys.stderr)
-                continue
-            new_rows.append({
-                "ticker":      ticker,
-                "bsns_year":   y,
-                "opinion_code": _classify(opinion_text),
-                "receipt_dt":  pd.to_datetime(receipt_dt) if receipt_dt else pd.NaT,
-                "raw":         opinion_text,
-            })
-            done_pairs.add((ticker, y))
-            time.sleep(sleep_s)
 
-        processed += 1
-        if processed % 50 == 0:
-            print(f"  processed {processed}/{n_tickers} tickers", file=sys.stderr)
-            # Flush cache periodically so a Ctrl-C doesn't lose hours of work
-            partial = pd.concat([cache, pd.DataFrame(new_rows)], ignore_index=True)
-            _save_cache(partial)
-            flush_cache()
-
-    full = pd.concat([cache, pd.DataFrame(new_rows)], ignore_index=True).drop_duplicates(
-        subset=["ticker", "bsns_year"]
-    )
-    _save_cache(full)
-    flush_cache()
-    flush_misses()
-    print(f"wrote {len(full)} opinions → {OPINIONS_PATH}", file=sys.stderr)
+            processed += 1
+            if processed % 50 == 0:
+                print(f"  processed {processed}/{n_tickers} tickers", file=sys.stderr)
+                # Flush cache periodically so a Ctrl-C doesn't lose hours of work
+                partial = pd.concat([cache, pd.DataFrame(new_rows)], ignore_index=True)
+                _save_cache(partial)
+                flush_cache()
+    finally:            # a DART error stops the run; what it fetched is kept
+        full = pd.concat([cache, pd.DataFrame(new_rows, columns=_COLUMNS)],
+                         ignore_index=True).drop_duplicates(subset=["ticker", "bsns_year"])
+        if new_rows:
+            _save_cache(full)
+        flush_cache()
+        flush_misses()
+    print(f"{len(full)} opinions in {OPINIONS_PATH} ({len(new_rows)} new)", file=sys.stderr)
     return full
 
 

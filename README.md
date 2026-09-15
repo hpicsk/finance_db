@@ -59,7 +59,7 @@ opendart 일괄파일 ──► dart_bulk/ ────────────�
 `kr_marcap.universe` and `kr_marcap.adjust.load_adjusted` read marcap
 parquets directly.
 Reads the diagram does not draw: `kr_status` reads `kr_delisted`'s calendar
-(the corp-code map), `kr_marcap`'s price adjustment reads `kr_status`'s
+(the working universe), `kr_marcap`'s price adjustment reads `kr_status`'s
 corporate-action table, `kr_marcap` reads `fnguide_data`'s price panel for its
 benchmark, and the `fnguide_data` assertion suite reads the calendar too.
 

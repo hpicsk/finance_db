@@ -88,7 +88,7 @@ layer tell a corporate action apart from an entity change:
 - **entity** (회사합병 / 회사분할 / 회사분할합병 / 주식교환) — the listing's economic
   identity may change, so the jump is a break candidate.
 
-Reached through `OpenDartReader.dart_event.event`, one call per (ticker,
+Reached through DART's 주요사항보고서 (DS005) endpoints, one call per (ticker,
 event). Preferred shares have no `corp_code` of their own and resolve to the
 parent common (`code[:5] + '0'`); 액면분할/병합 are absent from the event API and
 are deliberately omitted, since a 액면 change always moves the price inversely
@@ -111,17 +111,26 @@ it, so this collector runs *after* a seeding build, not before (`--tickers` /
 
 ### Shared utility
 
-`corp_code_map.py` wraps `OpenDartReader.find_corp_code(ticker)` with a
-persistent reverse map for delisted tickers; seeds from
-`../kr_delisted/data/delisting_calendar.csv` names + `dart.company_by_name`
-fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
+`corp_code_map.py` looks each ticker up in DART's corp-code directory
+(`OpenDartReader.find_corp_code`) and memoises the answer in
+`data/corp_code_cache.parquet`. A ticker the directory has no stock code for —
+it drops some retired registrations — is a miss. Misses are logged to
+`data/corp_code_misses.csv` for triage.
+
+A DART error stops every collector here rather than reading as an empty
+answer: `dart_audit` and `dart_audit_first` raise on every status but success
+and no data (013, and 014 for a missing document), and `dart_corp_actions`
+calls the event endpoints itself because OpenDartReader's `dart_event.event`
+returns an empty frame on every error status. Each keeps what it fetched
+before the stop, so the next run resumes; a `dart_corp_actions` ticker whose
+events did not all answer is fetched again.
 
 ## Endpoints used
 
 | Source | URL | Notes |
 |---|---|---|
 | DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it via `requests.get` directly |
-| DART 주요사항보고서 events | `OpenDartReader.dart_event.event` | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`. Nothing filed before 2015 |
+| DART 주요사항보고서 events | `opendart.fss.or.kr/api/{piicDecsn,fricDecsn,…}.json` (DS005) | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`, which reads the status itself. Nothing filed before 2015 |
 | DART 공시검색 | `opendart.fss.or.kr/api/list.json` | every 사업보고서 of a corp_code, original and 정정 (`last_reprt_at=N`); used by `dart_audit_first` |
 | DART 공시서류원본 | `opendart.fss.or.kr/api/document.xml` | the first filing's main document, read at the `OPN_CMT1` cell; used by `dart_audit_first` |
 

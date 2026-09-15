@@ -46,7 +46,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from OpenDartReader import dart_event
+import requests
 
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
@@ -59,8 +59,31 @@ GENUINE_EVENTS = ("유상증자", "무상증자", "유무상증자", "감자")
 ENTITY_EVENTS = ("회사합병", "회사분할", "회사분할합병", "주식교환")
 CATEGORY = {**{e: "genuine" for e in GENUINE_EVENTS},
             **{e: "entity" for e in ENTITY_EVENTS}}
+# The DS005 주요사항보고서 endpoint for each event, as OpenDartReader's dart_event names
+# them. That wrapper prints and returns an empty frame on every non-000 status, so a
+# quota stop read as "no filings"; _fetch_events calls the endpoints itself.
+_ENDPOINT = {"유상증자": "piicDecsn", "무상증자": "fricDecsn", "유무상증자": "pifricDecsn",
+             "감자": "crDecsn", "회사합병": "cmpMgDecsn", "회사분할": "cmpDvDecsn",
+             "회사분할합병": "cmpDvmgDecsn", "주식교환": "stkExtrDecsn"}
 
 START = "1999-01-01"   # DART receipt-date floor; events before this are absent anyway
+
+
+def _fetch_events(key: str, corp_code: str, event: str) -> pd.DataFrame:
+    """Every `event` filing of `corp_code` since START; empty when DART has none
+    (status 013). Any other status — a quota stop, maintenance — raises."""
+    r = requests.get(f"https://opendart.fss.or.kr/api/{_ENDPOINT[event]}.json", params={
+        "crtfc_key": key, "corp_code": corp_code, "bgn_de": START.replace("-", ""),
+        "end_de": pd.Timestamp.today().strftime("%Y%m%d")}, timeout=30)
+    r.raise_for_status()
+    j = r.json()
+    status = str(j.get("status"))
+    if status == "013":
+        return pd.DataFrame()
+    if status != "000":
+        raise RuntimeError(f"DART status={status} msg={j.get('message')} "
+                           f"({corp_code} {event})")
+    return pd.DataFrame(j.get("list", []))
 
 
 def _parent_common(ticker: str) -> str:
@@ -111,36 +134,35 @@ def collect(tickers: list[str], out_path: Path = EVENTS_PATH,
           file=sys.stderr)
 
     rows: list[dict] = []
-    for i, ticker in enumerate(todo):
-        parent = _parent_common(ticker)
-        cc = get_corp_code(dart, parent)
-        # One sentinel row per processed ticker (category "none") so resume skips
-        # it even when it has zero events / no resolvable corp_code.
-        rows.append({"ticker": ticker, "parent": parent, "corp_code": cc or "",
-                     "event": "", "category": "none", "rcept_dt": "", "rcept_no": ""})
-        if cc:
-            for event in CATEGORY:
-                try:
-                    df = dart_event.event(key, cc, event, START, None)
-                except Exception as e:
-                    print(f"  {ticker} [{event}] error: {e}", file=sys.stderr)
-                    time.sleep(2.0)
-                    continue
-                if df is not None and len(df):
+    try:
+        for i, ticker in enumerate(todo):
+            parent = _parent_common(ticker)
+            cc = get_corp_code(dart, parent)
+            # One sentinel row per processed ticker (category "none") so resume skips
+            # it even when it has zero events / no resolvable corp_code. A ticker's
+            # rows join `rows` only once all its events answered, so a failure
+            # leaves it undone and the next run fetches it again.
+            t_rows = [{"ticker": ticker, "parent": parent, "corp_code": cc or "",
+                       "event": "", "category": "none", "rcept_dt": "", "rcept_no": ""}]
+            if cc:
+                for event in CATEGORY:
+                    df = _fetch_events(key, cc, event)
                     for _, r in df.iterrows():
-                        rows.append({
+                        t_rows.append({
                             "ticker": ticker, "parent": parent, "corp_code": cc,
                             "event": event, "category": CATEGORY[event],
                             "rcept_dt": str(r.get("rcept_dt") or r.get("rcept_no", "")[:8]),
                             "rcept_no": str(r.get("rcept_no", "")),
                         })
-                time.sleep(delay)
-        if (i + 1) % 25 == 0:
-            print(f"  progress {i+1}/{len(todo)}  rows={len(rows)}", file=sys.stderr)
-            _checkpoint(existing, rows, out_path)
+                    time.sleep(delay)
+            rows += t_rows
+            if (i + 1) % 25 == 0:
+                print(f"  progress {i+1}/{len(todo)}  rows={len(rows)}", file=sys.stderr)
+                _checkpoint(existing, rows, out_path)
+    finally:            # a DART error stops the run; what completed is kept
+        out = _checkpoint(existing, rows, out_path)
+        flush_cache(); flush_misses()
 
-    out = _checkpoint(existing, rows, out_path)
-    flush_cache(); flush_misses()
     print(f"[dart_corp_actions] wrote {len(out)} rows "
           f"({(out['category'] != 'none').sum()} events) -> {out_path}", file=sys.stderr)
     return out
@@ -155,7 +177,7 @@ def _stamp(df: pd.DataFrame, collected_at: str) -> dict:
     rcept = df.loc[df["rcept_dt"].astype(str) != "", "rcept_dt"] if len(df) else []
     return {
         "dart_collected_at": collected_at,
-        "dart_source": f"DART/OpenDartReader {version('OpenDartReader')}",
+        "dart_source": f"DART API; corp codes via OpenDartReader {version('OpenDartReader')}",
         "dart_n_tickers": df["ticker"].nunique() if len(df) else 0,
         "dart_n_events": int((df["category"] != "none").sum()) if len(df) else 0,
         "dart_rcept_max": str(max(rcept)) if len(rcept) else "",

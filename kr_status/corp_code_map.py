@@ -1,17 +1,11 @@
-"""Resolve KRX 6-digit tickers to DART corp_codes — incl. delisted firms.
+"""Resolve KRX 6-digit tickers to DART corp_codes.
 
-OpenDartReader's `find_corp_code(ticker)` returns None for many delisted
-tickers (the DART corp-code directory drops some retired registrations).
-This module layers a fallback:
-
-  1. Try OpenDartReader.find_corp_code(ticker)
-  2. If that fails, look up the ticker's name in
-     ../kr_delisted/data/delisting_calendar.csv and fuzzy-match via DART's
-     name-based corp directory.
-  3. Cache misses to data/corp_code_misses.csv for manual triage.
-
-Hits are memoised in data/corp_code_cache.parquet so re-runs of the DART
-collectors are cheap.
+`get_corp_code` looks a ticker up in DART's corp-code directory
+(OpenDartReader's `find_corp_code`, a table OpenDartReader downloads when it
+starts). The directory drops some retired registrations, so a ticker it has no
+stock code for is a miss: cached as None and logged to data/corp_code_misses.csv
+for triage. Hits and misses are memoised in data/corp_code_cache.parquet so
+re-runs of the DART collectors are cheap.
 """
 from __future__ import annotations
 
@@ -20,12 +14,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from kr_delisted.delisted_loader import CALENDAR
-
 DATA_DIR = Path(__file__).resolve().parent / "data"
 CACHE_PATH  = DATA_DIR / "corp_code_cache.parquet"
 MISSES_PATH = DATA_DIR / "corp_code_misses.csv"
-DELISTING_CSV = Path(CALENDAR)
 
 _cache: dict[str, str | None] | None = None
 _misses: set[tuple[str, str]] = set()
@@ -53,55 +44,19 @@ def _save_cache() -> None:
     df.to_parquet(CACHE_PATH, index=False)
 
 
-def _load_delisted_names() -> dict[str, str]:
-    if not DELISTING_CSV.exists():
-        raise FileNotFoundError(
-            f"{DELISTING_CSV} not found — it is tracked in kr_delisted; restore it from git")
-    df = pd.read_csv(DELISTING_CSV, dtype={"ticker": str})
-    df["ticker"] = df["ticker"].str.zfill(6)
-    # if a ticker appears multiple times (rare; reuse), take the latest name
-    return dict(df.drop_duplicates("ticker", keep="last")[["ticker", "name"]].values)
-
-
 def get_corp_code(dart, ticker: str, name: str | None = None) -> str | None:
-    """Return DART corp_code for `ticker`, or None if unresolvable.
+    """Return DART corp_code for `ticker`, or None if the directory has none.
 
-    `dart` is an OpenDartReader instance.  `name` (optional) is used for the
-    fuzzy fallback for delisted tickers.
-
-    Both DART lookups swallow their exceptions and fall through to None, so a
-    request that failed is indistinguishable here from a ticker DART genuinely
-    has no corp_code for. Every unresolved ticker lands in `_misses`, which is
-    what makes the difference recoverable — read it after a run rather than
-    treating a None as settled.
+    `dart` is an OpenDartReader instance; `name` (optional) is recorded beside a
+    miss, for triage. The lookup reads OpenDartReader's local directory table,
+    so an error in it is a real error and is raised, not read as a miss.
     """
     ticker = str(ticker).zfill(6)
     cache = _load_cache()
     if ticker in cache:
         return cache[ticker]
-
-    code: str | None = None
-    try:
-        code = dart.find_corp_code(ticker)
-    except Exception:
-        code = None
-
-    if not code:
-        # Delisted fallback: look up name from delisting calendar
-        if name is None:
-            name = _load_delisted_names().get(ticker)
-        if name:
-            try:
-                hits = dart.company_by_name(name)
-                if hits is not None and len(hits) > 0:
-                    # Prefer exact-name match; otherwise take first.
-                    exact = hits[hits["corp_name"] == name]
-                    pick = exact.iloc[0] if len(exact) > 0 else hits.iloc[0]
-                    code = str(pick["corp_code"])
-            except Exception:
-                pass
-
-    cache[ticker] = code or None
+    code = dart.find_corp_code(ticker) or None
+    cache[ticker] = code
     if not code:
         _misses.add((ticker, name or ""))
     return code
