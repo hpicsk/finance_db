@@ -73,7 +73,7 @@ data/is_genuine_overrides.csv      85 override rows consumed by build_delisting_
 
 ## `is_genuine` classification
 
-Four layers, applied in order. See `build_is_genuine_overrides.py`'s
+Three layers, applied in order. See `build_is_genuine_overrides.py`'s
 docstring for the rationale of each layer.
 
 1. **Keyword baseline** (in `build_delisting_calendar.py`):
@@ -101,24 +101,6 @@ docstring for the rationale of each layer.
    - `001370 FNC코오롱` 2009-08-17 (Y → N): merged into (주)코오롱;
      the 합병결정 was filed acquirer-side under 코오롱's `corp_code`, so
      an acquiree-side DART query returns nothing.
-
-4. **Verified deviations from the legacy curated CSV (not corrected —
-   regen is more accurate).** The current regenerator agrees with the
-   legacy `delisting_calendar.curated.csv` (not kept in the tree) on 1,111 / 1,116 overlap
-   rows; the remaining 5 are all verified curated bugs left as-is
-   because the regen's classification is correct (researched 2026-05-11):
-   - `037150 CJ인터넷`, `056200 엠넷미디어` 2011-03-22 — both 피흡수합병
-     into CJ E&M (130960); shareholders received CJ E&M shares, so this
-     is M&A continuation → regen N is correct, curated Y is inconsistent
-     with the project's merger=N convention.
-   - `228180 티씨엠생명과학` 2020-08-07 — 주식의 포괄적 교환 into 넥스트BT
-     (065170); same logic as above → regen N is correct.
-   - `323350 다원넥스뷰` 2024-06-11 — KONEX → KOSDAQ transfer via
-     스팩소멸합병 with 신한제9호스팩, relisted KOSDAQ same day under the
-     same ticker → regen N is correct.
-   - `117930 한진해운` 2017-03-07 — real bankruptcy (rehabilitation
-     terminated 2017-02-02, declared bankrupt 2017-02-17, ~2 % of
-     $10.5B owed recovered) → regen Y is correct, curated N is wrong.
 
 After steps 1-3, the regenerated calendar has `Y=1,018, N=368` (out of 1,386).
 

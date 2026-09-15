@@ -191,7 +191,7 @@ def scan_marcap_proxies(kind_tickers: set[str],
         if date >= cutoff_active:   # still trading
             continue
         # marcap wraps the share-class suffix in parens ("신한증권(1우)"); the
-        # curated file strips them ("신한증권1우"). Match that.
+        # calendar writes them without ("신한증권1우").
         clean_name = re.sub(r"\(([^)]+)\)$", r"\1", name.strip())
         proxies.append({
             "ticker":         code,

@@ -114,7 +114,7 @@ def test_calendar_composition():
 # ---- The genuine/continuation split the survivorship universe rests on ------
 def test_is_genuine_split():
     """README.md "`is_genuine` classification" reports Y=1,018 / N=368 after
-    the four layers, and decomposes N as 107 exchange transfers + 261
+    the three layers, and decomposes N as 107 exchange transfers + 261
     mergers / 주식교환 / SPC dissolutions.
 
     `universe(genuine_only=True)` is the survivorship-bias-free set the whole
