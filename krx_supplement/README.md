@@ -358,21 +358,20 @@ r = requests.get(
 
 5. **KOSDAQ150 launch.** 2015-07-07. Earlier dates return an empty response.
 
-6. **A failed fetch becomes a data gap, recorded only in the log.**
-   `fetch_sector_snapshot` and `fetch_index_members` catch `Exception`, warn, and
-   skip that (date, market). The row is simply absent from the output, so "no
-   data existed that day" and "the fetch failed" are indistinguishable in the
-   file. Read the log after collecting.
+6. **A failed fetch is left out, listed, and fails the run.** A (date, market)
+   or (date, index) whose fetch raised is not written — `collect_sector` leaves
+   out the whole date when either market failed — and the collector lists every
+   failure when it finishes and exits non-zero. A resumed run fetches them again.
 
-   `collect_foreign_ownership` is worse. `_fetch` maps `KeyError` to `None`,
-   folding *a non-trading day* and *a changed response schema* into one value,
-   and `None` writes an `_EMPTY_SCHEMA` parquet. The resume check
-   (`out.exists()`) then skips that file forever, so a span collected while the
-   schema differed stays empty no matter how often the collector is re-run.
-   Delete those files to re-fetch them.
+   One gap still does not raise. `collect_foreign_ownership`'s `_fetch` maps
+   `KeyError` to `None`, folding *a non-trading day* and *a changed response
+   schema* into one value, and `None` writes an `_EMPTY_SCHEMA` parquet. The
+   resume check (`out.exists()`) then skips that file forever, so a span
+   collected while the schema differed stays empty no matter how often the
+   collector is re-run. Delete those files to re-fetch them.
 
-   Neither failure raises. The gap each one leaves is checkable, and three
-   assertions read for it: `test_kospi200_panel_inwindow_complete` bounds daily
+   The gaps are also checkable, and three assertions read for them:
+   `test_kospi200_panel_inwindow_complete` bounds daily
    index membership, `test_sector_panel_covers_every_session` requires every
    session in the panel's span in both markets, and
    `test_foreign_ownership_empty_files_fall_on_non_sessions` requires every

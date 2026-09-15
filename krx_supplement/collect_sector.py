@@ -53,11 +53,7 @@ def fetch_sector_snapshot(date: str) -> pd.DataFrame:
 
     frames = []
     for mktId, market_name in MARKET_CODES.items():
-        try:
-            df = 업종분류현황().fetch(date, mktId)
-        except Exception as e:
-            logger.warning("업종분류현황 failed for %s %s: %s", date, market_name, e)
-            continue
+        df = 업종분류현황().fetch(date, mktId)   # a failure raises to the collector
 
         if df is None or df.empty:
             logger.debug("Empty: %s %s", date, market_name)
@@ -106,10 +102,18 @@ def collect_sector_mapping(
 
     frames = [existing] if not existing.empty else []
     save_every = 20
+    failed: list[str] = []
 
     for i, date in enumerate(dates, 1):
         logger.info("[%d/%d] %s", i, len(dates), date)
-        df = fetch_sector_snapshot(date)
+        try:
+            df = fetch_sector_snapshot(date)
+        except Exception as e:
+            # Leave the whole date out, so a resumed run fetches both markets again.
+            logger.warning("업종분류현황 failed for %s: %s", date, e)
+            failed.append(date)
+            time.sleep(delay * 2)
+            continue
 
         if df.empty:
             logger.warning("empty result for %s — skipped", date)
@@ -125,15 +129,18 @@ def collect_sector_mapping(
 
         time.sleep(delay)
 
-    if not frames:
+    result = pd.DataFrame()
+    if frames:
+        result = pd.concat(frames, ignore_index=True)
+        result["date"] = pd.to_datetime(result["date"].astype(str), format="%Y%m%d", errors="coerce")
+        result = result.sort_values(["date","market","ticker"]).reset_index(drop=True)
+        result.to_parquet(output_path, index=False)
+        logger.info("written: %s  (%d rows)", output_path, len(result))
+    else:
         logger.error("nothing collected")
-        return pd.DataFrame()
-
-    result = pd.concat(frames, ignore_index=True)
-    result["date"] = pd.to_datetime(result["date"].astype(str), format="%Y%m%d", errors="coerce")
-    result = result.sort_values(["date","market","ticker"]).reset_index(drop=True)
-    result.to_parquet(output_path, index=False)
-    logger.info("written: %s  (%d rows)", output_path, len(result))
+    if failed:
+        raise RuntimeError(f"{len(failed)} dates failed and were left out; rerun to "
+                           f"fetch them: {failed}")
     return result
 
 

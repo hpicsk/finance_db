@@ -63,11 +63,7 @@ def fetch_index_members(
     """
     from pykrx.website.krx.market.core import 지수구성종목
 
-    try:
-        df = 지수구성종목().fetch(date, ind_idx2, group_id)
-    except Exception as e:
-        logger.warning("지수구성종목 failed for %s %s: %s", index_name, date, e)
-        return pd.DataFrame()
+    df = 지수구성종목().fetch(date, ind_idx2, group_id)   # a failure raises to the collector
 
     if df is None or df.empty:
         return pd.DataFrame()
@@ -120,6 +116,7 @@ def collect_index_members(
 
     frames   = [existing] if not existing.empty else []
     save_every = 30
+    failed: list[tuple[str, str]] = []
     total    = len(dates) * len(targets)
     count    = 0
     date_count = 0
@@ -132,7 +129,14 @@ def collect_index_members(
                 continue
 
             logger.info("[%d/%d] %s %s", count, total, idx_name, date)
-            df = fetch_index_members(date, idx_name, group_id, ind_idx2)
+            try:
+                df = fetch_index_members(date, idx_name, group_id, ind_idx2)
+            except Exception as e:
+                # Not written, so a resumed run fetches this (date, index) again.
+                logger.warning("지수구성종목 failed for %s %s: %s", idx_name, date, e)
+                failed.append((date, idx_name))
+                time.sleep(delay)
+                continue
 
             if df.empty:
                 logger.debug("  -> empty (index not launched yet, or no data)")
@@ -146,17 +150,19 @@ def collect_index_members(
             pd.concat(frames, ignore_index=True).to_parquet(output_path, index=False)
             logger.info("  [checkpoint written]")
 
-    if not frames:
+    result = pd.DataFrame()
+    if frames:
+        result = pd.concat(frames, ignore_index=True)
+        result["date"] = pd.to_datetime(result["date"].astype(str),
+                                        format="%Y%m%d", errors="coerce")
+        result = result.sort_values(["index","date","ticker"]).reset_index(drop=True)
+        result.to_parquet(output_path, index=False)
+        logger.info("written: %s  (%d rows)", output_path, len(result))
+    else:
         logger.error("nothing collected")
-        return pd.DataFrame()
-
-    result = pd.concat(frames, ignore_index=True)
-    result["date"] = pd.to_datetime(result["date"].astype(str),
-                                    format="%Y%m%d", errors="coerce")
-    result = result.sort_values(["index","date","ticker"]).reset_index(drop=True)
-
-    result.to_parquet(output_path, index=False)
-    logger.info("written: %s  (%d rows)", output_path, len(result))
+    if failed:
+        raise RuntimeError(f"{len(failed)} (date, index) fetches failed and were left "
+                           f"out; rerun to fetch them: {failed}")
     return result
 
 

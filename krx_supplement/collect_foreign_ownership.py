@@ -102,6 +102,7 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
     dates = pd.bdate_range(pd.Timestamp(start), pd.Timestamp(end))
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     n_written = n_empty = n_skipped = 0
+    failed: list[tuple[str, str]] = []
     for i, date in enumerate(dates):
         for market in markets:
             if market == "KNX" and date < KONEX_START:
@@ -120,8 +121,10 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
                 try:
                     df = _fetch(date, market)
                 except Exception as e2:
-                    logger.error("fetch %s %s failed twice: %s — skipping",
+                    # No file is written, so a resumed run fetches it again.
+                    logger.error("fetch %s %s failed twice: %s — left out",
                                  date.date(), market, e2)
+                    failed.append((str(date.date()), market))
                     continue
             if df is None:
                 _EMPTY_SCHEMA.to_parquet(out, index=False)
@@ -134,6 +137,9 @@ def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -
             logger.info("progress: %s  written=%d empty=%d skipped=%d",
                         date.date(), n_written, n_empty, n_skipped)
     logger.info("done. written=%d empty=%d skipped=%d", n_written, n_empty, n_skipped)
+    if failed:
+        raise RuntimeError(f"{len(failed)} (date, market) fetches failed twice and were "
+                           f"left out; rerun to fetch them: {failed}")
     return n_written, n_empty, n_skipped
 
 
