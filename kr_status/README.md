@@ -64,7 +64,7 @@ it, so this collector runs *after* a seeding build, not before (`--tickers` /
 
 `corp_code_map.py` wraps `OpenDartReader.find_corp_code(ticker)` with a
 persistent reverse map for delisted tickers; seeds from
-`../kr_delisted/delisting_calendar.csv` names + `dart.company_by_name`
+`../kr_delisted/data/delisting_calendar.csv` names + `dart.company_by_name`
 fuzzy match. Misses are logged to `data/corp_code_misses.csv` for triage.
 
 ## Endpoints used

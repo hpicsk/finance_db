@@ -96,7 +96,7 @@ ratio[t] = Stocks[t-1] / Stocks[t]
   out of `…스팩…` (SPAC merger), a first re-appearance after a genuine KIND
   delisting (ticker reuse), a DART 회사합병 / 회사분할 / 회사분할합병 / 주식교환
   inside the filing-to-effect window of a material jump (entity restructuring),
-  or a reviewed row in `corp_action_overrides.csv`. A material jump that a DART
+  or a reviewed row in `data/corp_action_overrides.csv`. A material jump that a DART
   증자/감자 filing explains is a genuine action; one no source explains is
   written to `cache/corp_action_residuals.csv` and left continuous.
 - A break is an `is_break` day: the listing changed hands. Every row **strictly
@@ -223,7 +223,7 @@ prices scaled to ×0.40 of FnGuide's).
 
 **Fix.** Compare the compounded-CR return with KRX's own official adjusted
 return over the same two sessions (the 수정주가 oracle,
-`cache/krx_adj_oracle.parquet`, built by `krx_adj_oracle.py`). Where the two
+`data/krx_adj_oracle.parquet`, built by `krx_adj_oracle.py`). Where the two
 differ by more than `_ORACLE_RESET_TOL = 0.01` — a rounding tolerance, since
 ChangesRatio is published to 0.01 % — and no break, sentinel or phantom-CR
 guard fired, the official

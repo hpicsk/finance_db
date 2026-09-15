@@ -18,7 +18,7 @@ only the issues listed on its own date, so stacking the dates into a series
 carries a delisted name up to the date it left, and no survivorship overlay is
 needed on top.
 
-    # what output/sector_mapping.parquet was built with
+    # what data/sector_mapping.parquet was built with
     python -m krx_supplement.collect_sector --start 20050101 --freq daily
 
     python -m krx_supplement.collect_sector     # defaults: 2015 onward, month-end snapshots
@@ -35,8 +35,8 @@ from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging, 
 
 logger = setup_logging()
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 MARKET_CODES = {
     "STK": "KOSPI",
@@ -88,7 +88,7 @@ def collect_sector_mapping(
     start: str = "20150101",
     end:   str = DEFAULT_END,
     freq:  str = "monthly",
-    output_path: Path = OUTPUT_DIR / "sector_mapping.parquet",
+    output_path: Path = DATA_DIR / "sector_mapping.parquet",
     resume: bool = True,
     delay: float = DEFAULT_DELAY,
 ) -> pd.DataFrame:
@@ -153,7 +153,7 @@ def main():
 
     collect_sector_mapping(
         start=args.start, end=args.end, freq=args.freq,
-        output_path=OUTPUT_DIR / "sector_mapping.parquet",
+        output_path=DATA_DIR / "sector_mapping.parquet",
         resume=not args.no_resume, delay=args.delay,
     )
 

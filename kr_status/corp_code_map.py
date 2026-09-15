@@ -6,7 +6,7 @@ This module layers a fallback:
 
   1. Try OpenDartReader.find_corp_code(ticker)
   2. If that fails, look up the ticker's name in
-     ../kr_delisted/delisting_calendar.csv and fuzzy-match via DART's
+     ../kr_delisted/data/delisting_calendar.csv and fuzzy-match via DART's
      name-based corp directory.
   3. Cache misses to data/corp_code_misses.csv for manual triage.
 

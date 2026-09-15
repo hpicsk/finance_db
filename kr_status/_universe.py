@@ -3,7 +3,7 @@
 from pathlib import Path
 import pandas as pd
 
-DELISTING_CSV = Path(__file__).parent / ".." / "kr_delisted" / "delisting_calendar.csv"
+DELISTING_CSV = Path(__file__).parent / ".." / "kr_delisted" / "data" / "delisting_calendar.csv"
 
 
 def load_working_universe(include_dates: bool = False) -> pd.DataFrame:

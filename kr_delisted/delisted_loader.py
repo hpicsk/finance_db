@@ -5,7 +5,7 @@ codes) are out of scope. Prices are unadjusted (matches KRX raw history).
 
 Sources:
   - Prices/volume/marcap: marcap/data/marcap-YYYY.parquet
-  - Delisting metadata:   kr_delisted/delisting_calendar.csv
+  - Delisting metadata:   kr_delisted/data/delisting_calendar.csv
                           (regenerable via build_delisting_calendar.py)
 """
 import os
@@ -16,7 +16,7 @@ from functools import lru_cache
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARCAP_DIR = os.path.join(_REPO_ROOT, 'marcap', 'data')
-CALENDAR   = os.path.join(_REPO_ROOT, 'kr_delisted', 'delisting_calendar.csv')
+CALENDAR   = os.path.join(_REPO_ROOT, 'kr_delisted', 'data', 'delisting_calendar.csv')
 
 # Columns returned to callers (from marcap's 18-col schema)
 COMMON_COLS = ['Date','Code','Name','Market','Open','High','Low','Close',

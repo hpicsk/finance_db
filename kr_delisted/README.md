@@ -47,17 +47,17 @@ series (use returns, not levels).
 
 ```
 README.md                          (this file)
-delisting_calendar.csv             canonical universe — output of build_delisting_calendar.py
-                                   1,386 rows × 6 cols (ticker, name, market,
-                                   delisting_date, reason, is_genuine)
-delisting_calendar.kind.csv        intermediate KIND-only output of
-                                   build_delisting_calendar.py --no-proxy;
-                                   consumed by build_is_genuine_overrides.py
 delisted_loader.py                 load_delisted(ticker) / universe() API
 build_delisting_calendar.py        end-to-end regenerator (KIND + marcap + overrides)
 build_is_genuine_overrides.py      DART + manual is_genuine refinement (run once;
-                                   produces is_genuine_overrides.csv)
-is_genuine_overrides.csv           85 override rows consumed by build_delisting_calendar.py
+                                   produces data/is_genuine_overrides.csv)
+data/delisting_calendar.csv        canonical universe — output of build_delisting_calendar.py
+                                   1,386 rows × 6 cols (ticker, name, market,
+                                   delisting_date, reason, is_genuine)
+data/delisting_calendar.kind.csv   intermediate KIND-only output of
+                                   build_delisting_calendar.py --no-proxy;
+                                   consumed by build_is_genuine_overrides.py
+data/is_genuine_overrides.csv      85 override rows consumed by build_delisting_calendar.py
 ```
 
 ## Calendar schema
@@ -139,11 +139,11 @@ Run every command below from the repository root.
 ```bash
 # One-time, with a DART API key (sourced from repo-root .env):
 set -a; . .env; set +a                              # exports OPEN_DART_API_KEY
-python -m kr_delisted.build_is_genuine_overrides    # writes is_genuine_overrides.csv
+python -m kr_delisted.build_is_genuine_overrides    # writes data/is_genuine_overrides.csv
 
 # Refresh whenever:
-python -m kr_delisted.build_delisting_calendar      # writes delisting_calendar.regen.csv
-                                                    # (or pass --out kr_delisted/delisting_calendar.csv)
+python -m kr_delisted.build_delisting_calendar      # writes data/delisting_calendar.regen.csv
+                                                    # (or pass --out kr_delisted/data/delisting_calendar.csv)
 ```
 
 `build_delisting_calendar.py` takes ~20–30 s — a single KIND POST returns
@@ -157,7 +157,7 @@ all 1,268 events at once, plus 18 round-trips to KIND's
 and stable.
 
 **Run the three steps in order, or layer 2 silently skips the new rows.**
-`build_is_genuine_overrides.py` reads `delisting_calendar.kind.csv`, not the
+`build_is_genuine_overrides.py` reads `data/delisting_calendar.kind.csv`, not the
 canonical CSV, so a KIND refresh that reaches the calendar while the
 intermediate stays behind leaves the new `해산 사유 발생` rows holding the
 keyword baseline's `Y` — and `Y` is the wrong default for a dissolution that
@@ -166,10 +166,10 @@ followed a merger, which puts continuations into
 the output: every layer that ran, ran correctly.
 
 ```bash
-python -m kr_delisted.build_delisting_calendar --no-proxy   # → delisting_calendar.kind.csv
+python -m kr_delisted.build_delisting_calendar --no-proxy   # → data/delisting_calendar.kind.csv
 set -a; . .env; set +a
-python -m kr_delisted.build_is_genuine_overrides            # → is_genuine_overrides.csv
-python -m kr_delisted.build_delisting_calendar --out kr_delisted/delisting_calendar.csv
+python -m kr_delisted.build_is_genuine_overrides            # → data/is_genuine_overrides.csv
+python -m kr_delisted.build_delisting_calendar --out kr_delisted/data/delisting_calendar.csv
 ```
 
 This went wrong once — the intermediate sat at 2025-10-23 while the calendar
@@ -255,8 +255,8 @@ upstream `.csv.gz` files.
 
 ```python
 import pandas as pd
-cal = pd.read_csv('~/research/finance_db/kr_delisted/delisting_calendar.csv', dtype={'ticker': str})
-df  = pd.read_parquet('~/research/finance_db/marcap/data/marcap-2025.parquet')
+cal = pd.read_csv('kr_delisted/data/delisting_calendar.csv', dtype={'ticker': str})
+df  = pd.read_parquet('marcap/data/marcap-2025.parquet')
 # For any KIND-sourced row r in cal whose delisting_date is in 2025:
 #   df[(df.Code.str.zfill(6) == r.ticker) & (df.Date < r.delisting_date)].Date.max()
 # should equal r.delisting_date − 1 trading day.

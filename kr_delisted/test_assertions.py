@@ -54,9 +54,9 @@ class Skipped(Exception):
 sys.path.insert(0, str(REPO))
 from kr_delisted._classify import TRANSFER_REASONS          # noqa: E402
 
-CALENDAR = REPO / "kr_delisted/delisting_calendar.csv"
-KIND_CSV = REPO / "kr_delisted/delisting_calendar.kind.csv"
-OVERRIDES = REPO / "kr_delisted/is_genuine_overrides.csv"
+CALENDAR = REPO / "kr_delisted/data/delisting_calendar.csv"
+KIND_CSV = REPO / "kr_delisted/data/delisting_calendar.kind.csv"
+OVERRIDES = REPO / "kr_delisted/data/is_genuine_overrides.csv"
 # `build_delisting_calendar.PROXY_REASON`, restated rather than imported: the
 # module makes a KIND request at import time under some flag combinations, and
 # a check that reaches the network is a check that fails on a train.

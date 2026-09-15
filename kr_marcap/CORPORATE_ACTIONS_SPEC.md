@@ -14,7 +14,7 @@ bounds (documented inline), never classification thresholds.
 | Old heuristic (removed) | Official replacement | Source | Reachable from dev host? |
 |---|---|---|---|
 | `_CORROBORATION_TOL` (split vs entity) | DART 회사합병/분할/주식교환 events + SPAC-name transition | DART API, marcap `Name` | ✅ |
-| `_GAP_DAYS` / `_GAP_*` (reuse behind a gap) | KIND delisting + marcap re-appearance | `kr_delisted/delisting_calendar.csv` | ✅ |
+| `_GAP_DAYS` / `_GAP_*` (reuse behind a gap) | KIND delisting + marcap re-appearance | `kr_delisted/data/delisting_calendar.csv` | ✅ |
 | `_RESET_*` (거래재개 admin reset) | KRX 수정주가 oracle divergence | pykrx (`krx_adj_oracle`) | ✅ |
 | manual FnGuide cross-check | automated oracle validation gate | pykrx | ✅ |
 | (kept — *not* calibrated) | ₩1-sentinel & phantom-CR data-integrity guards | marcap structure | n/a |
@@ -32,11 +32,11 @@ collector ships for it, and it would require a KR-resident IP.
 | File | Role |
 |---|---|
 | `kr_status/dart_corp_actions.py` | DART event collector → `kr_status/data/dart_corp_action_events.parquet` |
-| `kr_marcap/krx_adj_oracle.py` | KRX 수정주가 collector → `kr_marcap/cache/krx_adj_oracle.parquet` |
+| `kr_marcap/krx_adj_oracle.py` | KRX 수정주가 collector → `kr_marcap/data/krx_adj_oracle.parquet` |
 | `kr_marcap/corp_actions.py` | assembles entity-break calendar (SPAC ∪ reuse ∪ DART-entity ∪ override) |
 | `kr_marcap/adjust.py` | consumes the above; builds `adj_factors.parquet` |
 | `kr_marcap/validate_against_oracle.py` | automated gate vs KRX 수정주가 |
-| `kr_marcap/corp_action_overrides.csv` | reviewed manual overrides (residuals) |
+| `kr_marcap/data/corp_action_overrides.csv` | reviewed manual overrides (residuals) |
 
 ---
 
@@ -75,7 +75,7 @@ python -m kr_marcap.adjust build
 # ── 4. Validate against KRX official 수정주가 (replaces manual FnGuide check) ──
 python -m kr_marcap.validate_against_oracle
 #    review cache/oracle_validation.csv — any disagreement is a missed reset/break
-#    or an oracle artifact; add real misses to corp_action_overrides.csv and rebuild.
+#    or an oracle artifact; add real misses to data/corp_action_overrides.csv and rebuild.
 ```
 
 Re-running step 2 with `--all` widens the oracle's validation coverage (the build
@@ -95,7 +95,7 @@ labels each from official sources, in precedence order:
    **break** at re-appearance (`reuse`).
 3. **DART entity event** (회사합병/회사분할/회사분할합병/주식교환) within the
    filing→effect window ⇒ **break** (`dart_entity`).
-4. **Override** `kind=break` in `corp_action_overrides.csv` ⇒ **break**.
+4. **Override** `kind=break` in `data/corp_action_overrides.csv` ⇒ **break**.
 5. **DART genuine event** (유상/무상/유무상증자, 감자) ⇒ **genuine** (CR adjusts; not a break).
 6. **Else** ⇒ **residual**: 액면분할/병합 (not in DART's event API) and true
    unknowns. Defaults to *not a break* (the ChangesRatio backbone stays
@@ -174,7 +174,7 @@ delisted ≥~2009) are fully covered and all agree to rounding.
 explained. Most are benign 액면분할/병합 (default not-break is correct) — confirm
 with the oracle validation. For a residual that the oracle shows is a real break
 (its pre-jump series is scaled differently from KRX's), add a row to
-`corp_action_overrides.csv`:
+`data/corp_action_overrides.csv`:
 
 ```csv
 ticker,date,kind,note

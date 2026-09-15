@@ -253,7 +253,7 @@ def check_dart_reconciliation() -> None:
     # listed' — the survivorship subset then read 98.9% because it excluded
     # the older, messier delistings rather than because delisted issuers
     # reconcile better. The cut-off was also a free parameter no result needs.
-    dl = pd.read_csv(REPO_ROOT / 'kr_delisted' / 'delisting_calendar.csv',
+    dl = pd.read_csv(REPO_ROOT / 'kr_delisted' / 'data' / 'delisting_calendar.csv',
                      dtype={'ticker': str})
     delisted = set(dl['ticker'])
 

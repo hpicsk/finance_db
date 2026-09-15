@@ -81,7 +81,7 @@ delistings); `kr_status` per-collector (see
 | Investor trading flow (granular, 14 types) | `fnguide_data/raw/fnguide_investor_*.xlsx` (6 files) |
 | Investor trading flow (3-category Smart Money) | `fnguide_data/investor_loader.py::load_investor_flow()` — 기관 / 개인 / 외국인, summed from the `raw/fnguide_investor_*` sheets |
 | Short-selling / lending / free-float | `fnguide_data/raw/fnguide_short-lending-float_20260615.xlsx` |
-| KOSPI 200 membership history | `krx_supplement/output/index_panel_daily.parquet` |
+| KOSPI 200 membership history | `krx_supplement/data/index_panel_daily.parquet` |
 | Taiwan OHLCV / institutional flow | `finmind_data/trees/ohlcv/`, `finmind_data/trees/instflow/` |
 | Taiwan adjusted close (total return — the only convention sold) | `finmind_data/derive/adjusted_loader.py::load_adjusted(ticker)` |
 | Taiwan fundamentals dated when they became readable, not when the quarter closed | `finmind_data/derive/available_date.py::with_available_date(df)` |
@@ -92,25 +92,38 @@ The `raw/` exports span 2026-02-14 to 2026-08-13 and each carries its own end
 date and its own ticker universe; a join silently truncates to the earliest of
 them. It is per *sheet*, not per file — DataGuide builds a workbook one sheet at
 a time, and sheets in the same file differ in both end date and universe.
-`fnguide_data/vintages.csv` records each sheet's stamp so a join can be dated
+`fnguide_data/data/vintages.csv` records each sheet's stamp so a join can be dated
 with `min(end_date(...))` instead of a guess. The same applies across
 packages — `kr_marcap`'s benchmark against FnGuide is bounded by the marcap
 vintage, not the FnGuide pull.
 
 ## What's tracked vs ignored
 
+The Korean packages name their data directories from one vocabulary, and the
+name says whether git tracks the directory:
+
+| Directory | Holds | Git |
+|---|---|---|
+| `raw/` | what a source served, as served: DataGuide exports, OpenDART zips, KRX daily snapshots | ignored |
+| `cache/` | parsed or derived tables a package command rebuilds | ignored |
+| `data/` | the tables loaders and checks read: calendars, collected tables, snapshots that cannot be re-pulled, reviewed overrides | tracked |
+| `runtime/` | logs and resume state | ignored |
+
+`finmind_data/` is the Taiwan data and keeps its own layout, which its README
+describes.
+
 **Tracked (committed to git):**
 - All `*.py` code (loaders, downloaders, builders) and each package's
   `test_assertions.py`.
 - All `*.md` documentation, including methodology and integrity reports.
-- Small index files: `delisting_calendar.csv`,
-  `universe.parquet`, `delisted_universe.parquet`,
-  `krx_supplement/output/*` (membership panels, sector mappings).
+- Every Korean package's `data/`, and the small tables under
+  `finmind_data/data/` except the regenerable ones `.gitignore` names.
 - Small images / diagrams.
 
 **Ignored (kept locally only — see `.gitignore`):**
-- All FnGuide xlsx files (200 MB – 1.4 GB each, exceed GitHub 100 MB
-  per-file limit).
+- Every Korean package's `raw/`, `cache/` and `runtime/` — among them the
+  FnGuide xlsx files (200 MB – 1.4 GB each, over GitHub's 100 MB per-file
+  limit).
 - The entire `marcap/` directory (external clone of github.com/FinanceData/marcap) — re-clone when setting up.
 - All FinMind per-stock parquets (`ohlcv/`, `instflow/`, `shares/`,
   fundamentals dirs, ~1.6 GB).

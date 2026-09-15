@@ -38,8 +38,8 @@ from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, 
 
 logger = setup_logging()
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 # -----------------------------------------------------------------------
 # { display name: (group_id, ind_idx2) }
@@ -96,7 +96,7 @@ def collect_index_members(
     end:   str = DEFAULT_END,
     freq:  str = "monthly",
     targets: Dict[str, Tuple[str, str]] = None,
-    output_path: Path = OUTPUT_DIR / "index_members.parquet",
+    output_path: Path = DATA_DIR / "index_members.parquet",
     resume: bool = True,
     delay: float = DEFAULT_DELAY,
 ) -> pd.DataFrame:
@@ -172,7 +172,7 @@ def main():
 
     collect_index_members(
         start=args.start, end=args.end, freq=args.freq,
-        output_path=OUTPUT_DIR / "index_members.parquet",
+        output_path=DATA_DIR / "index_members.parquet",
         resume=not args.no_resume, delay=args.delay,
     )
 

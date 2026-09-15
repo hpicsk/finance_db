@@ -78,7 +78,7 @@ Rough timings:
 ### The minimum path to the daily index panel
 
 `reconstruct_index_panel.py` collects nothing — it is a **pure transform**. It
-reads `output/index_members.parquet` and `output/index_changes.parquet`, so both
+reads `data/index_members.parquet` and `data/index_changes.parquet`, so both
 have to exist first.
 
 ```bash
@@ -88,7 +88,7 @@ python -m krx_supplement.collect_index_members --start 20000101 --freq monthly
 # 2) the entry/exit event log (exact change dates) — no login
 python -m krx_supplement.collect_index_changes
 
-# 3) 1 + 2 -> output/index_panel_daily.parquet
+# 3) 1 + 2 -> data/index_panel_daily.parquet
 python -m krx_supplement.reconstruct_index_panel
 ```
 
@@ -106,21 +106,22 @@ the exact date a change took effect. `RECONSTRUCT.md` carries the algorithm.
 ## Output layout
 
 ```
-output/
+data/                                       # tracked
 ├── sector_mapping.parquet                  # sector mapping (business-daily snapshots)
 ├── index_members.parquet / .csv            # index membership (monthly snapshots)
 ├── index_changes.parquet / .csv            # index entry/exit event log
 ├── index_membership_intervals.parquet/.csv # per-ticker membership spells
 ├── index_panel_daily.parquet               # the reconstructed business-daily panel
 ├── index_reconstruction_sanity.csv         # reconstruction agreement report (audit)
-├── index_reconstruction_synthetic.csv      # the injected events (audit)
+└── index_reconstruction_synthetic.csv      # the injected events (audit)
+raw/                                        # gitignored
 └── foreign_ownership_daily/                # foreign ownership, partitioned by year
     └── year=YYYY/{YYYYMMDD}_{STK|KSQ|KNX}.parquet
 ```
 
-> `foreign_ownership_daily/` is gitignored for its size (613 MB across 14.6k
-> files) and is rebuilt by `collect_foreign_ownership.py`. Every other output
-> file is tracked. `sector_mapping` is written as parquet only: the
+> `raw/foreign_ownership_daily/` is gitignored for its size (613 MB across 14.6k
+> files) and is rebuilt by `collect_foreign_ownership.py`. Every file under
+> `data/` is tracked. `sector_mapping` is written as parquet only: the
 > business-daily snapshot's csv mirror is a 584 MB duplicate that nothing reads.
 
 > **Cadence per file:**
@@ -226,7 +227,7 @@ import pandas as pd
 # ─────────────────────────────────────────────────────────────────
 # 1. Sector mapping
 # ─────────────────────────────────────────────────────────────────
-sector = pd.read_parquet("output/sector_mapping.parquet")
+sector = pd.read_parquet("krx_supplement/data/sector_mapping.parquet")
 sector["date"] = pd.to_datetime(sector["date"])
 
 # one date's mapping
@@ -240,7 +241,7 @@ print(samsung.drop_duplicates())
 # ─────────────────────────────────────────────────────────────────
 # 2. Index membership
 # ─────────────────────────────────────────────────────────────────
-members = pd.read_parquet("output/index_members.parquet")
+members = pd.read_parquet("krx_supplement/data/index_members.parquet")
 
 kospi200 = members[
     (members["date"] == "2024-01-31") &
@@ -397,14 +398,15 @@ krx_supplement/
 │                                 the default request delay)
 ├── test_assertions.py            executable checks behind this file's claims
 ├── populations.json              the population size each check last read
-└── output/                       collected data
-    ├── sector_mapping.parquet
-    ├── index_members.parquet / .csv
-    ├── index_changes.parquet / .csv
-    ├── index_membership_intervals.parquet / .csv
-    ├── index_panel_daily.parquet
-    ├── index_reconstruction_sanity.csv
-    ├── index_reconstruction_synthetic.csv
+├── data/                         collected tables (tracked)
+│   ├── sector_mapping.parquet
+│   ├── index_members.parquet / .csv
+│   ├── index_changes.parquet / .csv
+│   ├── index_membership_intervals.parquet / .csv
+│   ├── index_panel_daily.parquet
+│   ├── index_reconstruction_sanity.csv
+│   └── index_reconstruction_synthetic.csv
+└── raw/                          foreign ownership snapshots (gitignored)
     └── foreign_ownership_daily/year=YYYY/*.parquet
 ```
 

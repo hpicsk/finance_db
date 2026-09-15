@@ -23,6 +23,15 @@ stale silently because nothing checks a prose cross-reference. `README.md` here 
 place a reader is told both exist. Likewise a new claim assertion goes in the
 `test_assertions.py` of the package whose documentation makes the claim.
 
+## Korean packages share one directory vocabulary
+
+The Korean packages name their data directories `raw/` (as served, ignored),
+`cache/` (rebuilt by a package command, ignored), `data/` (the tracked tables
+loaders and checks read) and `runtime/` (logs and resume state, ignored).
+`README.md` § "What's tracked vs ignored" defines them, and a new Korean
+package or directory takes one of these names. `finmind_data/` is the Taiwan
+data and keeps its own layout; neither family is the template for the other.
+
 ## Don't propose merging the three top-level KR packages
 
 - `kr_delisted/` exposes `delisted_loader.universe()` and
@@ -75,7 +84,7 @@ and `len(ticker) == 6` (drops warrants / rights / ETNs / ETFs / funds).
   universe — a join silently truncates to the earliest input, and column
   counts differ because the live universe moved between pulls. It is per
   *sheet*, not per file: sheets inside one workbook differ in both end date
-  and universe. `fnguide_data/vintages.csv` carries every sheet's stamp
+  and universe. `fnguide_data/data/vintages.csv` carries every sheet's stamp
   (`fnguide_data.vintages.end_date`), so date a join by `min(...)` of its
   inputs rather than guessing, and never splice two pulls of one series.
   The same
@@ -85,7 +94,7 @@ and `len(ticker) == 6` (drops warrants / rights / ETNs / ETFs / funds).
   `fnguide_data/README.md` § "Every sheet has its own pull date" and check
   which pull the figure came from.
 - Tickers are 6-digit zero-padded strings throughout.
-- No survivorship bias: marcap and `kr_delisted/delisting_calendar.csv`
+- No survivorship bias: marcap and `kr_delisted/data/delisting_calendar.csv`
   both retain delisted tickers.
 
 ## Prerequisites for any refresh / DART step

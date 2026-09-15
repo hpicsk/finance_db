@@ -199,7 +199,7 @@ official sources, no calibrated thresholds**:
 - **Entity restructuring** — DART records a 회사합병 / 회사분할 / 회사분할합병 / 주식교환
   around a large share-count jump (reverse merger, 인적분할 재상장, 지주사 전환). E.g.
   우리은행 (000030, 2019 완전자회사화).
-- **Manual override** — `corp_action_overrides.csv` (reviewed) for the rest.
+- **Manual override** — `data/corp_action_overrides.csv` (reviewed) for the rest.
 
 A *large* share-count jump no official source explains is written to
 `cache/corp_action_residuals.csv` (loud, for review) and defaults to **not** a
@@ -300,7 +300,7 @@ real −2.1 % move). What remains:
 
 **Inside gate — KRX official 수정주가.**
 [`validate_against_oracle.py`](validate_against_oracle.py) compares every covered
-ticker's adjusted return to KRX's own 수정주가 (`krx_adj_oracle.parquet`, via
+ticker's adjusted return to KRX's own 수정주가 (`data/krx_adj_oracle.parquet`, via
 pykrx). On the candidate set, **99.8 % of tickers agree with KRX on every shared
 day** at a material tolerance; the only material disagreement is 008080, where
 our ₩1-sentinel guard is provably better than KRX's own (dirty) series. Run it
@@ -353,7 +353,7 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
   to <1 % every day **94.1 % → 96.5 %**, with no name worse and the splice/Samsung
   results unchanged. FnGuide-calibrated — 68/68 cross-checked cases agree exactly.
 
-## Files in `cache/` (gitignored, except `krx_adj_oracle.parquet`)
+## Files in `cache/` (gitignored)
 
 | File | What it is | How to regenerate |
 |---|---|---|
@@ -362,9 +362,16 @@ return-based comparison (daily log returns are anchor-invariant). Three results:
 | `adj_factors.parquet` | Per-ticker daily (date, code, raw_close, stocks, ratio, cum_factor, adj_close, valid) — `ratio` is the diagnostic Stocks ratio, `valid=False` marks pre-series-break shell history | `python -m kr_marcap.adjust build` |
 | `adjust_anomalies.csv` | Material share-jump candidates (ratio outside [0.1, 10]) tagged with the official break `source` or a `residual` flag | (same) |
 | `corp_action_residuals.csv` | Material share jumps no official source explained (review queue; default not-break) | (same) |
-| `krx_adj_oracle.parquet` | KRX official 수정주가 per (date, code) — reset detection + validation | `python -m kr_marcap.krx_adj_oracle --all` |
 | `oracle_validation.csv` | Days where our adjusted return disagrees with KRX 수정주가 | `python -m kr_marcap.validate_against_oracle` |
 | `fnguide_validation.csv` | Per-ticker agreement with FnGuide, both conventions (n_days, n_disagree, max/median \|Δ log-return\|, clean, delisted) | `python -m kr_marcap.validate_against_fnguide` |
 | `fnguide_validation_days.csv` | The disagreeing ticker-days, worst first, each labelled by cause | (same) |
 | `dividend_events.parquet` | One row per SEIBro dividend event (code, record_date, ex_date, cum_date, kind, share_class, dps, stock_ratio, pay_date, market_label) — 62 k rows / 29.6 k cash events / 2,982 tickers, 2000–2026 | `python -m kr_marcap.dividend_events build` |
 | `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps). Cross-check only — reconciles to the event sums for 96.2 % of 12.1 k (ticker, FY) pairs, 98.9 % on the delisted subset | `python -m kr_marcap.dividends build` |
+
+## Files in `data/` (tracked)
+
+| File | What it is | How to regenerate |
+|---|---|---|
+| `krx_adj_oracle.parquet` | KRX official 수정주가 per (date, code) — reset detection + validation. A live pykrx snapshot, hours to recollect and not regenerable from marcap, so it is kept | `python -m kr_marcap.krx_adj_oracle --all` |
+| `krx_adj_oracle.empty.txt` | The tickers KRX answered with no rows, which a resumed collection skips | (same) |
+| `corp_action_overrides.csv` | Reviewed manual break overrides (`ticker,date,kind,note`) for residuals the oracle shows are real breaks | edited by hand |

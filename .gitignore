@@ -67,17 +67,21 @@ finmind_data/data/exright_reference.parquet
 # kept below. adjusted_loader patches seven events off it, and
 # test_assertions.py regenerates it and fails if the committed copy has drifted.
 
-# kr_marcap built caches (regenerable from marcap/ via build_universe_panel()
-# and build_adjustment_factors()). Exception: krx_adj_oracle.parquet is a pykrx
-# snapshot (live KRX, hours to recollect, NOT regenerable from marcap) — archived
-# so the price adjustment is reproducible without re-fetching the oracle.
-kr_marcap/cache/*
-!kr_marcap/cache/krx_adj_oracle.parquet
+# kr_marcap built caches, each rebuilt by the command kr_marcap/README.md lists
+# beside it. krx_adj_oracle.parquet is not among them: it is a pykrx snapshot
+# (live KRX, hours to recollect, NOT regenerable from marcap), so it is tracked
+# under kr_marcap/data/ and the price adjustment reproduces without re-fetching it.
+kr_marcap/cache/
 
-# krx_supplement regenerable bulk output (collect_*.py rebuilds these; the
-# small index_* files and the 27 MB sector_mapping.parquet stay tracked).
-# foreign_ownership_daily is 14.6k daily parquets (613 MB).
-krx_supplement/output/foreign_ownership_daily/
+# krx_supplement/raw/foreign_ownership_daily/: the daily all-issue KRX snapshots
+# collect_foreign_ownership.py pulls, 14.6k parquets (613 MB). The index and
+# sector tables under krx_supplement/data/ stay tracked.
+krx_supplement/raw/
+
+# dart_bulk/raw/: the OpenDART 일괄다운로드 zips as served (~555 MB). download.py
+# fetches the current vintage of each; the names it prunes are tracked in
+# dart_bulk/data/bulk_vintage_pruned.csv.
+dart_bulk/raw/
 
 # =============================================================================
 # Run artifacts
@@ -100,5 +104,5 @@ _internal/
 # Stray PDFs
 finmind_data/*.pdf
 
-# Tracked: everything else (code, README/docs, small index CSVs/parquets,
-# delisting_calendar.csv, krx_supplement/output/*, etc.)
+# Tracked: everything else — code, README/docs, and every Korean package's data/
+# (README.md § "What's tracked vs ignored" names the vocabulary).

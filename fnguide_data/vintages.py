@@ -12,9 +12,9 @@ everything into one session — that alignment survives exactly until the next
 single-file refresh, and re-anchors every back-adjusted level on the way — but
 to make the vintage *readable* without paying to parse 6.5 GB of xlsx:
 
-    python -m fnguide_data.vintages           # re-scan raw/ and rewrite vintages.csv
+    python -m fnguide_data.vintages           # re-scan raw/ and rewrite data/vintages.csv
 
-``vintages.csv`` is committed and the whole scan takes ~30 s, because openpyxl
+``data/vintages.csv`` is committed and the whole scan takes ~30 s, because openpyxl
 streams the sheet XML and stops after the header. Consumers read the CSV:
 
     from fnguide_data.vintages import load, end_date
@@ -36,7 +36,7 @@ import openpyxl
 import pandas as pd
 
 RAW_DIR = Path(__file__).resolve().parent / 'raw'
-MANIFEST_PATH = Path(__file__).resolve().parent / 'vintages.csv'
+MANIFEST_PATH = Path(__file__).resolve().parent / 'data' / 'vintages.csv'
 
 # Header rows are found by their column-A label rather than by index. The
 # English-locale exports open on a genuinely blank row where the Korean-locale

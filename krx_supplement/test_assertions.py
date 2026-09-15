@@ -50,7 +50,7 @@ def test_kospi200_panel_inwindow_complete():
     out of scope. This tripwire fires if a panel regeneration ever collapses
     in-window membership.
     """
-    fp = REPO / "krx_supplement/output/index_panel_daily.parquet"
+    fp = REPO / "krx_supplement/data/index_panel_daily.parquet"
     df = pd.read_parquet(fp)
     df["date"] = pd.to_datetime(df["date"])
     k = df[df["index"] == "코스피 200"]
@@ -91,7 +91,7 @@ def test_sector_panel_covers_every_session():
     absence itself is checkable: every session the calendar carries inside the
     panel's span appears in it, in both markets.
     """
-    fp = REPO / "krx_supplement/output/sector_mapping.parquet"
+    fp = REPO / "krx_supplement/data/sector_mapping.parquet"
     df = pd.read_parquet(fp, columns=["date", "market"])
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     cells = df.drop_duplicates()
@@ -126,7 +126,7 @@ def test_foreign_ownership_empty_files_fall_on_non_sessions():
     every later run and the gap never refills. An empty file therefore has to
     fall on a day the market was shut.
     """
-    base = REPO / "krx_supplement/output/foreign_ownership_daily"
+    base = REPO / "krx_supplement/raw/foreign_ownership_daily"
     sessions = _marcap_sessions()
     cal_end = max(sessions)
     on_session, n_empty, examined, past_calendar = [], 0, 0, 0
@@ -157,7 +157,7 @@ def test_change_log_misses_removes():
     log records ADDs whose REMOVE never arrives — 132 ISINs for KOSPI 200 and
     104 for KOSDAQ 150 — which is why the month-end snapshots are the ground
     truth and the log only supplies exact dates between them."""
-    ch = pd.read_parquet(REPO / "krx_supplement/output/index_changes.parquet")
+    ch = pd.read_parquet(REPO / "krx_supplement/data/index_changes.parquet")
     got = {}
     for idx, g in ch.groupby("index"):
         added = set(g.loc[g["action"] == "ADD", "isin"])
@@ -175,7 +175,7 @@ def test_reconstruction_results_block():
     is read off the outputs — snapshots per index and their span, intervals,
     synthetic events, the sanity match, the in_source / out_source split, and
     the daily panel's rows and span."""
-    out = REPO / "krx_supplement/output"
+    out = REPO / "krx_supplement/data"
     mem = pd.read_parquet(out / "index_members.parquet")
     mem["date"] = pd.to_datetime(mem["date"])
     iv = pd.read_parquet(out / "index_membership_intervals.parquet")

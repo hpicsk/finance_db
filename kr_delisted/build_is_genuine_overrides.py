@@ -184,10 +184,10 @@ def write_overrides(rows: list[dict], path: Path) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--kind-csv",
-                    default=str(Path(__file__).parent / "delisting_calendar.kind.csv"),
+                    default=str(Path(__file__).parent / "data" / "delisting_calendar.kind.csv"),
                     help="path to KIND-only CSV (run build_delisting_calendar.py --no-proxy first)")
     ap.add_argument("--out",
-                    default=str(Path(__file__).parent / "is_genuine_overrides.csv"))
+                    default=str(Path(__file__).parent / "data" / "is_genuine_overrides.csv"))
     ap.add_argument("--api-key", default=os.environ.get("OPEN_DART_API_KEY"))
     args = ap.parse_args(argv)
 

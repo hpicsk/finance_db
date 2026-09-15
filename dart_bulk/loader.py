@@ -24,7 +24,7 @@ if TYPE_CHECKING:                      # pandas stays out of the import path;
     import pandas as pd                # only coverage() needs it, at the call.
 
 HERE = Path(__file__).resolve().parent
-BULK_DIR = HERE / "data" / "bulk"
+RAW_DIR = HERE / "raw"
 
 # 각 zip 은 업종으로 갈린다 — 일반(무접미사) / 금융기타 / 보험 / 은행 / 증권. 금융업
 # 시트는 계정 체계가 달라 같은 항목코드가 다른 것을 뜻하므로, 거르는 쪽이 기본이다.
@@ -54,10 +54,10 @@ def latest_vintages(pattern: str, root: Path | None = None) -> list[dict]:
 
     superseded 는 "오늘 디스크에 남아 있는 옛 빈티지"다. download 가 받자마자
     지우므로 보통 비어 있고, 빈 것은 "재생성된 적 없음"이 아니라 "이미 치웠음"을
-    뜻한다. 지운 이름은 bulk_vintage_pruned.csv 에 남는다.
+    뜻한다. 지운 이름은 data/bulk_vintage_pruned.csv 에 남는다.
     """
     groups: dict[tuple[int, str, str], list[tuple[str, Path]]] = {}
-    for zp in sorted((root or BULK_DIR).glob(pattern)):
+    for zp in sorted((root or RAW_DIR).glob(pattern)):
         m = ZIP_RE.fullmatch(zp.name)
         if not m:
             sys.exit(f"빈티지를 읽을 수 없는 파일명: {zp.name} — "
@@ -77,7 +77,7 @@ def latest_vintages(pattern: str, root: Path | None = None) -> list[dict]:
 def open_zip(picked: dict | str, root: Path | None = None) -> zipfile.ZipFile:
     """latest_vintages 가 고른 한 벌(또는 파일명)을 연다."""
     name = picked["file"] if isinstance(picked, dict) else picked
-    return zipfile.ZipFile((root or BULK_DIR) / name)
+    return zipfile.ZipFile((root or RAW_DIR) / name)
 
 
 def entry_name(info: zipfile.ZipInfo) -> str:

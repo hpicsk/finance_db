@@ -10,7 +10,7 @@ Market codes
     ``KNX`` 코넥스 (KONEX, from 2013-07-01)
 
 Output, partitioned by year and safe to re-run
-    ``output/foreign_ownership_daily/year=YYYY/{YYYYMMDD}_{MKT}.parquet``
+    ``raw/foreign_ownership_daily/year=YYYY/{YYYYMMDD}_{MKT}.parquet``
 
     One file is one (date, market) snapshot of every issue. An existing file is
     skipped, so an interrupted sweep resumes where it stopped. A non-trading day
@@ -38,7 +38,7 @@ from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, setup_logging
 
 logger = setup_logging()
 
-OUTPUT_DIR = Path(__file__).parent / "output" / "foreign_ownership_daily"
+RAW_DIR = Path(__file__).parent / "raw" / "foreign_ownership_daily"
 DEFAULT_MARKETS = ("STK", "KSQ", "KNX")
 KONEX_START = pd.Timestamp("2013-07-01")
 DEFAULT_START = "20041001"
@@ -68,7 +68,7 @@ _EMPTY_SCHEMA = pd.DataFrame({
 
 
 def _output_path(date: pd.Timestamp, market: str) -> Path:
-    return OUTPUT_DIR / f"year={date.year}" / f"{date.strftime('%Y%m%d')}_{market}.parquet"
+    return RAW_DIR / f"year={date.year}" / f"{date.strftime('%Y%m%d')}_{market}.parquet"
 
 
 def _normalise(raw: pd.DataFrame, date: pd.Timestamp, market: str) -> pd.DataFrame:
@@ -100,7 +100,7 @@ def _fetch(date: pd.Timestamp, market: str) -> pd.DataFrame | None:
 
 def collect(start: str, end: str, markets=DEFAULT_MARKETS, delay: float = 1.0) -> tuple[int, int, int]:
     dates = pd.bdate_range(pd.Timestamp(start), pd.Timestamp(end))
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
     n_written = n_empty = n_skipped = 0
     for i, date in enumerate(dates):
         for market in markets:

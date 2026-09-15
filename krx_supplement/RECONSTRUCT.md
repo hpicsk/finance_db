@@ -11,8 +11,8 @@ snapshots) with `index_changes.parquet` (the entry/exit event log) into a
 
 | File | Written by | Role |
 |---|---|---|
-| `output/index_members.parquet` | `collect_index_members.py` | month-end snapshots (ground truth) |
-| `output/index_changes.parquet` | `collect_index_changes.py` | the exact entry/exit events (timing) |
+| `data/index_members.parquet` | `collect_index_members.py` | month-end snapshots (ground truth) |
+| `data/index_changes.parquet` | `collect_index_changes.py` | the exact entry/exit events (timing) |
 
 The snapshots say *who*; the events say *when*. The reconstruction takes each
 from the source that has it.
@@ -75,7 +75,7 @@ A ticker still `IN` when the loop ends gets an open spell (`out_date=NaT`).
 
 ## Outputs
 
-### `output/index_membership_intervals.parquet`
+### `data/index_membership_intervals.parquet`
 One row per membership spell; a ticker that entered and left several times has
 several rows.
 
@@ -93,7 +93,7 @@ Read a spell as `[in_date, out_date)`: the ticker is a member from `in_date` up
 to but not including `out_date`, because KRX's effective date is the day the new
 composition applies.
 
-### `output/index_panel_daily.parquet`
+### `data/index_panel_daily.parquet`
 The spells expanded to one row per business day.
 
 | Column | Type |
@@ -106,11 +106,11 @@ The CLI `--start-*` defaults are the index launch dates — 코스피 200
 1994-06-15, 코스닥 150 2015-07-07 — but the panel actually begins at the first
 date the event log or a snapshot covers (KOSPI 200: 1999-01-04; see Limits).
 
-### `output/index_reconstruction_sanity.csv`
+### `data/index_reconstruction_sanity.csv`
 Every snapshot date, cross-checked actual against reconstructed. Working
 correctly, `only_actual = only_recon = 0` on every snapshot.
 
-### `output/index_reconstruction_synthetic.csv`
+### `data/index_reconstruction_synthetic.csv`
 The injected synthetic events, for audit.
 
 ---
@@ -201,7 +201,7 @@ python -m krx_supplement.reconstruct_index_panel \
 ```python
 import pandas as pd
 
-iv = pd.read_parquet("output/index_membership_intervals.parquet")
+iv = pd.read_parquet("krx_supplement/data/index_membership_intervals.parquet")
 
 # members of an index on a given date
 def members_at(iv, idx, d):

@@ -26,15 +26,15 @@ from pathlib import Path
 
 import requests
 
-from .loader import BULK_DIR, REPORT_KO, STMT_KO
+from .loader import RAW_DIR, REPORT_KO, STMT_KO
 
 BASE = "https://opendart.fss.or.kr"
 LIST_URL = f"{BASE}/disclosureinfo/fnltt/dwld/list.do"
 DOWN_URL = f"{BASE}/cmm/downloadFnlttZip.do"
 HERE = Path(__file__).resolve().parent
 
-OUT = BULK_DIR
-PRUNED = HERE / "bulk_vintage_pruned.csv"
+OUT = RAW_DIR
+PRUNED = HERE / "data" / "bulk_vintage_pruned.csv"
 
 HDRS = {
     "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -123,6 +123,7 @@ def record(gone: list[tuple[str, str]]):
         with PRUNED.open(encoding="utf-8") as fh:
             rows = {r["file"]: r for r in csv.DictReader(fh)}
     rows.update({f: {"file": f, "superseded_by": by} for f, by in gone})
+    PRUNED.parent.mkdir(exist_ok=True)
     with PRUNED.open("w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, ["file", "superseded_by"])
         w.writeheader()

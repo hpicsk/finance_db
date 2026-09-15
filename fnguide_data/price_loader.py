@@ -62,7 +62,7 @@ PRICE_PATH = CACHE_DIR / 'fnguide_price.parquet'
 # a series by code, so the two occupants share one column. The calendar is what
 # distinguishes them from a halt; see _mark_segments.
 CALENDAR_PATH = (Path(__file__).resolve().parent.parent
-                 / 'kr_delisted' / 'delisting_calendar.csv')
+                 / 'kr_delisted' / 'data' / 'delisting_calendar.csv')
 
 # Sheet → (value column, market). Item codes are asserted against row 12 of each
 # sheet's header so a re-pull that swaps an item is caught at build time rather

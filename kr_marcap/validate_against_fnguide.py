@@ -67,7 +67,7 @@ from kr_marcap.universe import RELIABLE_START
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = Path(__file__).resolve().parent / "cache"
-DELISTING_CALENDAR = REPO_ROOT / "kr_delisted" / "delisting_calendar.csv"
+DELISTING_CALENDAR = REPO_ROOT / "kr_delisted" / "data" / "delisting_calendar.csv"
 OUT_TICKERS = CACHE_DIR / "fnguide_validation.csv"
 OUT_DAYS = CACHE_DIR / "fnguide_validation_days.csv"
 

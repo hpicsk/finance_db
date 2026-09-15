@@ -13,13 +13,13 @@ event for a change a snapshot proves happened, a synthetic event is injected at
 the snapshot date.
 
 Input
-    ``output/index_members.parquet``  month-end snapshots
+    ``data/index_members.parquet``  month-end snapshots
                                       (date, index, ticker, name)
-    ``output/index_changes.parquet``  the event log
+    ``data/index_changes.parquet``  the event log
                                       (date, index, action, isin, ticker, name)
 
 Output
-    ``output/index_membership_intervals.parquet`` — one row per (index, ticker)
+    ``data/index_membership_intervals.parquet`` — one row per (index, ticker)
     spell of membership:
 
         | index | ticker | name | in_date | out_date | in_source | out_source |
@@ -35,15 +35,15 @@ Output
         ``None``       ``out_date`` is NaT: still a member at the anchor, which
                        is the last snapshot
 
-    ``output/index_panel_daily.parquet`` — long format, one row per business day
+    ``data/index_panel_daily.parquet`` — long format, one row per business day
     of membership from the index's launch to the anchor: | date | index | ticker |
 
-    ``output/index_reconstruction_sanity.csv`` — for every snapshot date, the
+    ``data/index_reconstruction_sanity.csv`` — for every snapshot date, the
     two set differences between the actual snapshot and the reconstruction.
     The state machine follows every snapshot as truth, so both columns being
     zero is the expected result rather than a passing grade.
 
-    ``output/index_reconstruction_synthetic.csv`` — the injected events, for audit.
+    ``data/index_reconstruction_synthetic.csv`` — the injected events, for audit.
 
 Algorithm, a state machine per (index, ticker)
     timeline = that ticker's events, plus (snapshot date, in-snapshot?) for
@@ -95,7 +95,7 @@ from krx_supplement.krx_utils import save_with_csv, setup_logging
 
 log = setup_logging()
 
-OUT = Path(__file__).parent / "output"
+DATA_DIR = Path(__file__).parent / "data"
 
 DEFAULT_PANEL_START = {
     "코스피 200": "19940615",
@@ -104,8 +104,8 @@ DEFAULT_PANEL_START = {
 
 
 def load():
-    snaps = pd.read_parquet(OUT / "index_members.parquet")
-    events = pd.read_parquet(OUT / "index_changes.parquet")
+    snaps = pd.read_parquet(DATA_DIR / "index_members.parquet")
+    events = pd.read_parquet(DATA_DIR / "index_changes.parquet")
     snaps["date"] = pd.to_datetime(snaps["date"])
     events["date"] = pd.to_datetime(events["date"])
     return snaps, events
@@ -367,24 +367,24 @@ def main():
     iv_df = pd.concat(all_iv, ignore_index=True) if all_iv else pd.DataFrame()
     sn_df = pd.concat(all_sn, ignore_index=True) if all_sn else pd.DataFrame()
 
-    out_iv = OUT / "index_membership_intervals.parquet"
+    out_iv = DATA_DIR / "index_membership_intervals.parquet"
     save_with_csv(iv_df, out_iv)
     log.info("Saved: %s  (%d intervals)", out_iv, len(iv_df))
 
-    out_sn = OUT / "index_reconstruction_sanity.csv"
+    out_sn = DATA_DIR / "index_reconstruction_sanity.csv"
     sn_df.to_csv(out_sn, index=False, encoding="utf-8-sig")
     log.info("Saved: %s  (%d snapshot rows)", out_sn, len(sn_df))
 
     if all_syn:
         syn_df = pd.concat(all_syn, ignore_index=True)
-        out_sy = OUT / "index_reconstruction_synthetic.csv"
+        out_sy = DATA_DIR / "index_reconstruction_synthetic.csv"
         syn_df.to_csv(out_sy, index=False, encoding="utf-8-sig")
         log.info("Saved: %s  (%d synthetic events)", out_sy, len(syn_df))
 
     if not args.no_daily and all_dl:
         dl_df = pd.concat(all_dl, ignore_index=True)
         dl_df = dl_df.sort_values(["index", "date", "ticker"]).reset_index(drop=True)
-        out_dl = OUT / "index_panel_daily.parquet"
+        out_dl = DATA_DIR / "index_panel_daily.parquet"
         dl_df.to_parquet(out_dl, index=False)
         log.info("Saved: %s  (%d daily-member rows)", out_dl, len(dl_df))
 

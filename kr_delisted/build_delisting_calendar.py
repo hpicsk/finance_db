@@ -38,7 +38,8 @@ KIND_QUERY_URL   = f"{KIND_BASE}/investwarn/delcompany.do"
 KIND_SUMMARY_URL = f"{KIND_BASE}/common/companysummary.do"
 MARCAP_DIR       = Path(__file__).resolve().parents[1] / "marcap" / "data"
 PROXY_REASON     = "(not in KIND — proxy date from last-CSV-date)"
-OVERRIDES_CSV    = Path(__file__).parent / "is_genuine_overrides.csv"
+DATA_DIR         = Path(__file__).resolve().parent / "data"
+OVERRIDES_CSV    = DATA_DIR / "is_genuine_overrides.csv"
 
 MARKET_ICON = {"yu": "KOSPI", "ko": "KOSDAQ", "konex": "KONEX"}
 
@@ -260,7 +261,7 @@ def main(argv=None) -> int:
             print(f"      applied {n_overrides} is_genuine overrides from {OVERRIDES_CSV.name}", file=sys.stderr)
 
     default_name = "delisting_calendar.kind.csv" if args.no_proxy else "delisting_calendar.regen.csv"
-    out = Path(args.out) if args.out else Path(__file__).parent / default_name
+    out = Path(args.out) if args.out else DATA_DIR / default_name
     write_csv(rows, out)
     n_y = sum(1 for r in rows if r["is_genuine"] == "Y")
     n_n = len(rows) - n_y

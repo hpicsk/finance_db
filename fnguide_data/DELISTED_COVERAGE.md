@@ -82,7 +82,7 @@ sheets (row 9 of the 14-row header).
 ## Evidence
 
 Measured against the 1,018 genuine delistings in
-`~/research/finance_db/kr_delisted/delisting_calendar.csv` (`is_genuine == "Y"`),
+`~/research/finance_db/kr_delisted/data/delisting_calendar.csv` (`is_genuine == "Y"`),
 bucketed by security type — the common bucket is the one every figure above is
 quoted on, and the one `test_assertions.py::_is_common` reproduces:
 
@@ -218,7 +218,7 @@ import pandas as pd
 from fnguide_data.test_assertions import _is_common
 
 # 1. Delisted universe — restrict to common KOSPI/KOSDAQ only
-cal = pd.read_csv("~/research/finance_db/kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
+cal = pd.read_csv("~/research/finance_db/kr_delisted/data/delisting_calendar.csv", dtype={"ticker": str})
 cal = cal[(cal["is_genuine"] == "Y") & (cal["market"].isin(["KOSPI", "KOSDAQ"]))]
 # Drop preferred / SPAC / REIT / fund. Preferred is keyed on the code's
 # terminal digit, so a common whose name merely ends in 우 (대우 / 연우) is
@@ -259,7 +259,7 @@ metadata blocks of each workbook, not the full sheets.
 import pandas as pd
 
 FNG = "/home/st/research/finance_db/fnguide_data/raw"
-CAL = "/home/st/research/finance_db/kr_delisted/delisting_calendar.csv"
+CAL = "/home/st/research/finance_db/kr_delisted/data/delisting_calendar.csv"
 
 def universe(path, sheet):
     m = pd.read_excel(path, sheet_name=sheet, header=None, nrows=14)

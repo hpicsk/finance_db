@@ -91,7 +91,7 @@ def test_fnguide_price_delisted_coverage():
     if not fp.exists():
         raise Skipped("run fnguide_data.price_loader first")
     have = set(pd.read_parquet(fp, columns=["ticker"])["ticker"].unique())
-    cal = pd.read_csv(REPO / "kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
+    cal = pd.read_csv(REPO / "kr_delisted/data/delisting_calendar.csv", dtype={"ticker": str})
     cal["delisting_date"] = pd.to_datetime(cal["delisting_date"])
     g = cal[(cal["delisting_date"] >= WIN_START) & (cal["is_genuine"] == "Y")].copy()
     gc = g[[_is_common(t, n, m)
@@ -131,7 +131,7 @@ def test_fnguide_price_segments_break_reissued_codes():
     prev_date = px["date"].groupby(px["ticker"], sort=False).shift(1)
     prev_sess = sess_no.groupby(px["ticker"], sort=False).shift(1)
     gapped = (sess_no - prev_sess) > 1
-    cal = pd.read_csv(REPO / "kr_delisted/delisting_calendar.csv", dtype={"ticker": str})
+    cal = pd.read_csv(REPO / "kr_delisted/data/delisting_calendar.csv", dtype={"ticker": str})
     cal = cal[cal["is_genuine"] == "Y"]
     ev = pd.DataFrame({"ticker": cal["ticker"].str.zfill(6),
                        "event": pd.to_datetime(cal["delisting_date"])})

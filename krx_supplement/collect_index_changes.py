@@ -16,7 +16,7 @@ Source
       GET  /contents/COM/GenerateOTP.jspx?bld=...&name=form  -> OTP code
       POST /contents/MKD/99/MKD99000001.jspx with code+form  -> JSON
 
-Output (``output/index_changes.parquet``)
+Output (``data/index_changes.parquet``)
     | date       | index      | action | isin         | ticker | name           |
     | 2025-12-29 | 코스피 200 | ADD    | KR7071970008 | 071970 | HD현대마린엔진 |
     | 2025-12-29 | 코스피 200 | REMOVE | KR7042670000 | 042670 | HD현대인프라코어 |
@@ -40,8 +40,8 @@ from krx_supplement.krx_utils import DEFAULT_DELAY, DEFAULT_END, save_with_csv, 
 
 logger = setup_logging()
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 _BASE = "https://index.krx.co.kr"
 _OTP_URL = f"{_BASE}/contents/COM/GenerateOTP.jspx"
@@ -141,7 +141,7 @@ def collect_index_changes(
     start: str = "19981228",
     end: str = DEFAULT_END,
     targets: Dict[str, Tuple[str, str, str, str]] = None,
-    output_path: Path = OUTPUT_DIR / "index_changes.parquet",
+    output_path: Path = DATA_DIR / "index_changes.parquet",
     delay: float = DEFAULT_DELAY,
 ) -> pd.DataFrame:
     if targets is None:

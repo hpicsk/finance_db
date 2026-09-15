@@ -22,7 +22,8 @@ shells and pre-2016 / very-recent windows, so reset detection is a no-op there
 is NOT clean on ₩1 ticker-reuse sentinels (008080) — those are handled by the
 deterministic data-integrity guard in ``adjust.py``, which takes precedence.
 
-Output: ``cache/krx_adj_oracle.parquet`` — columns date, code, krx_adj_close.
+Output: ``data/krx_adj_oracle.parquet`` — columns date, code, krx_adj_close — and
+``data/krx_adj_oracle.empty.txt``, the tickers KRX answered with no rows.
 Resume-safe: tickers already cached are skipped unless ``--restart``.
 
 Usage:
@@ -46,7 +47,8 @@ import pyarrow.parquet as pq
 from pykrx import stock
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache"
-ORACLE_PATH = CACHE_DIR / "krx_adj_oracle.parquet"
+DATA_DIR = Path(__file__).resolve().parent / "data"
+ORACLE_PATH = DATA_DIR / "krx_adj_oracle.parquet"
 DEFAULT_START = "19950101"
 _COLS = ["date", "code", "krx_adj_close"]
 

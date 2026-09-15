@@ -27,7 +27,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
-from dart_bulk import BULK_DIR, coverage, latest_vintages  # noqa: E402
+from dart_bulk import RAW_DIR, coverage, latest_vintages  # noqa: E402
 from dart_bulk import download  # noqa: E402
 
 # Each check's population, recorded so a tree that lost rows fails rather
@@ -74,8 +74,8 @@ def _prune(names, keep):
 
 def _archive():
     """디스크의 아카이브를 (연도·분기·재무제표)마다 한 벌씩. 없으면 SKIP."""
-    if not any(BULK_DIR.glob("*.zip")):
-        raise Skipped(f"아카이브 없음({BULK_DIR}) — python -m dart_bulk.download")
+    if not any(RAW_DIR.glob("*.zip")):
+        raise Skipped(f"아카이브 없음({RAW_DIR}) — python -m dart_bulk.download")
     try:
         return latest_vintages("*.zip")
     except SystemExit as e:
@@ -172,7 +172,7 @@ def test_coverage_is_measured_from_disk():
     assert have == want, (
         f"README '지금 디스크에 있는 것'(2026-08-25 기준)과 디스크가 다르다 — "
         f"README 에만 {sorted(want - have)}, 디스크에만 {sorted(have - want)}")
-    n_zip = len(list(BULK_DIR.glob("*.zip")))
+    n_zip = len(list(RAW_DIR.glob("*.zip")))
     assert n_zip == ZIPS_ON_DISK, f"README: zip {ZIPS_ON_DISK}개 — 디스크에는 {n_zip}개"
     return f"coverage() 의 {len(have)}칸이 README 와 같고, zip 은 {n_zip}개다", n_zip
 

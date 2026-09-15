@@ -43,8 +43,8 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DART_EVENTS_PATH = REPO_ROOT / "kr_status" / "data" / "dart_corp_action_events.parquet"
-DELISTING_CSV = REPO_ROOT / "kr_delisted" / "delisting_calendar.csv"
-OVERRIDES_CSV = Path(__file__).resolve().parent / "corp_action_overrides.csv"
+DELISTING_CSV = REPO_ROOT / "kr_delisted" / "data" / "delisting_calendar.csv"
+OVERRIDES_CSV = Path(__file__).resolve().parent / "data" / "corp_action_overrides.csv"
 RESIDUALS_CSV = Path(__file__).resolve().parent / "cache" / "corp_action_residuals.csv"
 
 # --- materiality / matching bounds (NOT classification thresholds) ---
