@@ -66,7 +66,9 @@ FIRST_EVENT = pd.Timestamp("2015-01-07")
 FIRST_COLUMNS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code", "raw",
                  "n_amendments"]
 QUALIFIED = {"한정", "부적정", "의견거절"}
-AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL = 6060, 5468, 118, 13, 319, 0
+AMENDED, SERVED_LATER, HIDDEN, REVEALED, NO_ORIGINAL = 6060, 5468, 118, 13, 0
+UNREAD = (31, 61)            # first filings with no readable opinion table: (amended, never amended)
+ENDPOINT_BLANK = (921, 760)  # never-amended rows the endpoint gave no text for, and those read to a label
 HIDDEN_EXAMPLE = ("015540", range(2020, 2023))
 
 
@@ -145,15 +147,19 @@ def test_first_filings_match_the_opinions_row_for_row():
              for s in ("first", "served")}
     hidden = label["first"].isin(QUALIFIED) & (label["served"] == "적정")
     revealed = (label["first"] == "적정") & label["served"].isin(QUALIFIED)
-    unread = amended & m["rcept_no"].notna() & m["raw_first"].isna()
+    unread = m["rcept_no"].notna() & m["raw_first"].isna()
     no_original = m["rcept_no"].isna()
+    blank = ~amended & m["raw_served"].fillna("").astype(str).str.strip().isin(["", "nan", "-"])
     got = (int(amended.sum()), int(later.sum()), int(hidden.sum()), int(revealed.sum()),
-           int(unread.sum()), int(no_original.sum()))
-    want = (AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL)
+           (int((unread & amended).sum()), int((unread & ~amended).sum())), int(no_original.sum()),
+           (int(blank.sum()), int((blank & m["opinion_code_first"].isin(FOUR_OPINIONS)).sum())))
+    want = (AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL, ENDPOINT_BLANK)
     assert got == want, (
         f"README § dart_audit_first: (amended, served later than the first filing, "
-        f"qualified first and 적정 served, the reverse, unreadable first filing, no "
-        f"original listed) is {want} in the README — {got} on disk")
+        f"qualified first and 적정 served, the reverse, (amended, never-amended) rows "
+        f"with no readable opinion table, no original listed, (never-amended rows the "
+        f"endpoint gave no text, those read to a label)) is {want} in the README — "
+        f"{got} on disk")
     ticker, years = HIDDEN_EXAMPLE
     ex = m[(m["ticker"] == ticker) & m["bsns_year"].isin(years)]
     assert len(ex) == len(years) and hidden[ex.index].all(), (
@@ -161,8 +167,8 @@ def test_first_filings_match_the_opinions_row_for_row():
         f"의견거절 and the served rows 적정 — found "
         f"{list(zip(ex['bsns_year'], ex['opinion_code_first'], ex['opinion_code_served']))}")
     return (f"{len(first):,} rows: {got[0]:,} amended, {got[1]:,} served from a later "
-            f"filing; {got[2]} qualified-then-적정, {got[3]} the reverse; {got[4]} "
-            f"unreadable, {got[5]} with no original listed"), len(first)
+            f"filing; {got[2]} qualified-then-적정, {got[3]} the reverse; unreadable "
+            f"{got[4]}; {got[6][1]} of {got[6][0]} endpoint blanks read to a label"), len(first)
 
 
 # ---- README § dart_corp_actions -----------------------------------------------

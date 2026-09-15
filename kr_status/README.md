@@ -60,11 +60,17 @@ n_amendments)`, where `rcept_no` and `receipt_dt` (the 접수일자) belong to t
 사업보고서's first filing and `raw` is its 당기 감사의견. `list.json` lists every
 version of each report; `[첨부추가]` marks the original itself, and every other
 bracket an amendment. A report never amended is the filing `dart_audit` read,
-so its cached opinion is copied. For an amended one the collector fetches the
-first filing and reads the cell DART tags `OPN_CMT1` (`OPN_CMT1_A`, the
-감사보고서 row, in the form used since the FY2024 reports). A 2026-09-15 check on
-100 never-amended filings found that cell equal to the structured endpoint's
-opinion in all 96 where either carried text.
+so its cached opinion is copied, unless the endpoint gave no opinion text. For
+that report and for every amended one, the collector fetches the first filing
+and reads its opinion table on the current-period row — the row labelled 당기,
+else the highest 제N기, since some filers list the oldest year first. The
+table's cells are tagged `OPN_CMTk` (`OPN_CMTk_A`, the 감사보고서 row, in the
+form used since the FY2024 reports); older forms leave them untagged, and the
+collector then takes the first table whose header cells are 사업연도 and
+감사의견. On 105 never-amended filings sampled across 2015–2025 on 2026-09-15,
+the tagged cell matched the structured endpoint's opinion every time. The
+untagged forms are mostly reports the structured endpoint could not read
+either, so few have an endpoint opinion to compare with.
 
 Use this table, not the opinions cache, for what the market read and when:
 
@@ -73,8 +79,11 @@ Use this table, not the opinions cache, for what the market read and when:
   filing's: the endpoint served the correction.
 - 118 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
   served — 015540's FY2020–2022 among them — and 13 go the other way.
-- 319 amended rows' first filings carry no readable opinion cell, so their
-  `opinion_code` is empty. Every row found its first filing in `list.json`.
+- Of the 921 never-amended rows the endpoint gave no opinion text for, 760
+  read one of 적정 / 한정 / 부적정 / 의견거절 in the document.
+- 92 rows' first filings — 31 amended, 61 never amended — have no opinion
+  table the collector reads, so their `opinion_code` is empty. Every row found
+  its first filing in `list.json`.
 
 ### `dart_corp_actions.py` — corporate-action ground truth
 

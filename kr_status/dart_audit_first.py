@@ -7,10 +7,12 @@ amended. This collector finds each report's first filing and its opinion:
   1. ``list.json`` (정기공시, every version) lists each 사업보고서 of a corp_code,
      the original and every 정정, with its receipt number and date.
   2. A report never amended is the filing ``dart_audit`` already read: its first
-     filing is that one, and the opinion is the cached one.
+     filing is that one, and the opinion is the cached one, unless the endpoint
+     gave no opinion text; then the document is read as in step 3.
   3. For an amended report, ``document.xml`` fetches the first filing, and the
-     opinion is the cell DART tags ``OPN_CMT1`` — the 당기 감사의견 in
-     "V. 회계감사인의 감사의견 등", the cell the structured endpoint reports.
+     opinion is read from its opinion table — the cells DART tags ``OPN_CMTk``,
+     the ones the structured endpoint reports, or in older untagged forms the
+     table whose header names 사업연도 and 감사의견 — on the current-period row.
 
 Output (``data/dart_audit_first_filings.parquet``): one row per (ticker,
 bsns_year) of ``data/dart_audit_opinions.parquet`` — ticker, bsns_year,
@@ -52,11 +54,14 @@ LIST_FROM = "20150101"   # the first bsns_year dart_audit reads is 2015
 # "[첨부추가]" is the exception: DART relabels the original filing itself when an
 # attachment is added to it, so that entry keeps the original's receipt number.
 _REPORT_RE = re.compile(r"^(?:\[(?P<amend>[^\]]+)\])?사업보고서 \((?P<year>\d{4})\.\d{2}\)$")
-# DART tags the 당기 opinion cell ACODE="OPN_CMT1"; the form in use since the FY2024
-# reports splits it into AUNIT="OPN_CMT1_A" (감사보고서) and "OPN_CMT1_C" (연결), in
-# that order, and the first is the row the structured endpoint reports first.
-_CELL_RE = re.compile(
-    r'<(TE|TD|TU)[^>]*(?:ACODE|AUNIT)="(OPN_CMT1(?:_[A-Z])?|OPN_YEAR1)"[^>]*>(.*?)</\1>', re.S)
+# DART tags the opinion table's cells ACODE="OPN_YEARk" / "OPN_CMTk" for row k; the form
+# in use since the FY2024 reports splits the opinion into AUNIT="OPN_CMTk_A" (감사보고서)
+# and "_C" (연결), in that order, and the first is what the structured endpoint
+# reports. Older forms leave the table untagged, so it is found by its header.
+_TAG_RE = re.compile(
+    r'<(TE|TD|TU)[^>]*(?:ACODE|AUNIT)="OPN_(YEAR|CMT)(\d)(?:_[A-Z])?"[^>]*>(.*?)</\1>', re.S)
+_CELL_ANY_RE = re.compile(r"<(TD|TE|TH|TU)\b[^>]*>(.*?)</\1>", re.S)
+_PERIOD_RE = re.compile(r"제\s*(\d+)\s*기")
 _COLS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code", "raw",
          "n_amendments"]
 
@@ -102,12 +107,58 @@ def annual_filings(corp_code: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["bsns_year", "amended", "rcept_no", "receipt_dt"])
 
 
-def first_opinion(rcept_no: str) -> str | None:
-    """The 당기 감사의견 of filing `rcept_no`, read from its OPN_CMT1 cell.
+def _clean(cell: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", cell)
+                                           .replace("&cr;", "\n"))).strip()
 
-    None when DART holds no document for the filing (status 013/014), the
-    document carries no such cell, or row 1 is labelled 전기; a quota or any
-    other DART error raises.
+
+def _current(rows: list[tuple[str, str]]) -> str:
+    """The opinion of the current period among (period label, opinion) rows: the
+    row labelled 당기 — the order varies, some filers list the oldest first —
+    else the highest 제N기, else the first row."""
+    def period(label: str) -> int:
+        m = _PERIOD_RE.search(label)
+        return int(m.group(1)) if m else -1
+    pool = [r for r in rows if "당" in r[0] and "전" not in r[0]] or rows
+    return max(pool, key=lambda r: period(r[0]))[1] if any(period(r[0]) >= 0 for r in pool) else pool[0][1]
+
+
+def opinion_from_document(text: str) -> str | None:
+    """The current-period 감사의견 in a 사업보고서's main document, or None when it
+    has no opinion table. Tagged cells are read first; an untagged table is the
+    first with a header row whose cells are 사업연도 and 감사의견…."""
+    tagged: dict[int, list[str | None]] = {}
+    for _, kind, k, body in _TAG_RE.findall(text):
+        row = tagged.setdefault(int(k), ["", None])
+        if kind == "YEAR":
+            row[0] = _clean(body)
+        elif row[1] is None:
+            row[1] = _clean(body)
+    rows = [(label, opinion) for _, (label, opinion) in sorted(tagged.items()) if opinion is not None]
+    if rows:
+        return _current(rows)
+    for table in re.findall(r"<TABLE\b.*?</TABLE>", text, re.S):
+        trs = [[_clean(c) for _, c in _CELL_ANY_RE.findall(tr)]
+               for tr in re.findall(r"<TR\b.*?</TR>", table, re.S)]
+        # A header cell is the label itself; a listing-requirements table also has a
+        # row mentioning "최근 사업연도 감사의견 적정", which is not a header.
+        norm = [[re.sub(r"\s+", "", c) for c in r] for r in trs]
+        head = next((i for i, r in enumerate(norm)
+                     if "사업연도" in r and any(c.startswith("감사의견") for c in r)), None)
+        if head is None:
+            continue
+        col = next(j for j, c in enumerate(norm[head]) if c.startswith("감사의견"))
+        rows = [(r[0], r[col]) for r in trs[head + 1:] if len(r) > col and r[0]]
+        if rows:
+            return _current(rows)
+    return None
+
+
+def first_opinion(rcept_no: str) -> str | None:
+    """The current-period 감사의견 of filing `rcept_no` (see opinion_from_document).
+
+    None when DART holds no document for the filing (status 013/014) or the
+    document has no opinion table; a quota or any other DART error raises.
     """
     r = requests.get(_DOC_URL, params={"crtfc_key": _key(), "rcept_no": rcept_no},
                      timeout=120)
@@ -122,18 +173,12 @@ def first_opinion(rcept_no: str) -> str | None:
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     raw = zf.read({n.lstrip("/"): n for n in zf.namelist()}[f"{rcept_no}.xml"])
     # Older filings are EUC-KR, and a few carry a stray byte outside it; only the
-    # opinion cell is read, where a replaced character would show in `raw`.
+    # opinion table is read, where a replaced character would show in `raw`.
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("cp949", errors="replace")
-    cells = [(code, re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body)
-                                                         .replace("&cr;", "\n"))).strip())
-             for _, code, body in _CELL_RE.findall(text)]
-    year = next((v for c, v in cells if c == "OPN_YEAR1"), "")
-    opinion = next((v for c, v in cells if c.startswith("OPN_CMT1")), None)
-    # Row 1 of the form is the 당기; a label naming 전기 means the tags lie.
-    return None if opinion is None or "전" in year else opinion
+    return opinion_from_document(text)
 
 
 def _first_rows(corp_rows: pd.DataFrame, filings: pd.DataFrame, sleep_s: float) -> list[dict]:
@@ -148,8 +193,11 @@ def _first_rows(corp_rows: pd.DataFrame, filings: pd.DataFrame, sleep_s: float) 
             first = orig.iloc[0]
             row.update(rcept_no=first["rcept_no"], receipt_dt=first["receipt_dt"])
             # Never amended, and the filing dart_audit read, whose row is dated by
-            # its receipt number rather than by 접수일자: its opinion is cached.
-            if amends.empty and first["rcept_no"][:8] == r.receipt_dt.strftime("%Y%m%d"):
+            # its receipt number rather than by 접수일자: its opinion is cached —
+            # unless the endpoint gave no text, when the document is read instead.
+            cached = str(r.raw if pd.notna(r.raw) else "").strip() not in ("", "nan", "-")
+            if (amends.empty and first["rcept_no"][:8] == r.receipt_dt.strftime("%Y%m%d")
+                    and cached):
                 row.update(raw=r.raw, opinion_code=r.opinion_code)
             else:
                 text = first_opinion(first["rcept_no"])
