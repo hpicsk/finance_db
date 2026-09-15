@@ -24,7 +24,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from kr_status.corp_code_map import DATA_DIR  # noqa: E402
-from kr_status.dart_audit import MIN_YEAR, OPINIONS_PATH  # noqa: E402
+from kr_status.dart_audit import MIN_YEAR, OPINIONS_PATH, _classify  # noqa: E402
 from kr_status.dart_audit_first import FIRST_PATH  # noqa: E402
 
 # Each check's population, recorded so a tree that lost rows fails rather
@@ -55,7 +55,7 @@ LAST_YEAR = 2025
 STAMPED_LATE = 702
 AMENDED_EXAMPLE = ("015540", range(2019, 2023), 2023)
 FOUR_OPINIONS = {"적정", "한정", "부적정", "의견거절"}
-UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS = 1754, 1251, 22
+NO_TEXT, OTHER_TEXT = 1251, 229
 
 # README § dart_corp_actions: the first receipt DART's event API served.
 FIRST_EVENT = pd.Timestamp("2015-01-07")
@@ -66,7 +66,7 @@ FIRST_EVENT = pd.Timestamp("2015-01-07")
 FIRST_COLUMNS = ["ticker", "bsns_year", "rcept_no", "receipt_dt", "opinion_code", "raw",
                  "n_amendments"]
 QUALIFIED = {"한정", "부적정", "의견거절"}
-AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL = 6060, 5468, 111, 13, 319, 0
+AMENDED, SERVED_LATER, HIDDEN, REVEALED, UNREAD, NO_ORIGINAL = 6060, 5468, 118, 13, 319, 0
 HIDDEN_EXAMPLE = ("015540", range(2020, 2023))
 
 
@@ -105,19 +105,18 @@ def test_audit_rows_are_what_dart_serves_at_harvest():
         f"README § dart_audit: '{ticker}'s rows for FY{years[0]}–{years[-1]} all carry "
         f"receipt dates in {stamp}' — found "
         f"{sorted(zip(ex['bsns_year'], ex['receipt_dt'].dt.date))}")
-    text = op["raw"].fillna("").astype(str)
-    outside = ~op["opinion_code"].isin(FOUR_OPINIONS)
-    no_text = text.str.strip().isin(["", "nan"])
-    missed = outside & ~no_text & text.str.replace(r"\s+", "", regex=True).str.contains("거절")
-    got = (int(outside.sum()), int(no_text.sum()), int(missed.sum()))
-    assert got == (UNLABELLED, NO_TEXT, MISSED_DISCLAIMERS), (
-        f"README § dart_audit: '{UNLABELLED:,} rows carry a label other than 적정 / 한정 "
-        f"/ 부적정 / 의견거절: {NO_TEXT:,} have no opinion text, and "
-        f"{MISSED_DISCLAIMERS} are disclaimers the keyword match misses' — "
-        f"(other label, no text, missed disclaimer) is {got}")
+    stale = int((op["raw"].map(_classify) != op["opinion_code"]).sum())
+    assert not stale, (
+        f"README § dart_audit: 'Both collectors re-derive the label from raw whenever "
+        f"they write' — {stale} rows carry a label _classify no longer gives; run "
+        f"python -m kr_status.dart_audit --relabel")
+    label = op["opinion_code"]
+    got = (int((label == "unknown").sum()), int((~label.isin(FOUR_OPINIONS | {"unknown"})).sum()))
+    assert got == (NO_TEXT, OTHER_TEXT), (
+        f"README § dart_audit: '{NO_TEXT:,} rows carry no opinion text (unknown), and "
+        f"{OTHER_TEXT} carry text with none of those words' — (unknown, other text) is {got}")
     return (f"{late} of {len(op):,} rows stamped more than a year past the deadline; "
-            f"{got[0]:,} outside the four labels, {got[1]:,} of them without text and "
-            f"{got[2]} missed disclaimers"), len(op)
+            f"every label is _classify(raw); {got[0]:,} unknown, {got[1]} other text"), len(op)
 
 
 # ---- README § dart_audit_first ------------------------------------------------
@@ -133,6 +132,11 @@ def test_first_filings_match_the_opinions_row_for_row():
     assert keys == sorted(zip(served["ticker"], served["bsns_year"])), (
         "README § dart_audit_first: one row per row of dart_audit_opinions.parquet — "
         "the (ticker, bsns_year) sets differ")
+    read = first["raw"].notna()
+    stale = int((first.loc[read, "raw"].map(_classify) != first.loc[read, "opinion_code"]).sum())
+    assert not stale and first.loc[~read, "opinion_code"].isna().all(), (
+        f"README § dart_audit_first: the label is _classify(raw), and empty where the "
+        f"first filing was unread — {stale} rows break it")
     m = first.merge(served, on=["ticker", "bsns_year"], suffixes=("_first", "_served"))
     amended = m["n_amendments"] > 0
     number_dt = pd.to_datetime(m["rcept_no"].str[:8], format="%Y%m%d")

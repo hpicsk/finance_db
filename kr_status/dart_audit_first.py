@@ -194,6 +194,9 @@ def _save(done: pd.DataFrame, new: list[dict]) -> pd.DataFrame:
         parts = [df for df in (done, pd.DataFrame(new, columns=_COLS)) if len(df)]
         done = pd.concat(parts, ignore_index=True)
     done = done.sort_values(["ticker", "bsns_year"]).reset_index(drop=True)
+    # Labels are re-derived from `raw` on every write, as dart_audit does, so a
+    # classifier change reaches every row; an unread first filing stays empty.
+    done["opinion_code"] = done["raw"].map(lambda t: None if pd.isna(t) else _classify(t))
     FIRST_PATH.parent.mkdir(parents=True, exist_ok=True)
     done.to_parquet(FIRST_PATH, index=False)
     return done

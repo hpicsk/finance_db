@@ -62,32 +62,42 @@ def _load_cache() -> pd.DataFrame:
 
 
 def _save_cache(df: pd.DataFrame) -> None:
+    """Write the cache with opinion_code re-derived from `raw`, so a classifier
+    change reaches every row, not only the rows fetched after it."""
     OPINIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(OPINIONS_PATH, index=False)
+    df.assign(opinion_code=df["raw"].map(_classify)).to_parquet(OPINIONS_PATH, index=False)
 
 
-_LABELED_OPINION_RE = re.compile(r"감사의견\s*[:：]\s*(적정|한정|부적정|의견거절)")
+_LABELED_OPINION_RE = re.compile(r"감사의견[:：](적정|한정|부적정|의견거절)")
 
 
 def _classify(opinion_text: str) -> str:
     """Normalise free-text opinion to one of: 적정, 한정, 부적정, 의견거절.
 
-    Prefer the explicit ``감사의견 : <verdict>`` label (the annual-audit line)
-    when present, so a qualified 반기검토의견 (semi-annual review) on a line
-    above doesn't mask a clean annual opinion — e.g. 066790 FY2018
-    `반기검토의견 : 범위제한한정\n감사의견 : 적정` is a clean (적정) annual audit.
-    Only the explicit labeled form short-circuits; long free-text disclaimers
-    (which repeat "감사의견" in prose, e.g. "감사의견의 근거를…") fall through to
-    the keyword scan so genuine 의견거절 are still caught.
+    Matching ignores whitespace, since filers space the words ("적 정",
+    "의견 거절"). Prefer the explicit ``감사의견 : <verdict>`` label (the
+    annual-audit line) when present, so a qualified 반기검토의견 (semi-annual
+    review) on a line above doesn't mask a clean annual opinion — e.g. 066790
+    FY2018 `반기검토의견 : 범위제한한정\n감사의견 : 적정` is a clean (적정) annual
+    audit. Only the explicit labeled form short-circuits; long free-text
+    disclaimers (which repeat "감사의견" in prose, e.g. "감사의견의 근거를…") fall
+    through to the keyword scan so genuine 의견거절 are still caught. A text with
+    none of the four words but "거절" ("거절", "의결거절") is a disclaimer. No text
+    ("", "nan", "-") is ``unknown``; any other text is returned as its own label.
     """
-    s = str(opinion_text or "").strip()
+    text = str(opinion_text or "").strip()
+    s = re.sub(r"\s+", "", text)
+    if s in ("", "nan", "-"):
+        return "unknown"
     m = _LABELED_OPINION_RE.search(s)
     if m:
         return m.group(1)
     for k in ("의견거절", "부적정", "한정", "적정"):
         if k in s:
             return k
-    return s or "unknown"
+    if "거절" in s:
+        return "의견거절"
+    return text
 
 
 def _fetch_one(dart, corp_code: str, year: int) -> pd.DataFrame | None:
@@ -227,7 +237,16 @@ def main(argv=None) -> int:
                     help="limit number of tickers (test runs)")
     ap.add_argument("--tickers",   default=None)
     ap.add_argument("--restart",   action="store_true")
+    ap.add_argument("--relabel",   action="store_true",
+                    help="re-derive opinion_code from the cached raw text (no DART)")
     args = ap.parse_args(argv)
+    if args.relabel:
+        cache = _load_cache()
+        if cache.empty:
+            raise SystemExit(f"no cached opinions at {OPINIONS_PATH} to relabel")
+        _save_cache(cache)
+        print(f"relabelled {len(cache)} opinions → {OPINIONS_PATH}", file=sys.stderr)
+        return 0
     tickers = [t.strip() for t in args.tickers.split(",")] if args.tickers else None
     harvest(api_key=args.api_key, year_from=args.year_from, year_to=args.year_to,
             limit_tickers=args.limit, tickers=tickers, restart=args.restart)

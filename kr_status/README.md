@@ -38,10 +38,15 @@ that (ticker, year) at harvest time, and two things follow:
   015540's rows for FY2019–2022 all carry receipt dates in 2023.
   `dart_audit_first_filings.parquet` holds the first filing of every row, and
   its section below counts how often the two differ.
-- **`opinion_code` is the classifier's label, not a closed set.** 1,754 rows
-  carry a label other than 적정 / 한정 / 부적정 / 의견거절: 1,251 have no
-  opinion text, and 22 are disclaimers the keyword match misses (`거절`,
-  `의견 거절` and misspellings). Classify from `raw` where the label matters.
+- **`opinion_code` is read from `raw`, ignoring whitespace.** A
+  `감사의견 : <verdict>` line wins; otherwise the first of 의견거절 / 부적정 /
+  한정 / 적정 found in the text, and a text with none of them but `거절`
+  (`거절`, `의결거절`) is 의견거절. 1,251 rows carry no opinion text
+  (`unknown`), and 229 carry text with none of those words — 공정하게 표시하고
+  있음, 지적사항 없음, an auditor's name — which is kept as its own label. Both
+  collectors re-derive the label from `raw` whenever they write, and
+  `python -m kr_status.dart_audit --relabel` does it for the cache without
+  calling DART.
 
 ### `dart_audit_first.py` — each opinion as first filed
 
@@ -66,7 +71,7 @@ Use this table, not the opinions cache, for what the market read and when:
 - 6,060 of the 25,608 rows (23.7 %) were amended at least once. In 5,468 of
   them the opinions cache carries a receipt number dated after the first
   filing's: the endpoint served the correction.
-- 111 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
+- 118 rows read 한정 / 부적정 / 의견거절 in the first filing and 적정 as
   served — 015540's FY2020–2022 among them — and 13 go the other way.
 - 319 amended rows' first filings carry no readable opinion cell, so their
   `opinion_code` is empty. Every row found its first filing in `list.json`.
