@@ -1,7 +1,11 @@
 {
   "test_coverage_is_measured_from_disk": {
     "bound": "monotone",
-    "n": 138
+    "n": 122
+  },
+  "test_each_group_holds_one_vintage": {
+    "bound": "monotone",
+    "n": 122
   },
   "test_groups_are_year_quarter_statement": {
     "bound": "monotone",
@@ -18,10 +22,6 @@
   "test_pruned_record_appends": {
     "bound": "monotone",
     "n": 2
-  },
-  "test_superseded_vintages_still_on_disk": {
-    "bound": "monotone",
-    "n": 122
   },
   "test_unparseable_name_stops": {
     "bound": "monotone",

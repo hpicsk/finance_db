@@ -27,9 +27,9 @@ print(dart_bulk.coverage())      # 행 (연도·보고서), 열 재무제표, �
 ```
 
 2026-08-25 기준: **FY2015–2025** 와 **분기(FQ·HY·TQ) 2016–2024** 가 BS·PL·CF 전부,
-그 밖에 2025 HY(BS·PL — CF 없음) 와 2026 FQ·HY(BS·PL·CF). zip 138개가 `raw/` 에 있다. 그중 14개
-(연도·분기·재무제표)는 pruning 이 생기기 전에 받은 옛 빈티지를 아직 한 벌 더 갖고
-있고, `latest_vintages()` 의 `superseded` 열이 그 이름이다.
+그 밖에 2025 HY(BS·PL — CF 없음) 와 2026 FQ·HY(BS·PL·CF). zip 122개가 `raw/` 에
+(연도·분기·재무제표)마다 한 벌씩 있다. pruning 이 생기기 전에 받아 두었던 옛 빈티지
+16벌은 2026-09-15 에 지웠고, 그 이름은 `data/bulk_vintage_pruned.csv` 에 있다.
 
 비어 있는 칸은 "안 받음"이지 "발행처가 안 냄"이 아니다. 둘을 가르려면
 `download.catalog()` 로 사이트가 지금 제공하는 목록을 받아 이 표와 대조한다.

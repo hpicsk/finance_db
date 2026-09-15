@@ -46,8 +46,8 @@ class Skipped(Exception):
 
 # README § 지금 디스크에 있는 것, 2026-08-25 기준. 다음 갱신이 이 수를 옮기면 이
 # 검사가 실패하고, 그 실패가 README 의 수를 같은 커밋에서 옮긴다.
-ZIPS_ON_DISK = 138
-GROUPS_WITH_SUPERSEDED = 14
+ZIPS_ON_DISK = 122
+PRUNED_VINTAGES = 16
 STMTS = ("BS", "PL", "CF")
 
 
@@ -177,20 +177,27 @@ def test_coverage_is_measured_from_disk():
     return f"coverage() 의 {len(have)}칸이 README 와 같고, zip 은 {n_zip}개다", n_zip
 
 
-def test_superseded_vintages_still_on_disk():
-    # download 가 받자마자 옛 것을 지우므로 superseded 는 보통 빈다. 지금 디스크의 예외는
-    # pruning 이 생기기 전에 받은 것들이고, README 가 그 수를 적는다.
+def test_each_group_holds_one_vintage():
+    # download 는 받은 뒤 옛 빈티지를 지우고 이름을 bulk_vintage_pruned.csv 에 남긴다.
+    # README 는 디스크에 (연도·분기·재무제표)마다 한 벌만 있다고 적고, 지운 수를 적는다.
     picked = _archive()
-    held = [p for p in picked if p["superseded"]]
-    for p in held:
-        olds = p["superseded"].split(";")
-        assert all(int(z[-18:-4]) < int(p["vintage"]) for z in olds), (
-            f"README: superseded 는 고른 것보다 낡은 빈티지다 — {p['file']}: {olds}")
-    assert len(held) == GROUPS_WITH_SUPERSEDED, (
-        f"README: 옛 빈티지를 한 벌 더 갖는 (연도·분기·재무제표)는 {GROUPS_WITH_SUPERSEDED}개 — "
-        f"{len(held)}개")
-    return (f"{len(picked)}개 (연도·분기·재무제표) 중 {len(held)}개가 밀려난 빈티지를 아직 "
-            f"갖고 있다"), len(picked)
+    held = [p["file"] for p in picked if p["superseded"]]
+    assert not held, (
+        f"README: (연도·분기·재무제표)마다 한 벌만 있다 — 옛 빈티지를 더 가진 것 {held}")
+    with download.PRUNED.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    on_disk = {z.name for z in RAW_DIR.glob("*.zip")}
+    for r in rows:
+        old, new = download.VINTAGE_RE.match(r["file"]), download.VINTAGE_RE.match(r["superseded_by"])
+        assert old and new and old[1] == new[1] and int(old[2]) < int(new[2]), (
+            f"README: 지운 이름은 같은 (연도·분기·재무제표)의 더 새 빈티지에 밀린 것이다 — "
+            f"{r['file']} → {r['superseded_by']}")
+        assert r["file"] not in on_disk, (
+            f"README: 지운 {r['file']} 가 디스크에 아직 있다")
+    assert len(rows) == PRUNED_VINTAGES, (
+        f"README: 지운 옛 빈티지는 {PRUNED_VINTAGES}벌 — 기록에는 {len(rows)}벌")
+    return (f"{len(picked)}개 (연도·분기·재무제표)가 한 벌씩이고, 지운 {len(rows)}벌은 모두 "
+            f"같은 칸의 더 새 빈티지에 밀린 이름으로 기록에 있다"), len(picked)
 
 
 CHECKS = [
@@ -200,7 +207,7 @@ CHECKS = [
     test_prune_is_directional,
     test_pruned_record_appends,
     test_coverage_is_measured_from_disk,
-    test_superseded_vintages_still_on_disk,
+    test_each_group_holds_one_vintage,
 ]
 
 
