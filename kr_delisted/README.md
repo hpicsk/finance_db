@@ -87,9 +87,14 @@ docstring for the rationale of each layer.
      filing matching `합병` / `주식의 포괄적 (교환|이전)` / `주식교환` exists,
      override to N. 59 rows.
    - **REIT / SPC end-of-life** (Y → N): for each remaining `해산 사유 발생`
-     row, fetch the DART entity name; if it matches
-     `투자회사` / `리츠` / `REIT` / `기업구조조정`, the dissolution is a planned
-     end of a special-purpose vehicle, not a business failure. 16 rows.
+     row, read the entity's registered name from DART's corp-code directory;
+     if it matches `투자회사` / `리츠` / `REIT` / `기업구조조정`, the dissolution
+     is a planned end of a special-purpose vehicle, not a business failure. 16
+     rows.
+   - A DART error stops the build rather than reading as "no filing". A row
+     whose ticker the directory has no stock code for cannot be checked; the
+     builder lists it and leaves it at the keyword baseline. The 2026-09-15
+     rebuild found none among the 77 `해산 사유 발생` rows.
    - **Holding-company restructuring** (N → Y): rule-based, no DART
      needed. Reason `지주회사의 완전자회사화(지주회사 신규상장)` is treated as
      a continuation under the newly-listed holding company. 9 rows.

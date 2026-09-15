@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import requests
 import OpenDartReader
 
 from kr_delisted._classify import classify
@@ -53,17 +54,45 @@ MANUAL_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
 }
 
 
+def _list_filings(api_key: str, corp_code: str, start: str, end: str, kind: str) -> pd.DataFrame:
+    """Every final `kind` filing of `corp_code` in [start, end]; empty when DART has
+    none (status 013). Any other status raises: OpenDartReader's `list` prints an
+    error status and returns an empty frame, which read a quota stop as no filing."""
+    rows, page = [], 1
+    while True:
+        r = requests.get("https://opendart.fss.or.kr/api/list.json", params={
+            "crtfc_key": api_key, "corp_code": corp_code, "bgn_de": start, "end_de": end,
+            "last_reprt_at": "Y", "pblntf_ty": kind, "page_no": page, "page_count": 100},
+            timeout=30)
+        r.raise_for_status()
+        j = r.json()
+        status = str(j.get("status"))
+        if status == "013":
+            break
+        if status != "000":
+            raise RuntimeError(f"DART status={status} msg={j.get('message')} ({corp_code})")
+        rows += j.get("list", [])
+        if page >= int(j.get("total_page") or 1):
+            break
+        page += 1
+    return pd.DataFrame(rows)
+
+
 def dart_had_merger_filing(dart, ticker: str, delisting_date: str,
                            window_months: int = 9) -> tuple[bool, str]:
-    """Return (had_merger_filing, evidence_string) for one delisting."""
+    """Return (had_merger_filing, evidence_string) for one delisting.
+
+    Evidence "no-corp-code" means DART's directory has no stock code for the
+    ticker, so nothing was checked; the caller lists those rows.
+    """
+    corp_code = dart.find_corp_code(ticker)
+    if not corp_code:
+        return False, "no-corp-code"
     d = pd.Timestamp(delisting_date)
     start = (d - pd.DateOffset(months=window_months)).strftime("%Y%m%d")
     end   = (d + pd.DateOffset(days=30)).strftime("%Y%m%d")
-    try:
-        df = dart.list(corp=ticker, start=start, end=end, kind="B")
-    except Exception as e:
-        return False, f"dart-error:{e}"
-    if df is None or len(df) == 0:
+    df = _list_filings(dart.api_key, corp_code, start, end, "B")
+    if df.empty:
         return False, ""
     hits = df[df["report_nm"].astype(str).str.contains(MERGER_REPORT_RE, na=False, regex=True)]
     if len(hits) == 0:
@@ -76,15 +105,13 @@ def dart_is_spc_or_reit(dart, ticker: str) -> tuple[bool, str]:
     """Return (is_spc_or_reit, evidence) from the DART legal entity name.
 
     REITs and restructuring SPCs carry the entity type in their registered name
-    (e.g. '코크렙제2호기업구조조정부동산투자회사'); plain joint-stocks do not.
+    (e.g. '코크렙제2호기업구조조정부동산투자회사'); plain joint-stocks do not. The
+    name comes from DART's corp-code directory OpenDartReader holds locally.
     """
-    try:
-        info = dart.company(ticker)
-    except Exception as e:
-        return False, f"dart-error:{e}"
-    if not info:
-        return False, ""
-    corp_name = info.get("corp_name", "") or ""
+    hit = dart.corp_codes[dart.corp_codes["stock_code"] == ticker]
+    if hit.empty:
+        return False, "no-corp-code"
+    corp_name = hit.iloc[0]["corp_name"] or ""
     if SPC_NAME_RE.search(corp_name):
         return True, f"corp_name={corp_name}"
     return False, corp_name
@@ -137,9 +164,13 @@ def build_overrides(kind_csv: Path, dart, progress=True) -> list[dict]:
         print(f"querying DART for {n_total} '{DISSOLUTION_REASON}' rows", file=sys.stderr)
 
     n_merger = n_spc = 0
+    unchecked: list[str] = []
     for i, (_, row) in enumerate(diss.iterrows(), 1):
         kw = classify(row["reason"])   # always "Y" for 해산 사유 발생
         had, evidence = dart_had_merger_filing(dart, row["ticker"], row["delisting_date"])
+        if evidence == "no-corp-code":
+            unchecked.append(f"{row['ticker']} {row['delisting_date']}")
+            continue
         if had:
             n_merger += 1
             overrides.append({
@@ -168,6 +199,10 @@ def build_overrides(kind_csv: Path, dart, progress=True) -> list[dict]:
             print(f"  [{i}/{n_total}]  merger={n_merger} spc={n_spc}", file=sys.stderr)
         time.sleep(0.05)
 
+    if unchecked:
+        print(f"{len(unchecked)} '{DISSOLUTION_REASON}' rows keep the keyword baseline "
+              f"unchecked — DART's directory has no stock code for them: {unchecked}",
+              file=sys.stderr)
     return overrides
 
 
