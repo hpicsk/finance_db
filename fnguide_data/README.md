@@ -11,13 +11,10 @@
   section before joining any two of them.
 - **Layout:** Raw vendor exports live under `raw/`, the parquet parsed from them
   under `cache/` (gitignored), and the per-sheet pull dates in
-  `data/vintages.csv`. Loader modules sit at the directory root:
-  `price_loader.py` (adjusted close — the one research reads), plus
-  `fnguide_io.py`, `investor_loader.py` and `subinvestor_loader.py`, imported
-  as `fnguide_data.<module>`. **Beyond the price panel, new projects should
-  parse the sheets inline rather than depending on these helpers** — the
-  layout is simple enough that centralizing the parsers earns little. All of
-  them read xlsx through `engine="calamine"`.
+  `data/vintages.csv`. The one loader, `price_loader.py`, parses the adjusted
+  close research reads; parse the other sheets inline — the layout is simple
+  enough that a central parser earns little. Read every xlsx through
+  `engine="calamine"`.
 - **Coverage:** ~3,900 Korean listed stocks (KOSPI / KOSDAQ) for
   investor trading & financials.
 - **Adjusted prices live here; raw OHLCV does not.**
@@ -266,7 +263,7 @@ onward = one column per stock (~3,902--3,904 stocks).
 **The row numbers above are the `pd.read_excel` view, and only that view.**
 The English-locale exports have a genuinely *blank* first row where the
 Korean-locale ones have `Refresh`. `pd.read_excel` keeps it as a NaN row, so
-row 9 is `Symbol` in both — which is why `fnguide_io.py` and `price_loader.py`
+row 9 is `Symbol` in both — which is why `price_loader.py`
 can use fixed indices. `python_calamine.CalamineWorkbook.to_python()` **trims**
 it, so under that reader the English files sit one row higher than the Korean
 ones and a fixed index silently returns 코드명 where 코드 was meant. Read
@@ -304,12 +301,9 @@ reads in ~4 s a sheet against ~45 s — and it is a prerequisite of this
 package, not an optional accelerator. Install with `pip install
 python-calamine`; the repo's dependency list is in `../CLAUDE.md`.
 
-Helper modules ship in this directory for the common cases. Import them as
-`fnguide_data.<module>`, with the repository root on `sys.path`.
+One helper module ships in this directory; import it as
+`fnguide_data.price_loader`, with the repository root on `sys.path`.
 
-- `fnguide_io.py` — `load_fnguide_sheet(filepath, sheet_name)` returns
-  a date-indexed wide DataFrame; `melt_fnguide_wide(df, value_name)`
-  pivots it long.
 - `price_loader.py` — `load_price_panel()` returns the long `(date, ticker,
   market, adj_close_pr, adj_close_tr, segment)` adjusted-price panel (both
   conventions, 2005+, delisted included) from
@@ -317,29 +311,6 @@ Helper modules ship in this directory for the common cases. Import them as
   `cache/fnguide_price.parquet` on first call. `segment` numbers each code's
   listing spells, so returns are differenced within `['ticker', 'segment']`.
   This is the package's research price input; see §9 below.
-- `investor_loader.py` —
-  `load_investor_flow(start, end, *, raw_dir, investor_types=('기관','개인','외국인'), foreign_definition='등록외국인', cache_dir=None)`
-  returns a long
-  `(date, ticker, investor_type, buy_value, sell_value, net_buy_value)`
-  panel (KRW) for any date range, derived from
-  the `raw/fnguide_investor_*` exports (`inst-buy`, `inst-sell-fin-ins-trust`,
-  `pension-corp-retail`, `foreign-pe`). `foreign_definition='등록외국인'`
-  (Smart Money, default) restricts 외국인 to registered foreigners;
-  `'외국인계'` adds 기타외국인. Sibling helper `to_wide_net(flow)`
-  pivots to wide `(date, ticker, institutional, individual, foreign)`
-  net columns.
-- `subinvestor_loader.py` —
-  `load_subinvestor_flow(start, end, *, raw_dir, subinvestor_types=<all 8>, cache_dir=None)`
-  returns a long `(date, ticker, subinvestor_type, buy_value, sell_value,
-  net_buy_value)` panel (KRW) decomposing the 기관계 aggregate into its 8 KRX
-  sub-types (pension/연기금등, insurance/보험, investment_trust/투신,
-  pe_funds/사모펀드, financial_inv/금융투자, other_financial/기타금융,
-  bank/은행, government/국가) from the five `raw/fnguide_investor_*` exports
-  other than `inst-buy`.
-  `SUBINVESTOR_SOURCES` is the canonical 8-type → (file, sheet) map; sibling
-  `to_wide_net_sub(flow)` pivots to one net column per sub-type. A missing/
-  renamed sheet raises (fail loud); consumers requiring all 8 should error on
-  an absent type rather than zero-fill.
 
 OHLCV, market cap, listed shares and point-in-time common-stock membership
 are not in this package at all; the repo root's `README.md` maps where each

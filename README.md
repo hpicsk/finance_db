@@ -81,7 +81,6 @@ delistings); `kr_status` per-collector (see
 | Load one delisted ticker's *raw* (unadjusted) OHLCV | `kr_delisted/delisted_loader.py::load_delisted(ticker)` |
 | Every listed company's financial statements (FY/HY/Q, BS·PL·CF) | `dart_bulk/loader.py::latest_vintages` + `open_zip` / `sheets` — **never** the per-company API for a panel (its README counts the calls) |
 | Investor trading flow (granular, 14 types) | `fnguide_data/raw/fnguide_investor_*.xlsx` (6 files) |
-| Investor trading flow (3-category Smart Money) | `fnguide_data/investor_loader.py::load_investor_flow()` — 기관 / 개인 / 외국인, summed from the `raw/fnguide_investor_*` sheets |
 | Short-selling / lending / free-float | `fnguide_data/raw/fnguide_short-lending-float_20260615.xlsx` |
 | KOSPI 200 membership history | `krx_supplement/data/index_panel_daily.parquet` |
 | Taiwan OHLCV / institutional flow | `finmind_data/trees/ohlcv/`, `finmind_data/trees/instflow/` |
