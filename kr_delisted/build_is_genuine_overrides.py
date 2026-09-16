@@ -32,8 +32,9 @@ import time
 from pathlib import Path
 
 import pandas as pd
-import requests
 import OpenDartReader
+
+from kr_status.dart_request import dart_get
 
 from kr_delisted._classify import classify
 
@@ -60,11 +61,9 @@ def _list_filings(api_key: str, corp_code: str, start: str, end: str, kind: str)
     error status and returns an empty frame, which read a quota stop as no filing."""
     rows, page = [], 1
     while True:
-        r = requests.get("https://opendart.fss.or.kr/api/list.json", params={
+        r = dart_get("https://opendart.fss.or.kr/api/list.json", {
             "crtfc_key": api_key, "corp_code": corp_code, "bgn_de": start, "end_de": end,
-            "last_reprt_at": "Y", "pblntf_ty": kind, "page_no": page, "page_count": 100},
-            timeout=30)
-        r.raise_for_status()
+            "last_reprt_at": "Y", "pblntf_ty": kind, "page_no": page, "page_count": 100})
         j = r.json()
         status = str(j.get("status"))
         if status == "013":

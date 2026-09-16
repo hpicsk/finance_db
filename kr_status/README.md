@@ -133,6 +133,13 @@ it, so this collector runs *after* a seeding build, not before (`--tickers` /
 it drops some retired registrations — is a miss. Misses are logged to
 `data/corp_code_misses.csv` for triage.
 
+`dart_request.py` is the one place a collector here reaches DART over HTTP.
+DART takes the API key as the `crtfc_key` query parameter, and `requests` quotes
+the whole URL in every exception it raises, so a failed crawl used to write the
+key into its own log. `dart_get` re-raises with that value replaced, so the key
+never reaches the error text; `kr_marcap.dividends` and
+`kr_delisted.build_is_genuine_overrides` call DART through it too.
+
 A DART error stops every collector here rather than reading as an empty
 answer: `dart_audit` and `dart_audit_first` raise on every status but success
 and no data (013, and 014 for a missing document), and `dart_corp_actions`
@@ -145,7 +152,7 @@ events did not all answer is fetched again.
 
 | Source | URL | Notes |
 |---|---|---|
-| DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it via `requests.get` directly |
+| DART audit-opinion | `opendart.fss.or.kr/api/accnutAdtorNmNdAdtOpinion.json` | DS002/2020009; **bsns_year ≥ 2015 only**. Not wrapped by OpenDartReader — `dart_audit._fetch_one` calls it through `dart_request.dart_get` |
 | DART 주요사항보고서 events | `opendart.fss.or.kr/api/{piicDecsn,fricDecsn,…}.json` (DS005) | 증자 / 감자 / 합병 / 분할 / 주식교환 per (ticker, event); used by `dart_corp_actions`, which reads the status itself. Nothing filed before 2015 |
 | DART 공시검색 | `opendart.fss.or.kr/api/list.json` | every 사업보고서 of a corp_code, original and 정정 (`last_reprt_at=N`); used by `dart_audit_first` |
 | DART 공시서류원본 | `opendart.fss.or.kr/api/document.xml` | the first filing's main document, read at the `OPN_CMT1` cell; used by `dart_audit_first` |

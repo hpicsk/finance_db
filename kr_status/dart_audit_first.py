@@ -38,9 +38,9 @@ import time
 import zipfile
 
 import pandas as pd
-import requests
 
 from kr_status.corp_code_map import DATA_DIR
+from kr_status.dart_request import dart_get
 from kr_status.dart_audit import OPINIONS_PATH, _classify
 
 FIRST_PATH = DATA_DIR / "dart_audit_first_filings.parquet"
@@ -84,11 +84,10 @@ def annual_filings(corp_code: str) -> pd.DataFrame:
     """Every 사업보고서 filing of `corp_code` since LIST_FROM, originals and 정정."""
     rows, page = [], 1
     while True:
-        r = requests.get(_LIST_URL, params={
+        r = dart_get(_LIST_URL, {
             "crtfc_key": _key(), "corp_code": corp_code, "bgn_de": LIST_FROM,
             "end_de": pd.Timestamp.today().strftime("%Y%m%d"), "last_reprt_at": "N",
-            "pblntf_ty": "A", "page_no": page, "page_count": 100}, timeout=30)
-        r.raise_for_status()
+            "pblntf_ty": "A", "page_no": page, "page_count": 100})
         j = r.json()
         status = str(j.get("status"))
         if status == "013":       # no filing in the window
@@ -169,9 +168,7 @@ def first_opinion(rcept_no: str) -> str | None:
     None when DART holds no document for the filing (status 013/014) or the
     document has no opinion table; a quota or any other DART error raises.
     """
-    r = requests.get(_DOC_URL, params={"crtfc_key": _key(), "rcept_no": rcept_no},
-                     timeout=120)
-    r.raise_for_status()
+    r = dart_get(_DOC_URL, {"crtfc_key": _key(), "rcept_no": rcept_no}, timeout=120)
     if not zipfile.is_zipfile(io.BytesIO(r.content)):
         m = re.search(r"<status>(\d+)</status>.*?<message>(.*?)</message>", r.text, re.S)
         status, message = m.groups() if m else ("?", r.text[:200])

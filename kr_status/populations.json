@@ -15,6 +15,10 @@
     "bound": "monotone",
     "n": 4356
   },
+  "test_dart_errors_carry_no_key": {
+    "bound": "monotone",
+    "n": 6
+  },
   "test_first_filings_match_the_opinions_row_for_row": {
     "bound": "monotone",
     "n": 25608

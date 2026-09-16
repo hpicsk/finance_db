@@ -46,11 +46,11 @@ from pathlib import Path
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import requests
 
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
 )
+from kr_status.dart_request import dart_get
 
 EVENTS_PATH = DATA_DIR / "dart_corp_action_events.parquet"
 
@@ -72,10 +72,9 @@ START = "1999-01-01"   # DART receipt-date floor; events before this are absent 
 def _fetch_events(key: str, corp_code: str, event: str) -> pd.DataFrame:
     """Every `event` filing of `corp_code` since START; empty when DART has none
     (status 013). Any other status — a quota stop, maintenance — raises."""
-    r = requests.get(f"https://opendart.fss.or.kr/api/{_ENDPOINT[event]}.json", params={
+    r = dart_get(f"https://opendart.fss.or.kr/api/{_ENDPOINT[event]}.json", {
         "crtfc_key": key, "corp_code": corp_code, "bgn_de": START.replace("-", ""),
-        "end_de": pd.Timestamp.today().strftime("%Y%m%d")}, timeout=30)
-    r.raise_for_status()
+        "end_de": pd.Timestamp.today().strftime("%Y%m%d")})
     j = r.json()
     status = str(j.get("status"))
     if status == "013":

@@ -29,9 +29,9 @@ import time
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 from kr_status.corp_code_map import open_dart, get_corp_code, flush_cache, flush_misses
+from kr_status.dart_request import dart_get
 
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 UNIVERSE_PANEL = CACHE_DIR / 'universe_panel.parquet'
@@ -72,10 +72,9 @@ def _alot_matter(api_key: str, corp_code: str, year: int) -> pd.DataFrame:
     none (status 013). Any other status raises, and so does a success missing the
     columns read below: OpenDartReader's `report` returns an empty frame on every
     error status, which read a quota stop as a company that paid nothing."""
-    r = requests.get("https://opendart.fss.or.kr/api/alotMatter.json", params={
+    r = dart_get("https://opendart.fss.or.kr/api/alotMatter.json", {
         "crtfc_key": api_key, "corp_code": corp_code, "bsns_year": str(year),
-        "reprt_code": "11011"}, timeout=30)
-    r.raise_for_status()
+        "reprt_code": "11011"})
     j = r.json()
     status = str(j.get("status"))
     if status == "013":

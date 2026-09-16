@@ -228,12 +228,43 @@ def test_corp_code_cache_records_its_misses():
             f"of them in corp_code_misses.csv"), len(cc)
 
 
+def test_dart_errors_carry_no_key():
+    """README § Shared utility: the key never reaches the error text.
+
+    Two ways it could: `dart_get` failing to replace it, or a collector calling
+    `requests.get` itself, which quotes the whole URL in what it raises.
+    """
+    from kr_status.dart_request import dart_get
+    key = "0" * 40
+    try:
+        # Nothing listens on port 1, so the request fails without leaving the host.
+        dart_get("http://127.0.0.1:1/api/list.json", {"crtfc_key": key})
+    except RuntimeError as e:
+        msg = str(e)
+    else:
+        raise AssertionError("README § Shared utility: a refused connection has to "
+                             "raise, and dart_get returned")
+    assert key not in msg, (
+        f"README § Shared utility: 'the key never reaches the error text' — a "
+        f"failed request raised {msg}")
+    # This file is excluded because it quotes the call it forbids; dart_request
+    # is the wrapper itself.
+    modules = sorted(p for p in Path(__file__).parent.glob("*.py")
+                     if p.name != "dart_request.py" and p != Path(__file__))
+    direct = [p.name for p in modules if "requests.get(" in p.read_text()]
+    assert not direct, (
+        f"README § Shared utility: '`dart_request.py` is the one place a collector "
+        f"here reaches DART over HTTP' — {direct} call requests.get themselves")
+    return (f"dart_get redacts the key; none of the {len(modules)} other modules "
+            f"calls requests.get"), len(modules)
+
 CHECKS = [
     test_audit_opinions_start_at_2015,
     test_audit_rows_are_what_dart_serves_at_harvest,
     test_first_filings_match_the_opinions_row_for_row,
     test_corp_actions_split_genuine_from_entity,
     test_corp_code_cache_records_its_misses,
+    test_dart_errors_carry_no_key,
 ]
 
 

@@ -26,11 +26,11 @@ import sys
 import time
 
 import pandas as pd
-import requests
 
 from kr_status.corp_code_map import (
     DATA_DIR, get_corp_code, flush_cache, flush_misses, open_dart,
 )
+from kr_status.dart_request import dart_get
 
 OPINIONS_PATH = DATA_DIR / "dart_audit_opinions.parquet"
 _COLUMNS = ["ticker", "bsns_year", "opinion_code", "receipt_dt", "raw"]
@@ -124,13 +124,12 @@ def _fetch_one(dart, corp_code: str, year: int) -> pd.DataFrame | None:
     api_key = os.environ.get("OPEN_DART_API_KEY")
     if not api_key:
         raise RuntimeError("OPEN_DART_API_KEY not set in env")
-    r = requests.get(_DART_AUDIT_URL, params={
+    r = dart_get(_DART_AUDIT_URL, {
         "crtfc_key":  api_key,
         "corp_code":  corp_code,
         "bsns_year":  str(year),
         "reprt_code": AUDIT_REPORT_CODE,
     }, timeout=15)
-    r.raise_for_status()
     payload = r.json()
     status = str(payload.get("status", ""))
     if status == "013":           # no data for this (corp, year)
