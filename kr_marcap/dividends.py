@@ -20,7 +20,9 @@ Build once (after a marcap refresh / annually for the new fiscal year):
     export OPEN_DART_API_KEY=...          # or put it in finance_db/.env
     python -m kr_marcap.dividends build
 
-Output: ``cache/dividends.parquet`` (code, fiscal_year, yield_pct, dps).
+Output: ``cache/dividends.parquet`` (code, fiscal_year, yield_pct, dps), and
+``runtime/dividends_no_report.txt``, the tickers DART served no 배당 report
+for, which a resumed crawl then does not call again.
 """
 from __future__ import annotations
 
@@ -36,6 +38,8 @@ from kr_status.dart_request import dart_get
 CACHE_DIR = Path(__file__).resolve().parent / 'cache'
 UNIVERSE_PANEL = CACHE_DIR / 'universe_panel.parquet'
 DIVIDENDS_PATH = CACHE_DIR / 'dividends.parquet'
+RUNTIME_DIR = Path(__file__).resolve().parent / 'runtime'
+NO_REPORT_PATH = RUNTIME_DIR / 'dividends_no_report.txt'
 
 # Each DART 배당 report carries the year (thstrm) plus the two prior years
 # (frmtrm, lwfr). These four windows therefore cover fiscal 2014-2025 with no
@@ -145,22 +149,35 @@ def build_dividends(restart: bool = False, limit: int | None = None) -> pd.DataF
 
     existing = pd.DataFrame()
     done = set()
-    if DIVIDENDS_PATH.exists() and not restart:
-        existing = pd.read_parquet(DIVIDENDS_PATH)
-        existing['code'] = existing['code'].astype(str).str.zfill(6)
-        done = set(existing['code'])
+    # A ticker DART serves no 배당 report for writes no row, so a resume keyed
+    # on the parquet alone calls every one of them again; this file holds the
+    # rest of the resume state.
+    no_report: set[str] = set()
+    if not restart:
+        if DIVIDENDS_PATH.exists():
+            existing = pd.read_parquet(DIVIDENDS_PATH)
+            existing['code'] = existing['code'].astype(str).str.zfill(6)
+            done = set(existing['code'])
+        if NO_REPORT_PATH.exists():
+            no_report = set(NO_REPORT_PATH.read_text().split())
 
-    todo = uni[~uni['code'].isin(done)].reset_index(drop=True)
+    todo = uni[~uni['code'].isin(done | no_report)].reset_index(drop=True)
     print(f'dividends: {len(uni)} common tickers, {len(done)} cached, '
-          f'{len(todo)} to crawl', file=sys.stderr, flush=True)
+          f'{len(no_report)} with no report, {len(todo)} to crawl',
+          file=sys.stderr, flush=True)
 
     rows = []
-    n_hit = 0
+    n_hit = n_read = 0
     unresolved: list[str] = []
 
     def checkpoint():
         part = pd.DataFrame(rows, columns=['code', 'fiscal_year', 'yield_pct', 'dps'])
-        pd.concat([existing, part], ignore_index=True).to_parquet(DIVIDENDS_PATH, index=False)
+        # An empty frame carries no dtypes, and a resume that crawls nothing new
+        # writes one; `or [part]` keeps the columns when both sides are empty.
+        frames = [f for f in (existing, part) if len(f)] or [part]
+        pd.concat(frames, ignore_index=True).to_parquet(DIVIDENDS_PATH, index=False)
+        RUNTIME_DIR.mkdir(exist_ok=True)
+        NO_REPORT_PATH.write_text(''.join(f'{c}\n' for c in sorted(no_report)))
         flush_cache()
         flush_misses()
 
@@ -171,6 +188,10 @@ def build_dividends(restart: bool = False, limit: int | None = None) -> pd.DataF
                 unresolved.append(r['code'])
                 continue
             y = yields_for(dart, cc)
+            if y:
+                n_read += 1
+            else:
+                no_report.add(r['code'])
             if any(v[0] for v in y.values()):
                 n_hit += 1
             for fy, (yv, dv) in y.items():
@@ -185,10 +206,13 @@ def build_dividends(restart: bool = False, limit: int | None = None) -> pd.DataF
         print(f'{len(unresolved)} tickers have no corp_code in DART\'s directory and '
               f'were not crawled: {unresolved}', file=sys.stderr, flush=True)
 
-    # Guard against a parse that stopped finding payers (relabelled items) midway.
-    if len(todo) > 50 and n_hit / len(todo) < 0.10:
+    # Guard against a parse that stopped finding payers (relabelled items) midway,
+    # counted over the tickers whose report DART served. A resume's todo is mostly
+    # tickers the directory cannot resolve and tickers with no report at all, and
+    # counting those reads a finished crawl's tail as a parse failure.
+    if n_read > 50 and n_hit / n_read < 0.10:
         raise RuntimeError(
-            f'implausibly low dividend hit-rate ({n_hit}/{len(todo)}) — '
+            f'implausibly low dividend hit-rate ({n_hit}/{n_read} reports) — '
             'check the 배당 report\'s item labels before trusting the crawl'
         )
 
