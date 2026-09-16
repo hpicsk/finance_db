@@ -6,7 +6,7 @@ one figure per fiscal year, no 기준일 and no 결산/중간/분기 split, so i
 which session the 배당락 fell on. ``kr_marcap.dividend_events`` (SEIBro, event-level)
 now feeds ``adjust.load_adjusted(..., total_return=True)``; this file is kept as an
 independent second source — summing the SEIBro events over a December fiscal year
-reproduces DART's annual DPS for 96.2 % of 12.1 k (ticker, FY) pairs and 98.9 % of
+reproduces DART's annual DPS for 96.2 % of 12.1 k (ticker, FY) pairs and 96.0 % of
 the delisted subset, which is a real check because the two are collected
 independently (예탁원 권리배정 record vs 사업보고서 disclosure).
 
@@ -39,8 +39,9 @@ DIVIDENDS_PATH = CACHE_DIR / 'dividends.parquet'
 
 # Each DART 배당 report carries the year (thstrm) plus the two prior years
 # (frmtrm, lwfr). These four windows therefore cover fiscal 2014-2025 with no
-# gaps in 4 calls/ticker (~15k calls for the full universe, under DART's
-# 20k/day cap). Fiscal ≤2013 is not in the structured endpoint.
+# gaps in 4 calls/ticker (13.3 k calls for the 3,320 tickers DART's directory
+# resolved in 2026-09, under DART's 20k/day cap). Fiscal ≤2013 is not in the
+# structured endpoint.
 REPORT_WINDOWS = [2016, 2019, 2022, 2025]
 _MIN_FY, _MAX_FY = 2014, 2025
 CHECKPOINT = 200

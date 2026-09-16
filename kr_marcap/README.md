@@ -334,7 +334,7 @@ worked example and the proposed guard are in
 | `fnguide_validation.csv` | Per-ticker agreement with FnGuide, both conventions (n_days, n_disagree, max/median \|Δ log-return\|, clean, delisted) | `python -m kr_marcap.validate_against_fnguide` |
 | `fnguide_validation_days.csv` | The disagreeing ticker-days, worst first, each labelled by cause | (same) |
 | `dividend_events.parquet` | One row per SEIBro dividend event (code, record_date, ex_date, cum_date, kind, share_class, dps, stock_ratio, pay_date, market_label) — 62 k rows / 29.6 k cash events / 2,982 tickers, 2000–2026 | `python -m kr_marcap.dividend_events build` |
-| `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps). Cross-check only — reconciles to the event sums for 96.2 % of 12.1 k (ticker, FY) pairs, 98.9 % on the delisted subset | `python -m kr_marcap.dividends build` |
+| `dividends.parquet` | Per-(ticker, fiscal_year) cash-dividend yield + DPS from DART (code, fiscal_year, yield_pct, dps). Cross-check only — reconciles to the event sums for 96.2 % of 12.1 k (ticker, FY) pairs, 96.0 % on the delisted subset | `python -m kr_marcap.dividends build` |
 
 ## Files in `data/` (tracked)
 

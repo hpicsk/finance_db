@@ -89,7 +89,7 @@ two, against two unrelated authorities.
 | component | authority | result |
 |---|---|---|
 | structural | KRX official 수정주가 | **99.43 %** of daily returns within `1e-3` (n = 8,590,146 rows / 3,995 tickers), median difference 2.5e-5 |
-| cash | DART 사업보고서 배당 | **96.2 %** DPS match to ±0.5원 (n = 12,115 ticker-years / 1,615 tickers) |
+| cash | DART 사업보고서 배당 | **96.2 %** DPS match to ±0.5원 (n = 12,117 ticker-years / 1,616 tickers) |
 
 Returns are compared rather than levels because the two series use different
 back-adjustment anchors; returns are anchor-invariant. The exact-match rate at
@@ -104,12 +104,12 @@ than tautology.
 **The DART side is restricted to December-fiscal-year issuers**, and the
 restriction is load-bearing rather than cosmetic. SEIBro is keyed by 배정기준일,
 so a calendar-year sum of its events equals a fiscal-year total only when
-FY == CY. Lifting it admits 221 more pairs (12,336 / 1,615 → 1,658 tickers)
+FY == CY. Lifting it admits 221 more pairs (12,338 / 1,616 → 1,659 tickers)
 whose two sides are not the same accounting object, so the resulting 96.1 % is
 the weaker number even though it is barely different.
 
 **Survivorship.** Splitting the matched pairs on the KIND delisting calendar,
-delisted issuers reconcile at **96.3 %** against **96.2 %** for those never
+delisted issuers reconcile at **96.0 %** against **96.2 %** for those never
 delisted — indistinguishable, which is the point: the SEIBro collection is not
 biased toward survivors. An earlier version of this split used only delistings
 after 2021-01-01 and reported 98.9 %, which was an artefact — the cut-off kept
@@ -178,7 +178,7 @@ rather than quote one level.
 
 | parameter | where | status |
 |---|---|---|
-| delisting cut-off `> 2021-01-01` | DART split | **deleted.** It selected the recent, cleaner delistings and read 98.9 % where the whole calendar reads 96.3 %; it also mislabelled 360 pre-2021 rows as "still listed". No result needed it. |
+| delisting cut-off `> 2021-01-01` | DART split | **deleted.** It selected the recent, cleaner delistings and read 98.9 % where the whole calendar reads 96.0 %; it also mislabelled 360 pre-2021 rows as "still listed". No result needed it. |
 | yield trim `TRIM_Q = 0.99` | ex-date localisation | **kept, sensitivity now printed.** Load-bearing for the *slope* — untrimmed −0.31 against −0.81 at any trim from the top 1 % to the top 10 % — but the check's actual claim (the drop sits on ex+0 and nowhere else) holds at every level. |
 | tolerance `±0.5원` | DART DPS match | **kept, justified by the unit.** DPS is quoted in won, so this is "rounds to the same won", not a fitted band. |
 | window `Y0, Y1 = 2020, 2024` | §2, §5 | **kept, justified.** Five full years ending before the 2024 배당절차 개선 dispersed record dates out of December. |

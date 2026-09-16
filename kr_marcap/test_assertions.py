@@ -228,6 +228,53 @@ def test_seibro_zero_is_non_payment():
             f"(FY{fy0}-{fy1}), {dup} shared 기준일"), len(ev)
 
 
+# ---- SEIBro event sums reproduce DART's annual DPS --------------------------
+# VERIFICATION.md "Do two independent institutions agree?", as
+# validate_dividend_events check [5] matches them: a December-FY issuer's SEIBro
+# cash events summed per calendar year against DART's annual 주당 현금배당금.
+DPS_PAIRS = (12117, 1616, 12338, 1659)  # (pairs, tickers): December-FY issuers, then every issuer
+DPS_MATCH = (96.2, 96.0, 96.2, 96.1)    # % within ±0.5원: all, delisted, never delisted, every issuer
+DPS_TOL = 0.05                          # half the last printed digit
+
+
+def test_dart_dps_reconciliation():
+    sys.path.insert(0, str(REPO))
+    ev_fp = REPO / "kr_marcap/cache/dividend_events.parquet"
+    dart_fp = REPO / "kr_marcap/cache/dividends.parquet"
+    if not (ev_fp.exists() and dart_fp.exists()):
+        raise Skipped("dividend caches not built")
+    from kr_marcap.dividend_events import load_cash_events
+
+    ev = load_cash_events()
+    ev["cy"] = ev["record_date"].dt.year
+    dart = pd.read_parquet(dart_fp)
+    dart["code"] = dart["code"].astype(str).str.zfill(6)
+    dart = dart[dart["dps"] > 0]
+    dec = ev.groupby("code")["record_date"].apply(lambda s: (s.dt.month == 12).any())
+    delisted = set(pd.read_csv(REPO / "kr_delisted/data/delisting_calendar.csv",
+                               dtype={"ticker": str})["ticker"])
+
+    def match(codes):
+        s = (ev[ev["code"].isin(codes)].groupby(["code", "cy"])["dps"].sum()
+             .rename("seibro_dps").reset_index())
+        j = dart.merge(s, left_on=["code", "fiscal_year"], right_on=["code", "cy"])
+        return j, (j["seibro_dps"] - j["dps"]).abs() < 0.51
+
+    j, ok = match(set(dec[dec].index))
+    every, ok_every = match(set(ev["code"]))
+    dl = j["code"].isin(delisted)
+    got_n = (len(j), j["code"].nunique(), len(every), every["code"].nunique())
+    got = [x * 100 for x in (ok.mean(), ok[dl].mean(), ok[~dl].mean(), ok_every.mean())]
+    assert got_n == DPS_PAIRS and all(
+            abs(g - w) <= DPS_TOL for g, w in zip(got, DPS_MATCH)), (
+        f"VERIFICATION.md claims '96.2 % DPS match to ±0.5원 (n = 12,117 ticker-years "
+        f"/ 1,616 tickers)', delisted issuers at '96.0 % against 96.2 %' for those "
+        f"never delisted, and without the December restriction '221 more pairs "
+        f"(12,338 / 1,616 → 1,659 tickers)' at '96.1 %'; got (pairs, tickers) "
+        f"{got_n} and rates {[round(g, 2) for g in got]}")
+    return (f"{got[0]:.1f}% of {len(j):,} December-FY pairs match DART to ±0.5원; "
+            f"delisted {got[1]:.1f}% vs {got[2]:.1f}%"), len(j)
+
 # ---- adj_factors carries the marcap vintage stamp (reproducibility provenance) -
 def test_adjust_provenance_stamp():
     """A factors file must self-describe the marcap vintage it was built from
@@ -452,6 +499,7 @@ CHECKS = [
     test_fnguide_benchmark_agreement,
     test_fnguide_disagreement_is_the_stuck_oracle,
     test_seibro_zero_is_non_payment,
+    test_dart_dps_reconciliation,
     test_spac_kind_matches_krx_official_flag,
 ]
 
