@@ -37,9 +37,13 @@ PANEL_PATH = CACHE_DIR / 'universe_panel.parquet'
 CONFLICTS_PATH = CACHE_DIR / 'universe_conflicts.csv'
 
 # Recommended start of the reliable Korean-equity window. Before this:
-# (a) 1996-99 illiquidity (17-26% no-trade days) + IMF-era phantom rows, and
-# (b) NO cash-dividend / total-return data (DART 배당 starts fiscal 2014). 2015
-# is where both price liquidity and total-return coverage are sound. Opt-in via
+# (a) 1995-2000 malformed codes and names, and 1996-99 illiquidity (17-26%
+# no-trade days) + IMF-era phantom rows; (b) 2004's partial cash-dividend
+# coverage; and (c) through 2014 the adjusted series follows KRX's convention,
+# which leaves an old 감자 unadjusted in the pre-event history where FnGuide
+# back-adjusts it, and the KRX oracle that would arbitrate stops 3,000 sessions
+# back per ticker. Total-return coverage is no longer a reason: the SEIBro
+# event layer runs from 2002. Opt-in via
 # kr_marcap.adjust.load_adjusted(..., reliable_only=True). See the README
 # section "Use post-2015 data for Korean stocks".
 RELIABLE_START = pd.Timestamp('2015-01-01')

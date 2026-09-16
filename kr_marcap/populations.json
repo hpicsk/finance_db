@@ -31,6 +31,10 @@
     "bound": "exact",
     "n": 4940
   },
+  "test_pre_2015_fnguide_disagreement_is_the_krx_convention": {
+    "bound": "monotone",
+    "n": 570
+  },
   "test_pre_2015_share_jumps_are_residuals": {
     "bound": "monotone",
     "n": 715

@@ -56,7 +56,8 @@ with `load_adjusted(ticker, reliable_only=True)`; the policy constant is
 | **1995–2000** | Raw marcap **codes and names are malformed**. Ticker codes lost their leading zeros (`5930`=삼성전자, `200`=대우중공업, `25620`=신우) and short names are space-padded to fixed width (`신    우`=신우, `삼양사(1우 )`). Because the codes are not 6 chars they will not join to any 6-digit-keyed table, and the universe filter / `len(ticker)==6` convention **silently drops the entire pre-2001 window** | 2,342 distinct non-6-char codes / ~1.78 M rows, all in 1995–2000 (2001+ codes are clean 6-digit); plus 416 space-padded names, concentrated 1996–2001 |
 | **1996–1999** | IMF-era illiquidity — a large share of listed names did not trade on a given day, so daily returns are stale/zero and the ChangesRatio chain rests on thin prints | no-trade (`Volume==0`) days **17 % (1996), 23 % (1997), 26 % (1998), 11 % (1999)** vs ~1–2 % in 2000–2024; ~720 of the 813 phantom no-trade ChangesRatio rows fall in 1996–99 (see [`PRICE_ADJUSTMENT.md`](PRICE_ADJUSTMENT.md)) |
 | **pre-2002, and 2004** | Thin / partial cash-dividend data → `adj_close_tr` degrades toward price return | SEIBro 배당내역 returns 3 events in 2000 and 3 in 2001 against ~1,000/yr from 2002 on; 2004 keeps only 333 because the server refuses 1,303 rows of the 2004-12-31 window (reported by the build, not silently dropped) |
-| 2000–2014 | Price data is otherwise sound | `ChangesRatio`/`Stocks` 100 % present every year; no-trade ~1–2 % |
+| **2005–2014** | The adjusted series follows KRX's convention, which leaves an old 감자 unadjusted in the pre-event history where FnGuide back-adjusts it. The KRX oracle cannot arbitrate this far back | 14 of the 272 pre-2015 material share-jump days FnGuide can check disagree beyond 10 bp, over 12 tickers, and our return equals KRX's on every one the oracle covers; daily agreement 99.954 % against 99.993 % from 2015 on ([`CONSTRUCTION.md`](CONSTRUCTION.md)). The oracle stops 3,000 sessions back per ticker — 1,978 of its 3,995 tickers sit exactly there |
+| 2000–2014 | Raw price data is otherwise sound | `ChangesRatio`/`Stocks` 100 % present every year; no-trade ~1–2 % |
 
 The 1995–2000 code/name corruption is **left as-is in marcap, not normalized**:
 those rows sit below the 2015 reliability floor and are already excluded by the
@@ -66,9 +67,10 @@ classifier handles the padded names safely regardless — security kind is decid
 by the code's terminal digit, not a name suffix; see [What "common stock" means](#what-common-stock-means-here).)
 
 Total return is not the binding constraint — SEIBro dividend events run from
-2002. 2015 remains the
-reliability floor for the price reasons above (liquidity, code/name corruption),
-with 2004 the one later year whose dividend coverage is knowingly partial.
+2002. What holds the floor at 2015 is the adjustment convention: before it the
+reconstruction follows KRX, and FnGuide back-adjusts old 감자 that KRX's public
+series does not. 2004 is the one later year whose dividend coverage is knowingly
+partial.
 
 ## Quick start
 
@@ -209,8 +211,15 @@ validation below flags a real miss on the days KRX's 수정주가 covers.
 no earlier receipt, so a pre-2015 entity change is a break only if a SPAC name,
 a ticker reuse or an override finds it. All 570 pre-2015 candidates in
 `cache/adjust_anomalies.csv` are residuals, against 18 of the 145 from 2015 on.
-The oracle validation compares the return on 253 of the 570 and agrees on all
-of them; the other 317 are unchecked, below the 2015 reliability floor.
+Two independent series check them as far as each reaches. The oracle validation
+compares the return on 253 of the 570 and agrees on all of them. FnGuide
+compares 272 — every one of those in 2005–2014, because its panel starts 2005 —
+and agrees on 258. **The 14 it disagrees on are a convention difference, not a
+missed break**: on the 8 of them the KRX oracle covers, our return *is* KRX's
+수정주가 (worst 0.0013), so what FnGuide does differently is back-adjust an old
+감자 across the pre-event history, where KRX's public series leaves the step in.
+The remaining 29 candidates in 2005–2014, and all 269 before 2005, have no
+second source at all.
 See [`CORPORATE_ACTIONS_SPEC.md`](CORPORATE_ACTIONS_SPEC.md) for the full pipeline.
 
 ### Why ChangesRatio, not the `Stocks` ratio

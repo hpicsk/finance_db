@@ -180,6 +180,78 @@ def test_pre_2015_share_jumps_are_residuals():
             f"from 2015; the oracle agrees on the {got[2]} it compares "
             f"(worst {worst:.4f})"), len(cand)
 
+# ---- pre-2015, FnGuide disagrees where KRX's own convention does -------------
+# README "Entity-change detection": FnGuide reaches 272 of the 570 pre-2015
+# candidates, and the 14 it disagrees about carry KRX's own step, not a missed
+# break. Second sources both ways, since neither reaches all of them.
+FNGUIDE_PRE_2015 = (272, 258, 14, 12)  # compared, agreeing, disagreeing, codes disagreeing
+ORACLE_ON_DISAGREEING = 8              # of the 14, the days the KRX oracle covers
+ORACLE_CAP = (3000, 1978, 3995)        # rows the oracle serves per ticker at most, tickers at that cap, tickers
+
+
+def test_pre_2015_fnguide_disagreement_is_the_krx_convention():
+    sys.path.insert(0, str(REPO))
+    import numpy as np
+    from fnguide_data.price_loader import PRICE_PATH as FNGUIDE_PRICE_PATH
+    from kr_marcap.adjust import CANDIDATES_PATH, FACTORS_PATH
+    from kr_marcap.krx_adj_oracle import load_oracle
+    from kr_marcap.universe import RELIABLE_START
+    from kr_marcap.validate_against_fnguide import _MATERIAL_TOL
+    from kr_marcap.validate_against_oracle import DEFAULT_TOL
+    if not (CANDIDATES_PATH.exists() and FNGUIDE_PRICE_PATH.exists()):
+        raise Skipped("adjust_anomalies.csv or the FnGuide price panel not built")
+
+    cand = pd.read_csv(CANDIDATES_PATH, dtype={"Code": str}, parse_dates=["Date"])
+    pre = (cand.loc[cand["Date"] < RELIABLE_START, ["Code", "Date"]]
+           .set_axis(["code", "date"], axis=1))
+    codes = sorted(set(pre["code"]))
+    fac = pd.read_parquet(FACTORS_PATH, columns=["date", "code", "adj_close", "valid"],
+                          filters=[("code", "in", codes)])
+    fac = fac[fac["valid"].fillna(True) & (fac["adj_close"] > 0)]
+
+    def against(other, col):
+        """Each candidate day's log-return difference from `other`, over the rows
+        both hold — the comparison validate_against_fnguide makes, per day."""
+        m = fac.merge(other, on=["code", "date"]).sort_values(["code", "date"])
+        g = m.groupby("code", sort=False)
+        m["d"] = (np.log(m["adj_close"] / g["adj_close"].shift(1))
+                  - np.log(m[col] / g[col].shift(1))).abs()
+        return pre.merge(m[["code", "date", "d"]], on=["code", "date"], how="left")
+
+    fn = (pd.read_parquet(FNGUIDE_PRICE_PATH, columns=["date", "ticker", "adj_close_pr"],
+                          filters=[("ticker", "in", codes)])
+          .rename(columns={"ticker": "code"}))
+    fn["date"] = pd.to_datetime(fn["date"])
+    j = against(fn, "adj_close_pr")
+    bad = j[j["d"] > _MATERIAL_TOL]
+    got = (int(j["d"].notna().sum()), int((j["d"] <= _MATERIAL_TOL).sum()),
+           len(bad), bad["code"].nunique())
+    assert got == FNGUIDE_PRE_2015, (
+        f"README: 'FnGuide compares 272 — every one of those in 2005-2014 — and agrees "
+        f"on 258. The 14 it disagrees on are a convention difference' — (compared, "
+        f"agreeing, disagreeing, codes disagreeing) is {got}")
+    ora = load_oracle()
+    k = against(ora, "krx_adj_close").merge(bad[["code", "date"]], on=["code", "date"])
+    covered = int(k["d"].notna().sum())
+    assert covered == ORACLE_ON_DISAGREEING, (
+        f"README: 'the 8 of them the KRX oracle covers' — it covers {covered}")
+    # Why the oracle reaches so few of them: its source serves a bounded window
+    # per ticker, so a long-lived name's pre-2015 history is simply absent.
+    per_code = ora.groupby("code").size()
+    cap = (int(per_code.max()), int((per_code == 3000).sum()), int(per_code.size))
+    assert cap == ORACLE_CAP, (
+        f"README: 'The oracle stops 3,000 sessions back per ticker — 1,978 of its "
+        f"3,995 tickers sit exactly there' — (longest, tickers at 3,000, tickers) "
+        f"is {cap}")
+    worst = k["d"].max()
+    assert worst <= DEFAULT_TOL, (
+        f"README: 'our return *is* KRX's 수정주가' on the days FnGuide disputes — "
+        f"one differs from KRX by {worst:.4f}, beyond the validation tolerance "
+        f"{DEFAULT_TOL}")
+    return (f"pre-2015 candidates: FnGuide compares {got[0]}, disagrees on {got[2]} "
+            f"over {got[3]} codes, and our return matches KRX on the {covered} of "
+            f"those it covers (worst {worst:.4f})"), len(j)
+
 # ---- a SEIBro ₩0 dividend means non-payment, not a lost amount --------------
 def test_seibro_zero_is_non_payment():
     """`load_cash_events` keeps only `dps > 0`, so every ₩0 cash-kind event is
@@ -495,6 +567,7 @@ CHECKS = [
     test_adjust_heuristics_removed,
     test_adjust_canonical_cases,
     test_pre_2015_share_jumps_are_residuals,
+    test_pre_2015_fnguide_disagreement_is_the_krx_convention,
     test_adjust_provenance_stamp,
     test_fnguide_benchmark_agreement,
     test_fnguide_disagreement_is_the_stuck_oracle,
